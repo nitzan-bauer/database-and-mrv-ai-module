@@ -8,7 +8,7 @@ This is a separate system from the customer-facing SaaS (`carbonature-saas`, the
 
 ## Where things stand
 
-**Stages 0 and 1 are done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector runs in `eu-west-1`; seven migrations are applied and 14 verification checks pass against the real instance. Two farms and seven plots are seeded. Stage 2 is complete apart from `mcp_tokens`, which belongs with work orders in stage 3.
+**Stages 0, 1 and 2 are done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector runs in `eu-west-1`; eight migrations are applied and 16 verification checks pass against the real instance. Two farms and seven plots are seeded, and every change to a core table is now written to the audit log by trigger. `mcp_tokens` is the one deferral, moved to stage 3 where work orders live.
 
 **Everything seeded so far is DEMO data.** Elad Farm and Nitzan-Veg-Tech Farm are demonstration farms, not clients. This is enforced by trigger, not convention — see [docs/STAGE-1.md](docs/STAGE-1.md).
 
@@ -25,7 +25,7 @@ infra/terraform/   RDS, VPC, KMS, S3 — the Stage 0 stack
 migrations/        Schema, dbmate format, applied in filename order
 seeds/             Reference data extracted from the GHG calculator workbook
 scripts/           apply.sh (psql path) + verify.sql (post-apply checks)
-docs/              Runbook, conventions, roadmap, source-document analysis
+docs/              Per-stage records, conventions, roadmap, capacity + source analysis
 docs/source/       The two input documents + the v1 DDL, for provenance
 ```
 
@@ -76,7 +76,7 @@ Three decisions worth knowing before reading the SQL:
 |---|---|---|
 | **0** | Infrastructure: RDS + PostGIS, S3 + KMS, VPC, migration tooling, conventions, CI | **Done — provisioned and verified** |
 | **1** | Spatial schema + seed the demo farms | **Done — 2 farms, 7 plots live** |
-| **2** | Permissions, tokens, audit | Done except `mcp_tokens` (moves to stage 3) |
+| **2** | Permissions, tokens, audit | **Done** — `mcp_tokens` moved to stage 3 |
 | **3** | Sampling lifecycle | Not started — Sample ID width to settle first |
 | **4** | Lab ingestion + SOC schema | Not started; SOC function already in place |
 | **5** | Credits & compliance | Reference data built; commercial and QA3 accounting outstanding |
@@ -85,7 +85,7 @@ Three decisions worth knowing before reading the SQL:
 
 15 tables so far — 9 core hierarchy, 3 reference, 2 audit, plus `agent_memory` — and the `v_real_plots` view. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
 
-[docs/ROADMAP.md](docs/ROADMAP.md) has the detail and the open questions attached to each stage.
+Per-stage records: [STAGE-0](docs/STAGE-0.md) · [STAGE-1](docs/STAGE-1.md) · [STAGE-2](docs/STAGE-2.md). Capacity measurements and the raster decision: [GIS-CAPACITY](docs/GIS-CAPACITY.md). [ROADMAP](docs/ROADMAP.md) has the open questions attached to each stage.
 
 ---
 

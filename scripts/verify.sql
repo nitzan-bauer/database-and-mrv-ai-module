@@ -323,5 +323,61 @@ BEGIN
   RAISE NOTICE 'PASS  | demo data cannot attach to real projects or reach v_real_plots';
 END $$;
 
+-- Stage 2 acceptance: every action recorded with who, what, when — and
+-- recorded by the database, so a change that bypasses the application
+-- is captured too.
+DO $$
+DECLARE
+  before_n int;
+  after_n  int;
+  rec      record;
+BEGIN
+  SELECT count(*) INTO before_n FROM mrv.audit_log;
+
+  -- Session-scoped (is_local = false). A transaction-scoped setting made
+  -- inside a DO block is already gone by the time the trigger reads it.
+  PERFORM set_config('app.user_id', '00000000-0000-0000-0000-0000000000aa', false);
+  INSERT INTO mrv.organizations (org_id, name)
+  VALUES ('00000000-0000-0000-0000-0000000000ab', '__verify_audit__');
+  UPDATE mrv.organizations SET name = '__verify_audit_2__'
+  WHERE org_id = '00000000-0000-0000-0000-0000000000ab';
+
+  SELECT actor, action, target_type INTO rec
+  FROM mrv.audit_log ORDER BY audit_id DESC LIMIT 1;
+
+  IF rec.actor <> '00000000-0000-0000-0000-0000000000aa' THEN
+    RAISE EXCEPTION 'FAIL  | audit actor is % — app.user_id was not honoured', rec.actor;
+  END IF;
+  IF rec.action <> 'update' OR rec.target_type <> 'organizations' THEN
+    RAISE EXCEPTION 'FAIL  | audit recorded %/% instead of update/organizations', rec.action, rec.target_type;
+  END IF;
+
+  DELETE FROM mrv.organizations WHERE org_id = '00000000-0000-0000-0000-0000000000ab';
+  PERFORM set_config('app.user_id', '', false);
+
+  SELECT count(*) INTO after_n FROM mrv.audit_log;
+  IF after_n - before_n < 3 THEN
+    RAISE EXCEPTION 'FAIL  | expected >= 3 audit rows from insert+update+delete, got %', after_n - before_n;
+  END IF;
+
+  RAISE NOTICE 'PASS  | audit triggers record who/what/when on every change';
+END $$;
+
+-- Audit payloads must stay lean: a polygon serialised as WKB hex would
+-- bloat the log without being readable.
+DO $$
+DECLARE bad int;
+BEGIN
+  SELECT count(*) INTO bad
+  FROM mrv.audit_log
+  WHERE target_type = 'plots'
+    AND payload -> 'new' ->> 'geom' IS NOT NULL
+    AND payload -> 'new' ->> 'geom' <> '<geometry>';
+  IF bad > 0 THEN
+    RAISE EXCEPTION 'FAIL  | % audit row(s) carry raw geometry in the payload', bad;
+  END IF;
+  RAISE NOTICE 'PASS  | audit payloads strip geometry and embeddings';
+END $$;
+
 \echo ''
 \echo 'All checks passed.'
