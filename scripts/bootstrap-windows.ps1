@@ -8,13 +8,15 @@
   needed to run seeds and verification against a provisioned database,
   and CI already proves the schema applies.
 
-  RUN THIS ELEVATED. Terraform and dbmate install fine as a normal user,
-  but the AWS CLI ships only a machine-scope MSI — there is no user-scope
-  installer, so an unelevated run fails with "No applicable installer
-  found" (or stalls on a UAC prompt when silent).
-
-      # Right-click PowerShell > Run as administrator, then:
       .\scripts\bootstrap-windows.ps1
+
+  Be patient: the AWS CLI MSI is ~30 MB and regularly takes 8-10 minutes
+  to download and install. It looks stalled and is not.
+
+  Do NOT pass --scope user to the AWS CLI install. It publishes only a
+  machine-scope MSI, so a user-scope request fails immediately with
+  "No applicable installer found". The default machine-scope install
+  works from an ordinary shell provided the account is a local admin.
 
   winget modifies PATH for NEW shells only, so open a fresh terminal
   afterwards — or use the absolute paths this script prints.
@@ -71,17 +73,10 @@ if (-not (Test-Tool 'winget')) {
     throw "winget not found. Install 'App Installer' from the Microsoft Store first."
 }
 
-$isAdmin = ([Security.Principal.WindowsPrincipal] `
-    [Security.Principal.WindowsIdentity]::GetCurrent()
-).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
 Install-WingetPackage -Id 'Hashicorp.Terraform' -Tool 'terraform'
 
-if ($isAdmin -or (Test-Tool 'aws')) {
-    Install-WingetPackage -Id 'Amazon.AWSCLI' -Tool 'aws'
-} else {
-    Write-Host "  skipping AWS CLI - needs an elevated shell (machine-scope MSI only)" -ForegroundColor Yellow
-}
+Write-Host "  (the AWS CLI step can take 8-10 minutes - it is not stuck)" -ForegroundColor DarkGray
+Install-WingetPackage -Id 'Amazon.AWSCLI' -Tool 'aws'
 
 # dbmate ships as a single binary with no installer.
 $linkDir = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'
@@ -117,9 +112,6 @@ Write-Host @"
 
 Next
 ----
-0. If AWS CLI is MISSING above, re-run this script from an elevated
-   PowerShell (Right-click > Run as administrator).
-
 1. Open a NEW terminal so PATH changes take effect.
 
 2. Configure AWS with your own credentials:

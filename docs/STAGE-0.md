@@ -32,17 +32,18 @@ CI is the part that works today with no AWS account at all: it stands up Postgre
 
 Installs Terraform, the AWS CLI and dbmate, skipping whatever is already present.
 
-Current state on Nitzan's machine: **Terraform 1.15.8 and dbmate 2.34.1 are installed**; the AWS CLI is not. Its MSI needs administrator rights, and a silent install stalls waiting on a UAC prompt. Run this from an **elevated** PowerShell to finish it:
+**All three are installed on Nitzan's workstation** — Terraform 1.15.8, AWS CLI 2.36.4, dbmate 2.34.1.
 
-```powershell
-winget install --id Amazon.AWSCLI -e
-```
+Two things that will otherwise waste your time:
 
-Terraform itself does not need the AWS CLI — the provider reads credentials directly, and `terraform output -raw database_url` gives you the connection string. The CLI is only needed for `aws configure` and for reading Secrets Manager by hand.
+- The AWS CLI MSI takes **8-10 minutes**. It produces no output while downloading and looks stalled. It is not.
+- Never add `--scope user` to it. AWS publishes only a machine-scope MSI, so that fails instantly with "No applicable installer found". The plain machine-scope install works from an ordinary shell when the account is a local admin.
+
+Terraform does not need the AWS CLI at all — the provider reads credentials directly, and `terraform output -raw database_url` gives you the connection string. The CLI is for `aws configure` and for reading Secrets Manager by hand.
 
 A local PostgreSQL server is deliberately not installed. `psql` is only required to run the seeds and verification against a provisioned database, and CI already proves the schema applies to PostgreSQL 16 + PostGIS on every push.
 
-### Credentials
+### Credentials — the one remaining blocker
 
 **You must do this step yourself.** Create an IAM user in the AWS console with programmatic access (`AdministratorAccess` is fine to start; tighten once the stack settles), then:
 
