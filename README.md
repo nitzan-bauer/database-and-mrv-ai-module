@@ -81,7 +81,7 @@ Three decisions worth knowing before reading the SQL:
 | **6** | QA1 model structures | Not started |
 | **7** | Hardening, backups, audit-readiness | Backups and lifecycle configured in Terraform |
 
-11 tables so far. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
+14 tables so far — 9 core hierarchy, 3 reference, 2 audit. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
 
 [docs/ROADMAP.md](docs/ROADMAP.md) has the detail and the open questions attached to each stage.
 
