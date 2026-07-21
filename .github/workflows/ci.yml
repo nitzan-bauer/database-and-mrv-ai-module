@@ -71,7 +71,11 @@ jobs:
       # with confidence. Unwind the whole stack, then rebuild it.
       - name: Roll back everything and re-apply
         run: |
-          for _ in $(seq 1 5); do
+          # Derived from the file count, not hardcoded — a fixed loop
+          # silently stops unwinding the moment a migration is added.
+          N=$(ls migrations/*.sql | wc -l)
+          echo "rolling back $N migrations"
+          for _ in $(seq 1 "$N"); do
             dbmate --migrations-dir ./migrations --no-dump-schema down
           done
           test "$(psql "$DATABASE_URL" -tAc \
