@@ -1,0 +1,16 @@
+# Secrets — never commit connection strings
+.env
+.env.*
+!.env.example
+
+# Local tooling
+node_modules/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Local psql output
+*.out
