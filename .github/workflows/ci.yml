@@ -20,18 +20,24 @@ jobs:
         # PG16 + PostGIS 3.4 + pgvector, matching the RDS engine version.
         image: postgis/postgis:16-3.4
         env:
-          POSTGRES_USER: mrv
-          POSTGRES_PASSWORD: mrv
+          # The role must NOT be named `mrv`. Postgres resolves the default
+          # search_path `"$user", public`, so a role named after the schema
+          # makes every unqualified name jump into `mrv` the moment
+          # migration 0001 creates it — and dbmate then looks for
+          # mrv.schema_migrations instead of public.schema_migrations.
+          # Production uses mrv_admin for the same reason.
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci_admin
           POSTGRES_DB: carbonature_mrv
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U mrv -d carbonature_mrv"
+          --health-cmd "pg_isready -U ci_admin -d carbonature_mrv"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
 
     env:
-      DATABASE_URL: postgres://mrv:mrv@localhost:5432/carbonature_mrv?sslmode=disable
+      DATABASE_URL: postgres://ci_admin:ci_admin@localhost:5432/carbonature_mrv?sslmode=disable
 
     steps:
       - uses: actions/checkout@v4
