@@ -2,7 +2,28 @@
 
 Goal: a dev environment with an empty, ready database.
 
-Everything is written as code and validated. **Nothing has been provisioned** — `terraform apply` spends money, and neither the AWS CLI nor Terraform is installed on this machine, so the last step is yours.
+## ✅ Provisioned and verified — 21 July 2026
+
+The dev environment is live in `eu-west-1`, account `151498473514`.
+
+| | |
+|---|---|
+| RDS endpoint | `carbonature-mrv-dev.crqkq886aqqb.eu-west-1.rds.amazonaws.com:5432` |
+| Engine | PostgreSQL 16.13 · PostGIS 3.4.6 · pgvector 0.8.1 · citext 1.6 · pgcrypto 1.3 |
+| Database | `carbonature_mrv`, schema `mrv` |
+| Credentials | Secrets Manager `carbonature-mrv/dev/db`, or `terraform output -raw database_url` |
+| S3 | `carbonature-mrv-dev-{labs,field,models}-299359b5` |
+| VPC | `vpc-0695d033a085cdf46` · security group `sg-0ec04d05fc97aa028` |
+| KMS | `969a29ca-c8ab-46fd-8c04-a077cd942af5` |
+
+All six migrations are applied, reference data is seeded, and every one of the 13 verification checks passes against the live instance.
+
+**Billing:** the account is on the AWS **Free plan** — usage draws down $100 of credits and the card is not charged. Credits expire 21 Jan 2027. At roughly $17/month this covers about six months; upgrade to the paid plan with the company card before then, or the account is suspended and data is lost.
+
+Two Free-plan constraints hit during apply, both now encoded in `terraform.tfvars`:
+
+- **Backup retention is capped at 1 day.** Seven days returns `FreeTierRestrictionError`. Raise `db_backup_retention_days` after upgrading.
+- S3 rejected the original `Purpose` tag values — commas and em-dashes are invalid in tag values. Fixed in `s3.tf`.
 
 ---
 

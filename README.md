@@ -8,11 +8,11 @@ This is a separate system from the customer-facing SaaS (`carbonature-saas`, the
 
 ## Where things stand
 
-**Stage 0 is code-complete but not provisioned** — `terraform apply` has not been run. The schema for stages 1, 2 and part of 5 is already written and passing CI.
+**Stage 0 is done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector is running in `eu-west-1`; all six migrations are applied, reference data is seeded, and 13 verification checks pass against the real instance. Stage 2 is complete apart from `mcp_tokens`, which belongs with work orders in stage 3.
 
-Nothing has been applied to a live database. Everything lives in a dedicated `mrv` Postgres schema, so this can run as its own database now and be merged into the existing Supabase project later without a single table-name collision.
+Everything lives in a dedicated `mrv` Postgres schema, so this can be merged into the existing Supabase project later without a single table-name collision.
 
-See [docs/STAGE-0.md](docs/STAGE-0.md) for the provisioning runbook and cost breakdown, and [docs/ROADMAP.md](docs/ROADMAP.md) for stage-by-stage status.
+Billing runs on AWS Free-plan credits, not the card. See [docs/STAGE-0.md](docs/STAGE-0.md) for endpoints, credentials and the credit runway, and [docs/ROADMAP.md](docs/ROADMAP.md) for stage-by-stage status.
 
 ---
 
@@ -72,16 +72,16 @@ Three decisions worth knowing before reading the SQL:
 
 | Stage | Scope | Status |
 |---|---|---|
-| **0** | Infrastructure: RDS + PostGIS, S3 + KMS, VPC, migration tooling, conventions, CI | Code complete, not provisioned |
-| **1** | Spatial schema + seed Kisima / RAI / Casterra | Schema built; seeding blocked on GeoJSON |
-| **2** | Permissions, tokens, audit | `users`, `memberships`, `audit_log`, agent policies built; RLS and `agent_memory` outstanding |
+| **0** | Infrastructure: RDS + PostGIS, S3 + KMS, VPC, migration tooling, conventions, CI | **Done — provisioned and verified** |
+| **1** | Spatial schema + seed Kisima / RAI / Casterra | Schema live; seeding blocked on GeoJSON |
+| **2** | Permissions, tokens, audit | Done except `mcp_tokens` (moves to stage 3) |
 | **3** | Sampling lifecycle | Not started — Sample ID width to settle first |
 | **4** | Lab ingestion + SOC schema | Not started; SOC function already in place |
 | **5** | Credits & compliance | Reference data built; commercial and QA3 accounting outstanding |
 | **6** | QA1 model structures | Not started |
 | **7** | Hardening, backups, audit-readiness | Backups and lifecycle configured in Terraform |
 
-14 tables so far — 9 core hierarchy, 3 reference, 2 audit. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
+15 tables so far — 9 core hierarchy, 3 reference, 2 audit, plus `agent_memory`. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
 
 [docs/ROADMAP.md](docs/ROADMAP.md) has the detail and the open questions attached to each stage.
 
