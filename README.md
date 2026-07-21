@@ -8,7 +8,9 @@ This is a separate system from the customer-facing SaaS (`carbonature-saas`, the
 
 ## Where things stand
 
-**Stage 0 is done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector is running in `eu-west-1`; all six migrations are applied, reference data is seeded, and 13 verification checks pass against the real instance. Stage 2 is complete apart from `mcp_tokens`, which belongs with work orders in stage 3.
+**Stages 0 and 1 are done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector runs in `eu-west-1`; seven migrations are applied and 14 verification checks pass against the real instance. Two farms and seven plots are seeded. Stage 2 is complete apart from `mcp_tokens`, which belongs with work orders in stage 3.
+
+**Everything seeded so far is DEMO data.** Elad Farm and Nitzan-Veg-Tech Farm are demonstration farms, not clients. This is enforced by trigger, not convention — see [docs/STAGE-1.md](docs/STAGE-1.md).
 
 Everything lives in a dedicated `mrv` Postgres schema, so this can be merged into the existing Supabase project later without a single table-name collision.
 
@@ -73,7 +75,7 @@ Three decisions worth knowing before reading the SQL:
 | Stage | Scope | Status |
 |---|---|---|
 | **0** | Infrastructure: RDS + PostGIS, S3 + KMS, VPC, migration tooling, conventions, CI | **Done — provisioned and verified** |
-| **1** | Spatial schema + seed Kisima / RAI / Casterra | Schema live; seeding blocked on GeoJSON |
+| **1** | Spatial schema + seed the demo farms | **Done — 2 farms, 7 plots live** |
 | **2** | Permissions, tokens, audit | Done except `mcp_tokens` (moves to stage 3) |
 | **3** | Sampling lifecycle | Not started — Sample ID width to settle first |
 | **4** | Lab ingestion + SOC schema | Not started; SOC function already in place |
@@ -81,7 +83,7 @@ Three decisions worth knowing before reading the SQL:
 | **6** | QA1 model structures | Not started |
 | **7** | Hardening, backups, audit-readiness | Backups and lifecycle configured in Terraform |
 
-15 tables so far — 9 core hierarchy, 3 reference, 2 audit, plus `agent_memory`. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
+15 tables so far — 9 core hierarchy, 3 reference, 2 audit, plus `agent_memory` — and the `v_real_plots` view. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
 
 [docs/ROADMAP.md](docs/ROADMAP.md) has the detail and the open questions attached to each stage.
 

@@ -22,19 +22,32 @@ DO $$
 DECLARE
   n int;
 BEGIN
-  -- 9 core hierarchy + 3 reference + 2 audit + agent_memory
+  -- 9 core hierarchy + 3 reference + 2 audit + agent_memory.
+  -- BASE TABLE only: information_schema.tables counts views too, and
+  -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
-  FROM information_schema.tables WHERE table_schema = 'mrv';
+  FROM information_schema.tables
+  WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
   IF n <> 15 THEN
-    RAISE EXCEPTION 'FAIL  | expected 15 tables in mrv, found %', n;
+    RAISE EXCEPTION 'FAIL  | expected 15 base tables in mrv, found %', n;
   END IF;
-  RAISE NOTICE 'PASS  | 15 tables in mrv';
+
+  IF to_regclass('mrv.v_real_plots') IS NULL THEN
+    RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
+  END IF;
+  RAISE NOTICE 'PASS  | 15 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
-  SELECT count(*) INTO n FROM geometry_columns WHERE f_table_schema = 'mrv';
+  -- Restricted to base tables: geometry_columns also lists view columns,
+  -- so mrv.v_real_plots would otherwise be counted twice over.
+  SELECT count(*) INTO n
+  FROM geometry_columns g
+  JOIN pg_class c      ON c.relname = g.f_table_name
+  JOIN pg_namespace ns ON ns.oid = c.relnamespace AND ns.nspname = g.f_table_schema
+  WHERE g.f_table_schema = 'mrv' AND c.relkind = 'r';
   IF n <> 4 THEN
-    RAISE EXCEPTION 'FAIL  | expected 4 geometry columns, found %', n;
+    RAISE EXCEPTION 'FAIL  | expected 4 geometry columns on base tables, found %', n;
   END IF;
 
   SELECT count(*) INTO n
@@ -270,6 +283,44 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | can_access_project() must deny with no app.user_id';
   END IF;
   RAISE NOTICE 'PASS  | RLS helpers fail closed without app.user_id';
+END $$;
+
+-- The demo interlock. This is the one that matters most: demo hectares
+-- reaching a Verra submission would be a material misstatement.
+DO $$
+DECLARE
+  blocked boolean := false;
+  leaked  int;
+BEGIN
+  -- A demo farm must not be attachable to a real project.
+  INSERT INTO mrv.projects (project_id, org_id, name, is_demo)
+  SELECT '__REAL_PROBE__', org_id, '__verify_real__', false
+  FROM mrv.organizations LIMIT 1;
+
+  BEGIN
+    INSERT INTO mrv.farms (project_id, name, is_demo)
+    VALUES ('__REAL_PROBE__', '__verify_demo_farm__', true);
+  EXCEPTION WHEN others THEN
+    blocked := true;
+  END;
+
+  DELETE FROM mrv.farms    WHERE name = '__verify_demo_farm__';
+  DELETE FROM mrv.projects WHERE project_id = '__REAL_PROBE__';
+
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'FAIL  | a demo farm was accepted under a real project';
+  END IF;
+
+  -- And no demo row may ever surface through the audit-facing view.
+  SELECT count(*) INTO leaked
+  FROM mrv.v_real_plots vp
+  JOIN mrv.plots p ON p.plot_id = vp.plot_id
+  WHERE p.is_demo;
+  IF leaked <> 0 THEN
+    RAISE EXCEPTION 'FAIL  | % demo plot(s) leaked into v_real_plots', leaked;
+  END IF;
+
+  RAISE NOTICE 'PASS  | demo data cannot attach to real projects or reach v_real_plots';
 END $$;
 
 \echo ''
