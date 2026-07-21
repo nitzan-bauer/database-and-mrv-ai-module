@@ -18,8 +18,6 @@
 
 -- migrate:up
 
-SET search_path = mrv, public;
-
 -- ---------------------------------------------------------------------
 -- Fertilizer library — N content per product, looked up by name.
 -- Mirrors the calculator's VLOOKUP against 'Fertilizer Library'!A:B.

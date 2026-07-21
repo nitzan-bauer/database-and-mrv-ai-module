@@ -16,8 +16,6 @@
 
 -- migrate:up
 
-SET search_path = mrv, public;
-
 -- ---------------------------------------------------------------------
 -- Organizations & users
 --

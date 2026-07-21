@@ -3,8 +3,6 @@
 -- Idempotent — safe to re-run.
 -- =====================================================================
 
-SET search_path = mrv, public;
-
 -- ---- Fertilizer Library (workbook rows 4-21) ------------------------
 INSERT INTO mrv.fertilizers (name, n_content, class, density_t_m3, note) VALUES
   ('Urea 46-0-0',                       0.4600, 'synthetic-urea',  NULL, 'Solid urea'),

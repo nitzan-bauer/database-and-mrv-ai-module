@@ -7,8 +7,6 @@
 
 -- migrate:up
 
-SET search_path = mrv, public;
-
 -- Polymorphic target (no FK) so any object type can be referenced,
 -- including rows that were later archived or belong to future tables.
 CREATE TABLE mrv.audit_log (

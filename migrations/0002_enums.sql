@@ -6,8 +6,6 @@
 
 -- migrate:up
 
-SET search_path = mrv, public;
-
 -- ---- access ---------------------------------------------------------
 CREATE TYPE mrv.auth_method AS ENUM ('sso','password');
 CREATE TYPE mrv.app_role    AS ENUM ('super_admin','mrv_manager','ai_agent','sampler');

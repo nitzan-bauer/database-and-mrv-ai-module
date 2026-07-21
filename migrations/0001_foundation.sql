@@ -11,14 +11,13 @@
 
 CREATE SCHEMA IF NOT EXISTS mrv;
 
--- Extensions are installed into `public` and used from `mrv` via the
--- search_path set below.
+-- Extensions live in `public`. Every object below is schema-qualified,
+-- so no search_path is set: leaving one set at the end of a migration
+-- makes dbmate look for its schema_migrations table in `mrv`.
 CREATE EXTENSION IF NOT EXISTS postgis;   -- spatial types & indexing
 CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS citext;    -- case-insensitive email
 CREATE EXTENSION IF NOT EXISTS vector;    -- pgvector — agent_memory embeddings (stage 2)
-
-SET search_path = mrv, public;
 
 -- ---------------------------------------------------------------------
 -- Helper: maintain updated_at on mutable tables
