@@ -22,13 +22,13 @@ DO $$
 DECLARE
   n int;
 BEGIN
-  -- 9 core hierarchy + 3 reference + 2 audit
+  -- 9 core hierarchy + 3 reference + 2 audit + agent_memory
   SELECT count(*) INTO n
   FROM information_schema.tables WHERE table_schema = 'mrv';
-  IF n <> 14 THEN
-    RAISE EXCEPTION 'FAIL  | expected 14 tables in mrv, found %', n;
+  IF n <> 15 THEN
+    RAISE EXCEPTION 'FAIL  | expected 15 tables in mrv, found %', n;
   END IF;
-  RAISE NOTICE 'PASS  | 14 tables in mrv';
+  RAISE NOTICE 'PASS  | 15 tables in mrv';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -231,6 +231,45 @@ BEGIN
   DELETE FROM mrv.farms         WHERE farm_id    = '00000000-0000-0000-0000-0000000000fe';
   DELETE FROM mrv.projects      WHERE project_id = '__VERIFY__';
   DELETE FROM mrv.organizations WHERE org_id     = '00000000-0000-0000-0000-0000000000ff';
+END $$;
+
+-- RLS scaffold: policies must exist but be INERT — written now, enabled
+-- deliberately later via scripts/rls-enable.sql, never by accident.
+DO $$
+DECLARE
+  n_policies int;
+  n_enabled  int;
+BEGIN
+  SELECT count(*) INTO n_policies FROM pg_policies WHERE schemaname = 'mrv';
+  IF n_policies < 11 THEN
+    RAISE EXCEPTION 'FAIL  | expected >= 11 RLS policies, found %', n_policies;
+  END IF;
+
+  SELECT count(*) INTO n_enabled
+  FROM pg_class c
+  JOIN pg_namespace ns ON ns.oid = c.relnamespace
+  WHERE ns.nspname = 'mrv' AND c.relkind = 'r' AND c.relrowsecurity;
+  IF n_enabled <> 0 THEN
+    RAISE EXCEPTION 'FAIL  | RLS is ENABLED on % table(s) — must stay off until rls-enable.sql is run deliberately', n_enabled;
+  END IF;
+
+  RAISE NOTICE 'PASS  | % RLS policies present, all inert', n_policies;
+END $$;
+
+-- The access helpers behind those policies: no app.user_id set on this
+-- connection, so everything must deny — the fail-closed direction.
+DO $$
+BEGIN
+  IF mrv.current_user_id() IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | current_user_id() should be NULL on an unconfigured connection';
+  END IF;
+  IF mrv.is_super_admin() THEN
+    RAISE EXCEPTION 'FAIL  | is_super_admin() must be false with no app.user_id';
+  END IF;
+  IF mrv.can_access_project('__NO_SUCH__') THEN
+    RAISE EXCEPTION 'FAIL  | can_access_project() must deny with no app.user_id';
+  END IF;
+  RAISE NOTICE 'PASS  | RLS helpers fail closed without app.user_id';
 END $$;
 
 \echo ''

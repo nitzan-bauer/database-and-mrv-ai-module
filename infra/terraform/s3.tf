@@ -16,10 +16,12 @@ resource "random_id" "bucket_suffix" {
 }
 
 locals {
+  # Tag values: S3 allows only letters, numbers, spaces and + - = . _ : / @
+  # No commas, no em-dashes — InvalidTag otherwise.
   buckets = {
-    labs   = "Raw lab workbooks — audit evidence, never mutated"
+    labs   = "Raw lab workbooks - audit evidence - never mutated"
     field  = "Sampler photos and work-order PDFs"
-    models = "Model run inputs, logs and outputs"
+    models = "Model run inputs logs and outputs"
   }
 
   bucket_names = {
