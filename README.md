@@ -8,29 +8,40 @@ This is a separate system from the customer-facing SaaS (`carbonature-saas`, the
 
 ## Where things stand
 
-**Stage A of the database is built** (this repo). Nothing has been applied to a live database yet.
+**Stage 0 is code-complete but not provisioned** — `terraform apply` has not been run. The schema for stages 1, 2 and part of 5 is already written and passing CI.
 
-Everything lives in a dedicated `mrv` Postgres schema, so this can run as its own database now and be merged into the existing Supabase project later without a single table-name collision.
+Nothing has been applied to a live database. Everything lives in a dedicated `mrv` Postgres schema, so this can run as its own database now and be merged into the existing Supabase project later without a single table-name collision.
+
+See [docs/STAGE-0.md](docs/STAGE-0.md) for the provisioning runbook and cost breakdown, and [docs/ROADMAP.md](docs/ROADMAP.md) for stage-by-stage status.
 
 ---
 
 ## Layout
 
 ```
-migrations/     Stage A schema, applied in filename order
-seeds/          Reference data extracted from the GHG calculator workbook
-scripts/        apply.sh (run everything) + verify.sql (post-apply checks)
-docs/           Roadmap, data-model notes, and the source documents
-docs/source/    The two input documents + the v1 DDL from the Desktop chat
+infra/terraform/   RDS, VPC, KMS, S3 — the Stage 0 stack
+migrations/        Schema, dbmate format, applied in filename order
+seeds/             Reference data extracted from the GHG calculator workbook
+scripts/           apply.sh (psql path) + verify.sql (post-apply checks)
+docs/              Runbook, conventions, roadmap, source-document analysis
+docs/source/       The two input documents + the v1 DDL, for provenance
 ```
 
 ## Applying it
 
+With dbmate, which is the supported path:
+
 ```bash
-DATABASE_URL="postgresql://..." ./scripts/apply.sh
+dbmate --migrations-dir ./migrations up
+psql "$DATABASE_URL" -f seeds/0001_reference_data.sql
+psql "$DATABASE_URL" -f scripts/verify.sql
 ```
 
-Run it against a branch or a backup first. `scripts/verify.sql` runs automatically at the end and should report `PASS` on every line; its last two statements deliberately trigger the append-only guard, so an exception there is the expected result.
+Or `DATABASE_URL="postgresql://..." ./scripts/apply.sh` to do all three with plain psql.
+
+Every line of the verify output should read `PASS`. It probes the guarantees rather than just counting objects: that `audit_log` and `ghg_parameters` reject `UPDATE`, that a baseline control site beyond 250 km is refused, and that the SOC formula returns 19.5 t C/ha for the worked example.
+
+CI runs all of this on every push against PostgreSQL 16 + PostGIS + pgvector, and additionally unwinds every migration and rebuilds the stack — so a broken `down` migration fails the build.
 
 ---
 
@@ -61,13 +72,18 @@ Three decisions worth knowing before reading the SQL:
 
 | Stage | Scope | Status |
 |---|---|---|
-| **A** | Foundation: schema, extensions, enums, core spatial hierarchy, reference data, audit log | **Built** |
-| **B** | Sampling lifecycle: cycles, work orders, MCP tokens, sampling events, samples, lab imports, SOC measurements, ESM | Next |
-| **C** | Modelling & credits: model runs and results, MVR, GHG activity data and computed emissions, leakage, credits, VCU issuances, compliance engine | Planned |
+| **0** | Infrastructure: RDS + PostGIS, S3 + KMS, VPC, migration tooling, conventions, CI | Code complete, not provisioned |
+| **1** | Spatial schema + seed Kisima / RAI / Casterra | Schema built; seeding blocked on GeoJSON |
+| **2** | Permissions, tokens, audit | `users`, `memberships`, `audit_log`, agent policies built; RLS and `agent_memory` outstanding |
+| **3** | Sampling lifecycle | Not started — Sample ID width to settle first |
+| **4** | Lab ingestion + SOC schema | Not started; SOC function already in place |
+| **5** | Credits & compliance | Reference data built; commercial and QA3 accounting outstanding |
+| **6** | QA1 model structures | Not started |
+| **7** | Hardening, backups, audit-readiness | Backups and lifecycle configured in Terraform |
 
-Stage A creates 11 tables. All enum types for later stages are created up front, so B and C add tables without revisiting type definitions.
+11 tables so far. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for what each stage contains and the open questions attached to it.
+[docs/ROADMAP.md](docs/ROADMAP.md) has the detail and the open questions attached to each stage.
 
 ---
 

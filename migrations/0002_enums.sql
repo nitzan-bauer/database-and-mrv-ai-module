@@ -4,6 +4,8 @@
 -- stages add tables without touching type definitions.
 -- =====================================================================
 
+-- migrate:up
+
 SET search_path = mrv, public;
 
 -- ---- access ---------------------------------------------------------
@@ -54,3 +56,28 @@ CREATE TYPE mrv.climate_zone AS ENUM ('wet','dry');
 CREATE TYPE mrv.n_trend AS ENUM ('decrease','flat','increase');
 
 CREATE TYPE mrv.fuel_type AS ENUM ('diesel','gasoline');
+
+-- migrate:down
+
+DROP TYPE IF EXISTS mrv.fuel_type;
+DROP TYPE IF EXISTS mrv.n_trend;
+DROP TYPE IF EXISTS mrv.climate_zone;
+DROP TYPE IF EXISTS mrv.fertilizer_class;
+DROP TYPE IF EXISTS mrv.activity_type;
+DROP TYPE IF EXISTS mrv.agent_mode;
+DROP TYPE IF EXISTS mrv.compliance_result;
+DROP TYPE IF EXISTS mrv.credit_status;
+DROP TYPE IF EXISTS mrv.mvr_status;
+DROP TYPE IF EXISTS mrv.run_status;
+DROP TYPE IF EXISTS mrv.model_scenario;
+DROP TYPE IF EXISTS mrv.carbon_model;
+DROP TYPE IF EXISTS mrv.lab_method;
+DROP TYPE IF EXISTS mrv.parser_status;
+DROP TYPE IF EXISTS mrv.point_status;
+DROP TYPE IF EXISTS mrv.sample_scenario;
+DROP TYPE IF EXISTS mrv.wo_state;
+DROP TYPE IF EXISTS mrv.cycle_status;
+DROP TYPE IF EXISTS mrv.cycle_type;
+DROP TYPE IF EXISTS mrv.quant_approach;
+DROP TYPE IF EXISTS mrv.app_role;
+DROP TYPE IF EXISTS mrv.auth_method;

@@ -14,6 +14,8 @@
 -- strata, and (Stage B) its own sampling campaign.
 -- =====================================================================
 
+-- migrate:up
+
 SET search_path = mrv, public;
 
 -- ---------------------------------------------------------------------
@@ -238,3 +240,15 @@ COMMENT ON TABLE  mrv.farms    IS 'Participant farm / instance (CropNut "install
 COMMENT ON TABLE  mrv.plots    IS 'WP polygon under a farm. quantification_approach lives here — a farm may be mixed-QA (VM0042 §8.1).';
 COMMENT ON COLUMN mrv.farms.carbon_rights_ref IS 'Reference to the signed carbon-rights agreement. Guards against double-counting.';
 COMMENT ON COLUMN mrv.baseline_control_sites.similarity_criteria IS 'VM0042 v2.2 Table 7 — the 9 similarity criteria, one key per criterion.';
+
+-- migrate:down
+
+DROP TABLE IF EXISTS mrv.project_memberships;
+DROP TABLE IF EXISTS mrv.sampling_points;
+DROP TABLE IF EXISTS mrv.baseline_control_sites;
+DROP TABLE IF EXISTS mrv.strata;
+DROP TABLE IF EXISTS mrv.plots;
+DROP TABLE IF EXISTS mrv.farms;
+DROP TABLE IF EXISTS mrv.projects;
+DROP TABLE IF EXISTS mrv.users;
+DROP TABLE IF EXISTS mrv.organizations;

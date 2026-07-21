@@ -7,13 +7,16 @@
 -- the marketplace/Sale-Flow tables) without a single name collision.
 -- =====================================================================
 
+-- migrate:up
+
 CREATE SCHEMA IF NOT EXISTS mrv;
 
--- Extensions are installed into `public` (Supabase convention) and used
--- from `mrv` via the search_path set below.
+-- Extensions are installed into `public` and used from `mrv` via the
+-- search_path set below.
 CREATE EXTENSION IF NOT EXISTS postgis;   -- spatial types & indexing
 CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS citext;    -- case-insensitive email
+CREATE EXTENSION IF NOT EXISTS vector;    -- pgvector — agent_memory embeddings (stage 2)
 
 SET search_path = mrv, public;
 
@@ -48,3 +51,11 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION mrv.area_ha(g geometry) RETURNS numeric AS $$
   SELECT round((ST_Area(g::geography) / 10000.0)::numeric, 4);
 $$ LANGUAGE sql IMMUTABLE STRICT;
+
+-- migrate:down
+
+DROP FUNCTION IF EXISTS mrv.area_ha(geometry);
+DROP FUNCTION IF EXISTS mrv.prevent_mutation();
+DROP FUNCTION IF EXISTS mrv.set_updated_at();
+DROP SCHEMA IF EXISTS mrv;
+-- Extensions are left installed: other schemas in the database may use them.

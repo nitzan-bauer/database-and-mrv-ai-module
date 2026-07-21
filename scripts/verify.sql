@@ -55,8 +55,86 @@ SELECT CASE WHEN mrv.frac_leach(p.*) = 0.24 THEN 'PASS'
        AS "Frac_LEACH wet = 0.24"
 FROM mrv.ghg_parameters p WHERE p.project_id IS NULL AND p.version = 'default-v1.0';
 
+-- The append-only guard must actually fire. Caught here rather than left
+-- to raise, so this script can run under ON_ERROR_STOP in CI.
+DO $$
+DECLARE
+  update_blocked boolean := false;
+  delete_blocked boolean := false;
+BEGIN
+  INSERT INTO mrv.audit_log (actor, action) VALUES ('verify', 'append_only_probe');
+
+  BEGIN
+    UPDATE mrv.audit_log SET action = 'tampered' WHERE actor = 'verify';
+  EXCEPTION WHEN others THEN
+    update_blocked := true;
+  END;
+
+  BEGIN
+    DELETE FROM mrv.audit_log WHERE actor = 'verify';
+  EXCEPTION WHEN others THEN
+    delete_blocked := true;
+  END;
+
+  IF update_blocked AND delete_blocked THEN
+    RAISE NOTICE 'PASS  | audit_log rejects UPDATE and DELETE';
+  ELSE
+    RAISE EXCEPTION 'FAIL  | audit_log append-only guard did not fire (update_blocked=%, delete_blocked=%)',
+      update_blocked, delete_blocked;
+  END IF;
+END $$;
+
+-- Same for the emission-factor table: a changed factor must become a new
+-- version, never an edit, or past monitoring periods stop reproducing.
+DO $$
+DECLARE
+  blocked boolean := false;
+BEGIN
+  BEGIN
+    UPDATE mrv.ghg_parameters SET gwp_n2o = 999 WHERE version = 'default-v1.0';
+  EXCEPTION WHEN others THEN
+    blocked := true;
+  END;
+
+  IF blocked THEN
+    RAISE NOTICE 'PASS  | ghg_parameters rejects UPDATE';
+  ELSE
+    RAISE EXCEPTION 'FAIL  | ghg_parameters is editable — versioning guarantee is broken';
+  END IF;
+END $$;
+
+-- A baseline control site beyond 250 km is a methodology violation
+-- (VM0042 Table 7), so the database must refuse it outright.
+DO $$
+DECLARE
+  blocked boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO mrv.organizations (org_id, name) VALUES
+      ('00000000-0000-0000-0000-0000000000ff', '__verify__');
+    INSERT INTO mrv.projects (project_id, org_id, name) VALUES
+      ('__VERIFY__', '00000000-0000-0000-0000-0000000000ff', '__verify__');
+    INSERT INTO mrv.farms (farm_id, project_id, name) VALUES
+      ('00000000-0000-0000-0000-0000000000fe', '__VERIFY__', '__verify__');
+    INSERT INTO mrv.baseline_control_sites (bsl_id, farm_id, geom, distance_km) VALUES
+      ('__VERIFY_BSL__', '00000000-0000-0000-0000-0000000000fe',
+       ST_GeomFromText('POLYGON((0 0,0 1,1 1,1 0,0 0))', 4326), 300);
+  EXCEPTION WHEN check_violation THEN
+    blocked := true;
+  END;
+
+  IF blocked THEN
+    RAISE NOTICE 'PASS  | BSL beyond 250 km rejected';
+  ELSE
+    RAISE EXCEPTION 'FAIL  | BSL distance constraint did not fire';
+  END IF;
+
+  -- Clean up the probe rows regardless of which path ran.
+  DELETE FROM mrv.baseline_control_sites WHERE bsl_id = '__VERIFY_BSL__';
+  DELETE FROM mrv.farms    WHERE farm_id    = '00000000-0000-0000-0000-0000000000fe';
+  DELETE FROM mrv.projects WHERE project_id = '__VERIFY__';
+  DELETE FROM mrv.organizations WHERE org_id = '00000000-0000-0000-0000-0000000000ff';
+END $$;
+
 \echo ''
-\echo '--- Append-only guard (expect an exception below) ---'
--- Should raise: "Table audit_log is append-only".
-INSERT INTO mrv.audit_log (actor, action) VALUES ('verify', 'test_append_only');
-UPDATE mrv.audit_log SET action = 'tampered' WHERE actor = 'verify';
+\echo 'Verification complete.'

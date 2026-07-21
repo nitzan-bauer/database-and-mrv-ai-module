@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrations:
+    name: Migrations apply to a real PostGIS
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # PG16 + PostGIS 3.4 + pgvector, matching the RDS engine version.
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: mrv
+          POSTGRES_PASSWORD: mrv
+          POSTGRES_DB: carbonature_mrv
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U mrv -d carbonature_mrv"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://mrv:mrv@localhost:5432/carbonature_mrv?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql client and pgvector
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      # postgis/postgis ships PostGIS but not pgvector; build it into the
+      # running container so migration 0001 can CREATE EXTENSION vector.
+      - name: Install pgvector into the service container
+        run: |
+          CID=$(docker ps --filter "ancestor=postgis/postgis:16-3.4" --format '{{.ID}}')
+          docker exec "$CID" bash -c '
+            apt-get update -qq &&
+            apt-get install -y -qq postgresql-16-pgvector
+          '
+
+      - name: Install dbmate
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/dbmate \
+            https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64
+          sudo chmod +x /usr/local/bin/dbmate
+          dbmate --version
+
+      - name: Apply migrations
+        run: dbmate --migrations-dir ./migrations --no-dump-schema up
+
+      # A migration you cannot roll back is a migration you cannot deploy
+      # with confidence. Unwind the whole stack, then rebuild it.
+      - name: Roll back everything and re-apply
+        run: |
+          for _ in $(seq 1 5); do
+            dbmate --migrations-dir ./migrations --no-dump-schema down
+          done
+          test "$(psql "$DATABASE_URL" -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='mrv'")" = "0" \
+            || { echo "Rollback left tables behind in mrv"; exit 1; }
+          dbmate --migrations-dir ./migrations --no-dump-schema up
+
+      - name: Apply seeds
+        run: |
+          for f in seeds/*.sql; do
+            echo "-- $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      # Seeds are declared idempotent — prove it rather than trusting it.
+      - name: Re-apply seeds (idempotency)
+        run: |
+          for f in seeds/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Verify
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify.sql
+
+  terraform:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Format check
+        run: terraform -chdir=infra/terraform fmt -check -recursive
+
+      - name: Validate
+        run: |
+          terraform -chdir=infra/terraform init -backend=false
+          terraform -chdir=infra/terraform validate

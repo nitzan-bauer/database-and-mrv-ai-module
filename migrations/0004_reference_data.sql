@@ -16,6 +16,8 @@
 -- become a NEW parameter-set row, never an UPDATE of an old one.
 -- =====================================================================
 
+-- migrate:up
+
 SET search_path = mrv, public;
 
 -- ---------------------------------------------------------------------
@@ -180,3 +182,13 @@ $$ LANGUAGE sql IMMUTABLE STRICT;
 
 COMMENT ON FUNCTION mrv.soc_stock_t_per_ha(numeric,numeric,numeric) IS
   'SOC stock in t C/ha. Factor is 100 (per GHG calculator eq. 4/5), not 1000 as printed in functional spec §11.';
+
+-- migrate:down
+
+DROP FUNCTION IF EXISTS mrv.soc_stock_t_per_ha(numeric,numeric,numeric);
+DROP FUNCTION IF EXISTS mrv.n2o_n_to_n2o();
+DROP FUNCTION IF EXISTS mrv.frac_leach(mrv.ghg_parameters);
+DROP FUNCTION IF EXISTS mrv.ef_n_direct(mrv.ghg_parameters);
+DROP TABLE IF EXISTS mrv.ghg_parameters;
+DROP TABLE IF EXISTS mrv.machinery_defaults;
+DROP TABLE IF EXISTS mrv.fertilizers;

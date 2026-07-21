@@ -5,6 +5,8 @@
 -- for the AI agent — on what reasoning. Append-only, enforced by trigger.
 -- =====================================================================
 
+-- migrate:up
+
 SET search_path = mrv, public;
 
 -- Polymorphic target (no FK) so any object type can be referenced,
@@ -48,3 +50,11 @@ CREATE TABLE mrv.agent_action_policies (
 CREATE TRIGGER trg_agent_pol_upd
   BEFORE UPDATE ON mrv.agent_action_policies
   FOR EACH ROW EXECUTE FUNCTION mrv.set_updated_at();
+
+-- migrate:down
+
+DROP TABLE IF EXISTS mrv.agent_action_policies;
+-- audit_log carries the append-only trigger; drop it explicitly first so
+-- the DROP TABLE is not blocked by the guard.
+DROP TRIGGER IF EXISTS trg_audit_noupd ON mrv.audit_log;
+DROP TABLE IF EXISTS mrv.audit_log;
