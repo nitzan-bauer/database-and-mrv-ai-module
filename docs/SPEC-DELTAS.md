@@ -24,9 +24,13 @@ Consequences: each farm owns its plots, its baseline control sites, its strata, 
 
 The spec gives `(TOC%/100) × BD × depth × 1000`. The GHG calculator gives ×100, and so does standard IPCC/Verra practice. See the README for the worked check. Implemented as ×100; still worth a written confirmation from CropNut.
 
-## 3. Sample ID width contradicts itself
+## 3. Sample ID width contradicts itself — resolved
 
-§11 says 10 digits zero-padded; every mockup shows 8 (`OFM00021615`). Unresolved — it decides the `next_sample_id()` generator in Stage B.
+§11 says 10 digits zero-padded; every mockup shows 8 (`OFM00021615`).
+
+**Settled 21 July 2026: 10 digits** — `OFM` + 10 zero-padded digits, a 13-character identifier. The mockups are illustrative; the spec text, the work plan and Nitzan all say 10.
+
+`mrv.next_sample_id()` pads to 8 today and is corrected when stage 3 lands. No sample rows exist yet, so the change is free now and would not be once IDs are printed on physical bags.
 
 ## 4. The stack question is genuinely open
 

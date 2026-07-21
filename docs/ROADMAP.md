@@ -6,10 +6,10 @@ An earlier draft of this file used an A/B/C lettering; that is superseded. What 
 
 | Stage | Scope | Status |
 |---|---|---|
-| **0** | Infrastructure | Code complete, not provisioned |
-| **1** | Spatial schema + seeding the existing projects | Schema built, seeding pending |
-| **2** | Permissions, tokens, audit | Partly built |
-| **3** | Sampling lifecycle | Not started |
+| **0** | Infrastructure | ✅ Provisioned and verified — [STAGE-0](STAGE-0.md) |
+| **1** | Spatial schema + seeding the demo farms | ✅ Done — [STAGE-1](STAGE-1.md) |
+| **2** | Permissions, tokens, audit | ✅ Done — [STAGE-2](STAGE-2.md) |
+| **3** | Sampling lifecycle | ◀ next |
 | **4** | Lab ingestion + SOC schema | Not started |
 | **5** | Credits & compliance | Reference data built |
 | **6** | QA1 model structures | Not started |
@@ -21,40 +21,39 @@ An earlier draft of this file used an A/B/C lettering; that is superseded. What 
 
 RDS PostgreSQL 16 + PostGIS in eu-west-1, private KMS-encrypted S3, VPC, extensions, migration tooling, conventions, repo and CI.
 
-**Done:** Terraform for the whole stack; `postgis` / `pgvector` / `pgcrypto` / `citext` in `migrations/0001`; dbmate chosen and wired; conventions fixed in [CONVENTIONS.md](CONVENTIONS.md); CI applies every migration to a real PostGIS container, rolls the stack back, rebuilds it, and runs the verification suite.
+✅ **Complete.** Provisioned in `eu-west-1`, account 151498473514: RDS PostgreSQL 16.13, PostGIS 3.4.6, pgvector 0.8.1, three KMS-encrypted S3 buckets, VPC. dbmate chosen over Alembic; conventions fixed in [CONVENTIONS.md](CONVENTIONS.md); CI applies every migration to a real PostGIS container, unwinds the whole stack, rebuilds, and runs 16 assertions.
 
-**Outstanding:** `terraform apply` — needs AWS credentials and local tooling. See [STAGE-0.md](STAGE-0.md) for the runbook and the cost breakdown.
+Billing runs on AWS Free-plan credits — the card is not charged. Credits expire 2027-01-21. Details and the two Free-plan constraints in [STAGE-0.md](STAGE-0.md).
 
 ## Stage 1 — Spatial schema + seed existing projects
 
 **Built** (`migrations/0003`): `organizations`, `projects`, `farms`, `plots`, `strata`, `baseline_control_sites`, `sampling_points`, with GIST indexes, SRID 4326 enforced by the column type, and constraints.
 
-Note the deviation from the plan's table list: `farms` sits between `projects` and `plots`. The plan inherited the spec's `projects → plots`, but a Verra grouped project is an umbrella and each participating farm is a separate instance. Kisima, RAI and Casterra are farms under a grouped project, not projects in their own right — which also matches how the marketplace already presents them. See [SPEC-DELTAS.md](SPEC-DELTAS.md) §1.
+Note the deviation from the plan's table list: `farms` sits between `projects` and `plots`. The plan inherited the spec's `projects → plots`, but a Verra grouped project is an umbrella and each participating farm is a separate instance. The demo farms are farms under a grouped project, not projects in their own right — which also matches how the marketplace already presents them. See [SPEC-DELTAS.md](SPEC-DELTAS.md) §1.
 
-**Outstanding:**
-- Seed the three existing projects and their farms
-- Import plot polygons from the existing GeoJSON (`ST_GeomFromGeoJSON`)
-- One-way PostGIS → Mapbox sync, via the `polygons-for-mapbox` skill
-- Acceptance test: point-in-plot spatial query
+✅ **Complete.** Seeded with the two demo farms — Elad Farm (Kenya, 2 plots) and Nitzan-Veg-Tech Farm (Israel, 5 plots) — under grouped project `CARBO-3988-DEMO`. Kisima, RAI and Casterra were also demos and were dropped.
 
-**Blocked on:** the GeoJSON files, and confirmation of which farms sit under which grouped project. One file is already in the workspace (`Sugarcane_TZ_Farm_FIXED.geojson`); the others I have not seen.
+Polygons came from the live SaaS API rather than a file, so the geometry matches what the marketplace renders. Migration 0007 adds the `is_demo` interlock. Acceptance test passes: all 7 plots resolve uniquely under point-in-plot. Detail in [STAGE-1.md](STAGE-1.md).
+
+**Still outstanding:** the one-way PostGIS → Mapbox sync, deliberately deferred — today the flow runs the other way, and a second writer would create two sources of truth for the same polygons. See open decision 4.
 
 ## Stage 2 — Permissions, tokens, audit
 
-**Built** (`migrations/0003`, `migrations/0005`): `users`, `project_memberships`, `audit_log` (append-only, trigger-enforced), `agent_action_policies` with the spec's default AUTO/CONFIRM policy seeded.
+✅ **Complete**, with one deliberate deferral.
 
-**Outstanding:**
-- `mcp_tokens` — work-order-scoped, so it lands with stage 3
-- `agent_memory` with pgvector embeddings (extension is already enabled)
-- RLS policies keyed on `project_id`, written and left disabled
+`users`, `project_memberships`, `audit_log`, `agent_action_policies`, `agent_memory` (pgvector + HNSW), 11 RLS policies written and inert, and — the part that was nearly missed — audit logging that actually happens. `audit_log` held 2 rows from my own probes until migration 0008 put triggers on 12 core tables, so a change is recorded whoever makes it and however. Detail in [STAGE-2.md](STAGE-2.md).
 
-On RLS: the plan is right that it should be laid down now even under a single tenant. The subtlety is that `farms` reaches `project_id` directly while `plots` and everything below reach it through `farms`, so the policies need a helper function rather than a column check, or every deep table pays a join per row. Worth doing once, carefully.
+`mcp_tokens` moved to stage 3: a token is scoped to a work order, and `work_orders` does not exist yet.
 
 ## Stage 3 — Sampling lifecycle
 
 `sampling_cycles`, `work_orders`, `mcp_tokens`, `sampling_events`, `samples`. State machines as enums with transitions written to `audit_log`. Sample ID generation.
 
-**Decide first:** the plan says 10 digits (`OFM0000000001`), the spec text agrees, and every mockup in the spec shows 8 (`OFM00021615`). The generator is a one-line change but the format ends up printed on physical sample bags and matched by the barcode scanner, so it wants to be right the first time. Flagging rather than guessing.
+**Settled 21 July 2026: 10 digits.** `OFM` + 10 zero-padded digits, e.g. `OFM0000021615`, giving a 13-character identifier.
+
+The spec's mockups show 8 digits (`OFM00021615`); the spec text, the work plan and Nitzan all say 10. Ten it is — the mockups are illustrative, and the format ends up printed on physical sample bags and matched by a barcode scanner, so widening it later would mean two incompatible ID formats in the same project.
+
+`mrv.next_sample_id()` in migration 0002 currently pads to 8 and must be changed to 10 when stage 3 lands. No sample rows exist yet, so this costs nothing now and would be painful after the first campaign.
 
 ## Stage 4 — Lab ingestion + SOC schema
 
@@ -86,8 +85,8 @@ Automated backups and snapshots (partly configured in Terraform already), S3 lif
 
 | # | Question | Blocks |
 |---|---|---|
-| 1 | RDS as planned, or Supabase alongside the SaaS? | Stage 0 apply — see [STAGE-0.md](STAGE-0.md) |
-| 2 | Sample ID width: 8 or 10 digits | Stage 3 |
+| ~~1~~ | ~~RDS or Supabase~~ — **settled: RDS**, provisioned 21 Jul 2026 | — |
+| ~~2~~ | ~~Sample ID width~~ — **settled: 10 digits** (21 Jul 2026) | ~~Stage 3~~ |
 | 3 | Confirm SOC ×100 with CropNut in writing | Stage 4 |
-| 4 | Does an MRV farm link to a SaaS `public.farms` row, and how? | Stage 1 seeding |
-| 5 | Which farms sit under which grouped project? | Stage 1 seeding |
+| 4 | Which system owns plot geometry — this database or the SaaS? Decides the Mapbox sync direction. `saas_farm_id`/`saas_plot_id` already link the two. | Mapbox sync |
+| ~~5~~ | ~~Which farms under which grouped project~~ — **settled**: both demo farms under `CARBO-3988-DEMO` | — |

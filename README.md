@@ -77,7 +77,7 @@ Three decisions worth knowing before reading the SQL:
 | **0** | Infrastructure: RDS + PostGIS, S3 + KMS, VPC, migration tooling, conventions, CI | **Done — provisioned and verified** |
 | **1** | Spatial schema + seed the demo farms | **Done — 2 farms, 7 plots live** |
 | **2** | Permissions, tokens, audit | **Done** — `mcp_tokens` moved to stage 3 |
-| **3** | Sampling lifecycle | Not started — Sample ID width to settle first |
+| **3** | Sampling lifecycle | Not started — Sample ID settled at 10 digits |
 | **4** | Lab ingestion + SOC schema | Not started; SOC function already in place |
 | **5** | Credits & compliance | Reference data built; commercial and QA3 accounting outstanding |
 | **6** | QA1 model structures | Not started |
