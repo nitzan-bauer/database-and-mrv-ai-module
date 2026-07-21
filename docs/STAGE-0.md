@@ -26,22 +26,41 @@ CI is the part that works today with no AWS account at all: it stands up Postgre
 
 ## Prerequisites
 
-Install locally (none are present today):
-
 ```powershell
-winget install Hashicorp.Terraform
-winget install Amazon.AWSCLI
-winget install PostgreSQL.psql        # or the full PostgreSQL installer
+.\scripts\bootstrap-windows.ps1
 ```
 
-dbmate is a single binary — download `dbmate-windows-amd64.exe` from its releases page and put it on your PATH.
+Installs Terraform, the AWS CLI and dbmate, skipping whatever is already present.
 
-Then configure AWS. An IAM user with `AdministratorAccess` is fine to start; tighten it once the stack settles.
+Current state on Nitzan's machine: **Terraform 1.15.8 and dbmate 2.34.1 are installed**; the AWS CLI is not. Its MSI needs administrator rights, and a silent install stalls waiting on a UAC prompt. Run this from an **elevated** PowerShell to finish it:
+
+```powershell
+winget install --id Amazon.AWSCLI -e
+```
+
+Terraform itself does not need the AWS CLI — the provider reads credentials directly, and `terraform output -raw database_url` gives you the connection string. The CLI is only needed for `aws configure` and for reading Secrets Manager by hand.
+
+A local PostgreSQL server is deliberately not installed. `psql` is only required to run the seeds and verification against a provisioned database, and CI already proves the schema applies to PostgreSQL 16 + PostGIS on every push.
+
+### Credentials
+
+**You must do this step yourself.** Create an IAM user in the AWS console with programmatic access (`AdministratorAccess` is fine to start; tighten once the stack settles), then:
 
 ```bash
 aws configure          # key, secret, region eu-west-1
-aws sts get-caller-identity   # confirm it works
+aws sts get-caller-identity   # confirm
 ```
+
+Without the AWS CLI, create `%USERPROFILE%\.aws\credentials` by hand:
+
+```ini
+[default]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+region = eu-west-1
+```
+
+Never paste access keys into a chat window, a commit, or a `.tf` file. `~/.aws/credentials` and environment variables are the only places they belong.
 
 ---
 

@@ -18,6 +18,17 @@ output "db_secret_name" {
   value       = aws_secretsmanager_secret.db.name
 }
 
+# Secrets Manager is the system of record for this. Exposed here as well
+# so the connection string is reachable without the AWS CLI:
+#   terraform output -raw database_url
+# The password is in Terraform state either way, so this reveals nothing
+# that state did not already hold — keep the state file protected.
+output "database_url" {
+  description = "Ready-to-use DATABASE_URL. Sensitive — read with: terraform output -raw database_url"
+  value       = "postgresql://${var.db_username}:${urlencode(random_password.db.result)}@${aws_db_instance.main.endpoint}/${var.db_name}?sslmode=require"
+  sensitive   = true
+}
+
 output "s3_buckets" {
   description = "Bucket names by purpose."
   value       = { for k, b in aws_s3_bucket.main : k => b.id }
