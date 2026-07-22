@@ -145,11 +145,14 @@ n_total  =  max( economic optimum ,  3 × number of strata )
 
 For a 250 ha farm the floor starts binding at about **6 strata**. Below that the economic optimum governs and extra strata are free; above it, each new stratum costs 3 samples. **Four to six texture-based strata per farm is the sweet spot** — enough to capture real texture variation, not so many that the floor drives the count.
 
-## 8. Not yet researched
+## 8. The companion modules — researched
 
-This note covers VM0042 v2.2 itself, which is where Equations 70, 71 and 74 live, so the sampling-design question is answered from the primary source. Still outstanding:
+VMD0053, VT0014, VMD0054 and the underlying IPCC guidance were all reviewed against primary PDFs. The findings reinforce §1–§7 and add one genuinely new lever (VT0014). Full detail in [`REGULATORY-BASIS.md`](REGULATORY-BASIS.md); the load-bearing points:
 
-- **VMD0053** — model calibration, validation and uncertainty. Governs the QA1 path and the MVR. Affects the deduction when modelling rather than remeasuring.
-- **VT0014**, **VMD0054** — referenced tools.
-- **IPCC 2019 Refinement** — Verra defers to it for emission factors, already partly captured in `GHG-CALCULATOR.md`. Its uncertainty guidance (Vol 1 Ch 3) is the source of the error-propagation approach behind Equations 60–69.
-- The FAO (2019, 2020) and World Bank (2021) sampling annexes VM0042 cites as the detailed how-to for stratified random sampling.
+**No module sets a sample count.** VM0042, VMD0053 and VT0014 all decline to specify one. VMD0053 is silent; VT0014 §5.2.1(5) states verbatim "There is no fixed minimum number of soil samples"; IPCC delegates it entirely to the compiler's uncertainty analysis. The "1 per 10 ha" rule is absent from every version of VM0042 (v1.0–v2.2) and from every module. It is practitioner folklore — see [`REGULATORY-BASIS.md`](REGULATORY-BASIS.md) §1.
+
+**QA1 does not reduce soil coring versus QA2.** Both need SOC + BD at t=0 and every 5 years. What QA1 removes is the baseline **control-site** network, decouples sampling frequency from verification frequency, and never requires in-project N₂O/CH₄ flux measurement (those come from literature for calibration). The cost is the MVR, an IME the VVB hires, and modelled prediction error entering the deduction. See §4 of the regulatory brief.
+
+**VT0014 (digital soil mapping) is the real lever.** Calibration data may come from outside the project area, from before the project start, or be synthetic; only the *validation* set must be physical, in-project and post-start. There is no minimum count. In-project coring can collapse toward a validation set sized to satisfy a variogram (≥50 point-pairs per lag bin in 0–500 m) and a 90% coverage test. The cost is priced, not gated: a weak map passes validation (the bar is R² > 0) but widens its prediction intervals, which enlarges the Eq. 74 deduction. Full analysis in the regulatory brief §3.
+
+**The interval lever is confirmed by IPCC too.** IPCC 2019 Vol 4 Ch 2.5.1: re-sample "every 3 to 5 years or each decade; shorter sampling frequencies are not likely to produce significant differences due to small annual changes in C stocks relative to the large total." This is the same signal-accumulates-noise-doesn't logic as §3 above, from the source Verra defers to.
