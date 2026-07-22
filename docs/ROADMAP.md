@@ -10,8 +10,8 @@ An earlier draft of this file used an A/B/C lettering; that is superseded. What 
 | **1** | Spatial schema + seeding the demo farms | ✅ Done — [STAGE-1](STAGE-1.md) |
 | **2** | Permissions, tokens, audit | ✅ Done — [STAGE-2](STAGE-2.md) |
 | **3** | Sampling lifecycle | ✅ Done — [STAGE-3](STAGE-3.md) |
-| **4** | Lab ingestion + SOC schema | ◀ next |
-| **5** | Credits & compliance | Reference data built |
+| **4** | Lab ingestion + SOC schema | ✅ Done — [STAGE-4](STAGE-4.md) |
+| **5** | Credits & compliance | ◀ next · reference data built |
 | **6** | QA1 model structures | Not started |
 | **7** | Hardening, backups, audit-readiness | Ongoing from stage 6 |
 
@@ -87,6 +87,6 @@ Automated backups and snapshots (partly configured in Terraform already), S3 lif
 |---|---|---|
 | ~~1~~ | ~~RDS or Supabase~~ — **settled: RDS**, provisioned 21 Jul 2026 | — |
 | ~~2~~ | ~~Sample ID width~~ — **settled: 10 digits** (21 Jul 2026) | ~~Stage 3~~ |
-| 3 | Confirm SOC ×100 with CropNut in writing | Stage 4 |
+| ~~3~~ | ~~Confirm SOC ×100~~ — **confirmed**: the CropNut datasheet formula is ×100 | — |
 | 4 | Which system owns plot geometry — this database or the SaaS? Decides the Mapbox sync direction. `saas_farm_id`/`saas_plot_id` already link the two. | Mapbox sync |
 | ~~5~~ | ~~Which farms under which grouped project~~ — **settled**: both demo farms under `CARBO-3988-DEMO` | — |

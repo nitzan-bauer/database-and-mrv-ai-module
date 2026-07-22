@@ -8,7 +8,7 @@ This is a separate system from the customer-facing SaaS (`carbonature-saas`, the
 
 ## Where things stand
 
-**Stages 0 through 3 are done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector runs in `eu-west-1`; ten migrations are applied and 20 verification checks pass against the real instance. Two farms and seven plots are seeded, and every change to a core table is now written to the audit log by trigger. `mcp_tokens` is the one deferral, moved to stage 3 where work orders live.
+**Stages 0 through 4 are done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector runs in `eu-west-1`; eleven migrations are applied and 22 verification checks pass against the real instance. Two farms and seven plots are seeded, and every change to a core table is now written to the audit log by trigger. `mcp_tokens` is the one deferral, moved to stage 3 where work orders live.
 
 **Everything seeded so far is DEMO data.** Elad Farm and Nitzan-Veg-Tech Farm are demonstration farms, not clients. This is enforced by trigger, not convention — see [docs/STAGE-1.md](docs/STAGE-1.md).
 
@@ -78,14 +78,14 @@ Three decisions worth knowing before reading the SQL:
 | **1** | Spatial schema + seed the demo farms | **Done — 2 farms, 7 plots live** |
 | **2** | Permissions, tokens, audit | **Done** — `mcp_tokens` moved to stage 3 |
 | **3** | Sampling lifecycle | **Done — 5 tables, state machines, texture as its own sample type** |
-| **4** | Lab ingestion + SOC schema | Not started; SOC function already in place |
+| **4** | Lab ingestion + SOC schema | **Done — 6 tables, DIN 19539 fractions, ESM inputs** |
 | **5** | Credits & compliance | Reference data built; commercial and QA3 accounting outstanding |
 | **6** | QA1 model structures | Not started |
 | **7** | Hardening, backups, audit-readiness | Backups and lifecycle configured in Terraform |
 
-20 tables so far — 9 core hierarchy, 3 reference, 2 audit, `agent_memory`, and 5 for the sampling lifecycle — plus the `v_real_plots` view. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
+26 tables so far — 9 core hierarchy, 3 reference, 2 audit, `agent_memory`, 5 for the sampling lifecycle and 6 for lab ingestion — plus the `v_real_plots` view. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
 
-Per-stage records: [STAGE-0](docs/STAGE-0.md) · [STAGE-1](docs/STAGE-1.md) · [STAGE-2](docs/STAGE-2.md) · [STAGE-3](docs/STAGE-3.md). Regulatory research: [REGULATORY-BASIS](docs/REGULATORY-BASIS.md) · [SAMPLE-SIZE-OPTIMISATION](docs/SAMPLE-SIZE-OPTIMISATION.md). Capacity measurements and the raster decision: [GIS-CAPACITY](docs/GIS-CAPACITY.md). [ROADMAP](docs/ROADMAP.md) has the open questions attached to each stage.
+Per-stage records: [STAGE-0](docs/STAGE-0.md) · [STAGE-1](docs/STAGE-1.md) · [STAGE-2](docs/STAGE-2.md) · [STAGE-3](docs/STAGE-3.md) · [STAGE-4](docs/STAGE-4.md). Regulatory research: [REGULATORY-BASIS](docs/REGULATORY-BASIS.md) · [SAMPLE-SIZE-OPTIMISATION](docs/SAMPLE-SIZE-OPTIMISATION.md). Capacity measurements and the raster decision: [GIS-CAPACITY](docs/GIS-CAPACITY.md). [ROADMAP](docs/ROADMAP.md) has the open questions attached to each stage.
 
 ---
 

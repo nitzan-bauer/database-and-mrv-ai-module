@@ -28,14 +28,14 @@ BEGIN
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 20 THEN
-    RAISE EXCEPTION 'FAIL  | expected 20 base tables in mrv, found %', n;
+  IF n <> 26 THEN
+    RAISE EXCEPTION 'FAIL  | expected 26 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 20 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 26 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -471,6 +471,73 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | cycle jumped draft -> complete';
   END IF;
   RAISE NOTICE 'PASS  | cycle state machine rejects illegal transitions';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- Stage 4 — lab ingestion and SOC
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  n int;
+BEGIN
+  SELECT count(*) INTO n
+  FROM information_schema.tables
+  WHERE table_schema = 'mrv'
+    AND table_name IN ('labs','lab_imports','soc_measurements',
+                       'texture_measurements','import_quarantine','esm_soc_stocks');
+  IF n <> 6 THEN
+    RAISE EXCEPTION 'FAIL  | expected 6 stage-4 tables, found %', n;
+  END IF;
+
+  -- work_orders.lab_id was a bare uuid until stage 4 created mrv.labs.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'work_orders_lab_fk' AND contype = 'f'
+  ) THEN
+    RAISE EXCEPTION 'FAIL  | work_orders.lab_id is not tied to mrv.labs';
+  END IF;
+  RAISE NOTICE 'PASS  | stage 4 tables present, work_orders.lab_id constrained';
+END $$;
+
+-- TOC must be the sum of the two organic fractions, computed by the
+-- database. Treating TOC400 alone as organic carbon under-reports any
+-- soil holding char or soot, which is common on burnt residue.
+DO $$
+DECLARE
+  v_generated text;
+BEGIN
+  -- Name the variable distinctly: `is_generated` would shadow the
+  -- information_schema column of the same name.
+  SELECT c.is_generated INTO v_generated
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'mrv' AND c.table_name = 'soc_measurements' AND c.column_name = 'toc_pct';
+
+  IF v_generated IS DISTINCT FROM 'ALWAYS' THEN
+    RAISE EXCEPTION 'FAIL  | soc_measurements.toc_pct must be GENERATED, not enterable';
+  END IF;
+  RAISE NOTICE 'PASS  | TOC is generated as TOC400 + ROC600';
+END $$;
+
+-- The two routes to soil mass must agree. Where a lab reports dry mass,
+-- probe area AND bulk density, a disagreement means one of them is
+-- wrong — most often a decimal slip in the mass.
+DO $$
+DECLARE
+  bad int;
+BEGIN
+  SELECT count(*) INTO bad
+  FROM mrv.soc_measurements
+  WHERE dry_sample_mass_g IS NOT NULL
+    AND probe_area_cm2 IS NOT NULL
+    AND bulk_density IS NOT NULL
+    AND abs( (dry_sample_mass_g / probe_area_cm2 * 100)
+             - (bulk_density * (depth_base_cm - depth_top_cm) * 100) )
+        > 0.15 * (bulk_density * (depth_base_cm - depth_top_cm) * 100);
+
+  IF bad > 0 THEN
+    RAISE EXCEPTION 'FAIL  | % measurement(s) where dry-mass and bulk-density soil mass disagree by >15%%', bad;
+  END IF;
+  RAISE NOTICE 'PASS  | soil mass agrees between the ESM and bulk-density routes';
 END $$;
 
 \echo ''
