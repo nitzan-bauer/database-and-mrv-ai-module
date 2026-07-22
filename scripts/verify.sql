@@ -22,20 +22,20 @@ DO $$
 DECLARE
   n int;
 BEGIN
-  -- 9 core hierarchy + 3 reference + 2 audit + agent_memory.
+  -- 9 core hierarchy + 3 reference + 2 audit + agent_memory + 5 stage-3.
   -- BASE TABLE only: information_schema.tables counts views too, and
   -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 15 THEN
-    RAISE EXCEPTION 'FAIL  | expected 15 base tables in mrv, found %', n;
+  IF n <> 20 THEN
+    RAISE EXCEPTION 'FAIL  | expected 20 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 15 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 20 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -46,8 +46,8 @@ BEGIN
   JOIN pg_class c      ON c.relname = g.f_table_name
   JOIN pg_namespace ns ON ns.oid = c.relnamespace AND ns.nspname = g.f_table_schema
   WHERE g.f_table_schema = 'mrv' AND c.relkind = 'r';
-  IF n <> 4 THEN
-    RAISE EXCEPTION 'FAIL  | expected 4 geometry columns on base tables, found %', n;
+  IF n <> 5 THEN
+    RAISE EXCEPTION 'FAIL  | expected 5 geometry columns on base tables, found %', n;
   END IF;
 
   SELECT count(*) INTO n
@@ -55,12 +55,12 @@ BEGIN
   IF n <> 0 THEN
     RAISE EXCEPTION 'FAIL  | % geometry column(s) are not SRID 4326', n;
   END IF;
-  RAISE NOTICE 'PASS  | 4 geometry columns, all SRID 4326';
+  RAISE NOTICE 'PASS  | 5 geometry columns, all SRID 4326';
 
   SELECT count(*) INTO n
   FROM pg_indexes WHERE schemaname = 'mrv' AND indexdef LIKE '%USING gist%';
-  IF n < 4 THEN
-    RAISE EXCEPTION 'FAIL  | expected at least 4 GIST indexes, found %', n;
+  IF n < 5 THEN
+    RAISE EXCEPTION 'FAIL  | expected at least 5 GIST indexes, found %', n;
   END IF;
   RAISE NOTICE 'PASS  | % GIST indexes', n;
 
@@ -377,6 +377,100 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | % audit row(s) carry raw geometry in the payload', bad;
   END IF;
   RAISE NOTICE 'PASS  | audit payloads strip geometry and embeddings';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- Stage 3 — sampling lifecycle
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  n int;
+  sid text;
+BEGIN
+  SELECT count(*) INTO n
+  FROM information_schema.tables
+  WHERE table_schema = 'mrv'
+    AND table_name IN ('sampling_cycles','work_orders','mcp_tokens','sampling_events','samples');
+  IF n <> 5 THEN
+    RAISE EXCEPTION 'FAIL  | expected 5 stage-3 tables, found %', n;
+  END IF;
+
+  -- Sample ID is OFM + exactly 10 digits. Printed on physical bags and
+  -- matched by a barcode scanner, so the format is load-bearing.
+  sid := mrv.next_sample_id();
+  IF sid !~ '^OFM[0-9]{10}$' THEN
+    RAISE EXCEPTION 'FAIL  | Sample ID % is not OFM + 10 digits', sid;
+  END IF;
+  RAISE NOTICE 'PASS  | stage 3 tables present, Sample ID format % (13 chars)', sid;
+END $$;
+
+-- The USDA triangle must partition the whole simplex: every composition
+-- gets exactly one class. A gap or a double-match means wrong boundaries.
+DO $$
+DECLARE
+  s int; si int; gaps int := 0; found int;
+BEGIN
+  FOR s IN 0..100 LOOP
+    FOR si IN 0..(100 - s) LOOP
+      IF mrv.usda_texture_class(s, si, 100 - s - si) IS NULL THEN
+        gaps := gaps + 1;
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF gaps <> 0 THEN
+    RAISE EXCEPTION 'FAIL  | % texture compositions match no USDA class', gaps;
+  END IF;
+
+  SELECT count(DISTINCT mrv.usda_texture_class(a.s, a.si, 100 - a.s - a.si)) INTO found
+  FROM (SELECT g1 AS s, g2 AS si
+        FROM generate_series(0,100) g1, generate_series(0,100) g2
+        WHERE g1 + g2 <= 100) a;
+  IF found <> 12 THEN
+    RAISE EXCEPTION 'FAIL  | expected 12 USDA classes, found %', found;
+  END IF;
+
+  IF mrv.usda_texture_class(20,20,60) <> 'clay'
+     OR mrv.usda_texture_class(40,40,20) <> 'loam'
+     OR mrv.usda_texture_class(10,85,5) <> 'silt' THEN
+    RAISE EXCEPTION 'FAIL  | USDA classification returned a wrong class';
+  END IF;
+  RAISE NOTICE 'PASS  | USDA triangle tiles the simplex: 5151 points, 0 gaps, 12 classes';
+END $$;
+
+-- State machines must reject illegal jumps rather than record them.
+DO $$
+DECLARE
+  blocked boolean := false;
+  v_farm uuid;
+  v_cycle uuid;
+BEGIN
+  SELECT farm_id INTO v_farm FROM mrv.farms LIMIT 1;
+  IF v_farm IS NULL THEN
+    RAISE NOTICE 'SKIP  | no farm seeded, cannot probe state machine';
+    RETURN;
+  END IF;
+
+  INSERT INTO mrv.sampling_cycles (farm_id, cycle_number, cycle_type, approach)
+  VALUES (v_farm, 9999, 'initial', 'QA2')
+  RETURNING cycle_id INTO v_cycle;
+
+  -- Cycle 1 semantics: this is cycle 9999, so texture is NOT defaulted on.
+  IF (SELECT collect_texture FROM mrv.sampling_cycles WHERE cycle_id = v_cycle) THEN
+    RAISE EXCEPTION 'FAIL  | collect_texture defaulted true on a non-first cycle';
+  END IF;
+
+  BEGIN
+    UPDATE mrv.sampling_cycles SET status = 'complete' WHERE cycle_id = v_cycle;
+  EXCEPTION WHEN others THEN
+    blocked := true;
+  END;
+
+  DELETE FROM mrv.sampling_cycles WHERE cycle_id = v_cycle;
+
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'FAIL  | cycle jumped draft -> complete';
+  END IF;
+  RAISE NOTICE 'PASS  | cycle state machine rejects illegal transitions';
 END $$;
 
 \echo ''

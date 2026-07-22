@@ -9,8 +9,8 @@ An earlier draft of this file used an A/B/C lettering; that is superseded. What 
 | **0** | Infrastructure | ✅ Provisioned and verified — [STAGE-0](STAGE-0.md) |
 | **1** | Spatial schema + seeding the demo farms | ✅ Done — [STAGE-1](STAGE-1.md) |
 | **2** | Permissions, tokens, audit | ✅ Done — [STAGE-2](STAGE-2.md) |
-| **3** | Sampling lifecycle | ◀ next |
-| **4** | Lab ingestion + SOC schema | Not started |
+| **3** | Sampling lifecycle | ✅ Done — [STAGE-3](STAGE-3.md) |
+| **4** | Lab ingestion + SOC schema | ◀ next |
 | **5** | Credits & compliance | Reference data built |
 | **6** | QA1 model structures | Not started |
 | **7** | Hardening, backups, audit-readiness | Ongoing from stage 6 |
