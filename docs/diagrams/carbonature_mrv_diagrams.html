@@ -1,0 +1,396 @@
+<meta charset="utf-8">
+<title>CarboNature MRV — Data Flow & System Architecture</title>
+<style>
+  :root {
+    --ink: #12201b; --ground: #f5f7f6; --panel: #ffffff; --panel-2: #eef1f0;
+    --line: #d3dbd8; --line-strong: #b4c0bb;
+    --muted: #5c6b65; --faint: #8695902;
+    --accent: #1f6f54;            /* Verra forest — the domain */
+    --verify: #2563eb;            /* verification lineage */
+    --commerce: #b45f06;          /* commercial branch */
+    --ai: #7c3aed;                /* AI / agent layer */
+    --audit: #475569;            /* audit + governance */
+    --gov-bg: #e9efec;
+    --shadow: 0 1px 2px rgba(18,32,27,.06), 0 8px 24px rgba(18,32,27,.05);
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8efeb; --ground: #0e1614; --panel: #16211d; --panel-2: #1c2925;
+      --line: #2a3833; --line-strong: #3a4b45; --muted: #9aa9a3; --faint: #6b7a74;
+      --accent: #4bbd93; --verify: #6ea0ff; --commerce: #e0954a; --ai: #b48bff; --audit: #93a3b4;
+      --gov-bg: #17231f;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --ink: #12201b; --ground: #f5f7f6; --panel: #ffffff; --panel-2: #eef1f0;
+    --line: #d3dbd8; --line-strong: #b4c0bb; --muted: #5c6b65; --faint: #869590;
+    --accent: #1f6f54; --verify: #2563eb; --commerce: #b45f06; --ai: #7c3aed; --audit: #475569;
+    --gov-bg: #e9efec;
+    --shadow: 0 1px 2px rgba(18,32,27,.06), 0 8px 24px rgba(18,32,27,.05);
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8efeb; --ground: #0e1614; --panel: #16211d; --panel-2: #1c2925;
+    --line: #2a3833; --line-strong: #3a4b45; --muted: #9aa9a3; --faint: #6b7a74;
+    --accent: #4bbd93; --verify: #6ea0ff; --commerce: #e0954a; --ai: #b48bff; --audit: #93a3b4;
+    --gov-bg: #17231f;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.55;
+    font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 40px 28px 72px; }
+
+  header { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 8px; }
+  .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: clamp(24px, 3.4vw, 34px); line-height: 1.12; margin: 0 0 8px; letter-spacing: -.015em; text-wrap: balance; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 15px; max-width: 62ch; margin: 0; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 16px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--faint);
+  }
+  .meta b { color: var(--muted); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 26px 0 4px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); font-family: var(--mono); }
+  .dot { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+  section { margin-top: 40px; }
+  .fig-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+  .fig-num { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 600; letter-spacing: .08em; }
+  h2 { font-size: 20px; margin: 0; letter-spacing: -.01em; font-weight: 620; }
+  .fig-note { color: var(--muted); font-size: 13.5px; margin: 6px 0 20px; max-width: 74ch; }
+
+  .board {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 26px 22px; overflow-x: auto;
+  }
+  .board svg { display: block; width: 100%; height: auto; min-width: 720px; }
+
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11.5px; color: var(--faint); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  /* SVG shared type */
+  svg text { font-family: var(--sans); fill: var(--ink); }
+  svg .t-title { font-weight: 640; font-size: 13px; }
+  svg .t-sub { font-family: var(--mono); font-size: 10px; fill: var(--muted); }
+  svg .t-tbl { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+  svg .t-lane { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
+  svg .t-cap { font-family: var(--mono); font-size: 9.5px; fill: var(--faint); letter-spacing: .04em; }
+  svg .flow { stroke: var(--line-strong); stroke-width: 1.6; fill: none; }
+  svg .flow-emph { stroke: var(--accent); stroke-width: 2; fill: none; }
+
+  @media print {
+    @page { margin: 14mm 12mm; }
+    body { background: #fff; }
+    .wrap { max-width: none; padding: 0; }
+    .board { box-shadow: none; break-inside: avoid; page-break-inside: avoid; border-color: #ccc; overflow: visible; }
+    .board svg { min-width: 0; }              /* no horizontal scroll strip in print */
+    section { break-inside: avoid; }
+    section + section { break-before: page; }  /* one figure per page */
+    footer { border-color: #ccc; }
+    header { break-after: avoid; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="kicker">CarboNature · Database &amp; MRV AI-Module</p>
+    <h1>Soil-carbon MRV — Data Flow &amp; System Architecture</h1>
+    <p class="sub">The verification backbone for Verra VM0042 v2.2 agricultural carbon projects: how field evidence becomes an audit-ready, credited number, and the seven schema domains that hold it.</p>
+    <div class="meta">
+      <span><b>Engine</b> PostgreSQL 16 · PostGIS · pgvector</span>
+      <span><b>Schema</b> mrv · 41 tables · 4 views</span>
+      <span><b>Host</b> AWS RDS eu-west-1</span>
+      <span><b>Status</b> 7/7 stages live</span>
+    </div>
+  </header>
+
+  <div class="legend" aria-hidden="true">
+    <span><i class="dot" style="background:var(--verify)"></i>Verification lineage</span>
+    <span><i class="dot" style="background:var(--commerce)"></i>Commercial &amp; GHG accounting</span>
+    <span><i class="dot" style="background:var(--accent)"></i>Spatial core</span>
+    <span><i class="dot" style="background:var(--ai)"></i>AI / agent layer</span>
+    <span><i class="dot" style="background:var(--audit)"></i>Governance &amp; audit</span>
+  </div>
+
+  <!-- ============================ FIGURE 1 ============================ -->
+  <section>
+    <div class="fig-head">
+      <span class="fig-num">FIG 1</span>
+      <h2>Data Flow</h2>
+    </div>
+    <p class="fig-note">Left to right: a physical soil sample and a farm's activity records enter, are validated and stored append-only, drive the SOC and GHG computation, and roll up into credits and Verra units — every step written to an immutable audit log.</p>
+    <div class="board">
+      <svg viewBox="0 0 980 470" role="img" aria-labelledby="f1title f1desc">
+        <title id="f1title">MRV data flow from field sources to issued carbon units</title>
+        <desc id="f1desc">Five stages: sources (soil sample, farm activity, GeoJSON plots), ingestion (work order, MCP sampler, lab import with SHA-256, quarantine on failure), append-only store (samples, SOC measurements, texture, activity data), computation (SOC stock with ESM, GHG emissions engine, stratum statistics, compliance, QA1 model), and issuance (credits, VCU units). An audit log spans all stages.</desc>
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M1.5 1.5 L8.5 5 L1.5 8.5" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+
+        <!-- lane headers -->
+        <g class="t-lane" fill="var(--faint)">
+          <text x="14" y="26">Sources</text>
+          <text x="216" y="26">Ingest &amp; validate</text>
+          <text x="454" y="26">Store · append-only</text>
+          <text x="690" y="26">Compute</text>
+          <text x="878" y="26">Issue</text>
+        </g>
+        <line x1="14" y1="34" x2="966" y2="34" stroke="var(--line)" stroke-width="1"/>
+
+        <!-- lane separators (faint) -->
+        <g stroke="var(--line)" stroke-width="1" stroke-dasharray="2 5" opacity=".8">
+          <line x1="196" y1="44" x2="196" y2="410"/>
+          <line x1="436" y1="44" x2="436" y2="410"/>
+          <line x1="672" y1="44" x2="672" y2="410"/>
+          <line x1="852" y1="44" x2="852" y2="410"/>
+        </g>
+
+        <!-- SOURCES -->
+        <g>
+          <rect x="14" y="60" width="168" height="52" rx="8" fill="var(--panel-2)" stroke="var(--line-strong)"/>
+          <text class="t-title" x="28" y="82">Soil sample</text>
+          <text class="t-sub" x="28" y="98">OFM + 10 digits · barcode</text>
+
+          <rect x="14" y="196" width="168" height="52" rx="8" fill="var(--panel-2)" stroke="var(--line-strong)"/>
+          <text class="t-title" x="28" y="218">Farm activity</text>
+          <text class="t-sub" x="28" y="234">fertiliser · fuel · residue</text>
+
+          <rect x="14" y="330" width="168" height="52" rx="8" fill="var(--panel-2)" stroke="var(--line-strong)"/>
+          <text class="t-title" x="28" y="352">Plot geometry</text>
+          <text class="t-sub" x="28" y="368">GeoJSON → PostGIS</text>
+        </g>
+
+        <!-- INGEST -->
+        <g>
+          <rect x="216" y="52" width="200" height="70" rx="8" fill="var(--panel)" stroke="var(--verify)" stroke-width="1.5"/>
+          <text class="t-title" x="232" y="74" fill="var(--verify)">Field capture</text>
+          <text class="t-tbl" x="232" y="91">work_orders · mcp_tokens</text>
+          <text class="t-tbl" x="232" y="105">sampling_events (GPS, photo)</text>
+
+          <rect x="216" y="186" width="200" height="86" rx="8" fill="var(--panel)" stroke="var(--verify)" stroke-width="1.5"/>
+          <text class="t-title" x="232" y="208" fill="var(--verify)">Lab ingestion</text>
+          <text class="t-tbl" x="232" y="225">lab_imports · SHA-256</text>
+          <text class="t-tbl" x="232" y="239">labs · ISO 17025</text>
+          <text class="t-tbl" x="232" y="256" fill="var(--commerce)">import_quarantine ⃠ on fail</text>
+        </g>
+
+        <!-- STORE -->
+        <g>
+          <rect x="456" y="52" width="196" height="86" rx="8" fill="var(--panel)" stroke="var(--verify)" stroke-width="1.5"/>
+          <text class="t-title" x="472" y="74" fill="var(--verify)">Evidence</text>
+          <text class="t-tbl" x="472" y="91">samples · soc_measurements</text>
+          <text class="t-tbl" x="472" y="105">texture_measurements</text>
+          <text class="t-cap" x="472" y="123">append-only · a fix is a new row</text>
+
+          <rect x="456" y="196" width="196" height="76" rx="8" fill="var(--panel)" stroke="var(--commerce)" stroke-width="1.5"/>
+          <text class="t-title" x="472" y="218" fill="var(--commerce)">Activity records</text>
+          <text class="t-tbl" x="472" y="235">activity_data</text>
+          <text class="t-tbl" x="472" y="249">fertilizer_applications</text>
+
+          <rect x="456" y="330" width="196" height="60" rx="8" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text class="t-title" x="472" y="352" fill="var(--accent)">Spatial core</text>
+          <text class="t-tbl" x="472" y="369">plots · strata · points</text>
+        </g>
+
+        <!-- COMPUTE -->
+        <g>
+          <rect x="692" y="52" width="156" height="70" rx="8" fill="var(--panel)" stroke="var(--verify)" stroke-width="1.5"/>
+          <text class="t-title" x="708" y="74" fill="var(--verify)">SOC stock</text>
+          <text class="t-tbl" x="708" y="91">esm_soc_stocks</text>
+          <text class="t-cap" x="708" y="108">equivalent soil mass</text>
+
+          <rect x="692" y="140" width="156" height="66" rx="8" fill="var(--panel)" stroke="var(--commerce)" stroke-width="1.5"/>
+          <text class="t-title" x="708" y="162" fill="var(--commerce)">GHG engine</text>
+          <text class="t-tbl" x="708" y="179">emission_results</text>
+          <text class="t-cap" x="708" y="196">fuel CO₂ · fertiliser N₂O</text>
+
+          <rect x="692" y="224" width="156" height="60" rx="8" fill="var(--panel)" stroke="var(--verify)" stroke-width="1.5"/>
+          <text class="t-title" x="708" y="246" fill="var(--verify)">Compliance</text>
+          <text class="t-tbl" x="708" y="263">stratum_statistics</text>
+          <text class="t-tbl" x="708" y="277" fill="var(--muted)">8 hard checks · score</text>
+
+          <rect x="692" y="330" width="156" height="60" rx="8" fill="var(--panel)" stroke="var(--ai)" stroke-width="1.5"/>
+          <text class="t-title" x="708" y="352" fill="var(--ai)">QA1 model</text>
+          <text class="t-tbl" x="708" y="369">model_runs · mvr</text>
+        </g>
+
+        <!-- ISSUE -->
+        <g>
+          <rect x="866" y="120" width="100" height="150" rx="8" fill="var(--accent)" stroke="none"/>
+          <text class="t-title" x="882" y="150" fill="#fff">Credits</text>
+          <text x="882" y="168" style="font-family:var(--mono);font-size:10px;fill:rgba(255,255,255,.85)">credits</text>
+          <text x="882" y="182" style="font-family:var(--mono);font-size:10px;fill:rgba(255,255,255,.85)">tCO₂e / ha</text>
+          <line x1="882" y1="198" x2="950" y2="198" stroke="rgba(255,255,255,.3)"/>
+          <text class="t-title" x="882" y="222" fill="#fff">VCU units</text>
+          <text x="882" y="240" style="font-family:var(--mono);font-size:10px;fill:rgba(255,255,255,.85)">vcu_issuances</text>
+          <text x="882" y="254" style="font-family:var(--mono);font-size:10px;fill:rgba(255,255,255,.85)">Verra serial</text>
+        </g>
+
+        <!-- flows -->
+        <g>
+          <!-- sources -> ingest -->
+          <path class="flow" d="M182 86 H216" marker-end="url(#ar)"/>
+          <path class="flow" d="M182 222 H216" marker-end="url(#ar)"/>
+          <!-- plot geometry straight to spatial core -->
+          <path class="flow" d="M182 356 H456" marker-end="url(#ar)"/>
+          <!-- ingest -> store -->
+          <path class="flow-emph" d="M416 90 C 436 90, 436 95, 456 95" marker-end="url(#ar)"/>
+          <path class="flow" d="M416 226 C 436 226, 436 232, 456 232" marker-end="url(#ar)"/>
+          <!-- store -> compute -->
+          <path class="flow-emph" d="M652 95 C 672 95, 672 82, 692 82" marker-end="url(#ar)"/>
+          <path class="flow" d="M652 232 C 672 232, 672 172, 692 172" marker-end="url(#ar)"/>
+          <path class="flow" d="M652 360 C 672 360, 672 254, 692 254" marker-end="url(#ar)"/>
+          <!-- spatial core also feeds compliance/model -->
+          <path class="flow" d="M652 372 C 672 372, 672 360, 692 360" marker-end="url(#ar)"/>
+          <!-- compute -> issue -->
+          <path class="flow-emph" d="M848 172 C 858 172, 858 175, 866 175" marker-end="url(#ar)"/>
+          <path class="flow" d="M848 254 C 858 254, 858 210, 866 210" marker-end="url(#ar)"/>
+        </g>
+
+        <!-- audit spine -->
+        <rect x="14" y="426" width="952" height="30" rx="7" fill="var(--gov-bg)" stroke="var(--audit)" stroke-dasharray="4 3"/>
+        <text class="t-title" x="28" y="445" fill="var(--audit)">audit_log</text>
+        <text class="t-cap" x="120" y="445" fill="var(--muted)">every insert / update / delete across all stages · who, what, when · append-only · retention: project life + 5 yr</text>
+        <g stroke="var(--audit)" stroke-width="1" opacity=".5" stroke-dasharray="2 4">
+          <line x1="98" y1="400" x2="98" y2="426"/>
+          <line x1="360" y1="400" x2="360" y2="426"/>
+          <line x1="560" y1="400" x2="560" y2="426"/>
+          <line x1="770" y1="400" x2="770" y2="426"/>
+        </g>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ============================ FIGURE 2 ============================ -->
+  <section>
+    <div class="fig-head">
+      <span class="fig-num">FIG 2</span>
+      <h2>System Architecture</h2>
+    </div>
+    <p class="fig-note">The seven schema domains as a layered stack, all inside one <code style="font-family:var(--mono);font-size:.9em">mrv</code> Postgres schema on AWS. Two lineages — verification and commercial — meet only at the plot; a governance layer wraps everything; the AI layer sits ready for the module ahead.</p>
+    <div class="board">
+      <svg viewBox="0 0 980 592" role="img" aria-labelledby="f2title f2desc">
+        <title id="f2title">Seven-domain system architecture of the MRV database</title>
+        <desc id="f2desc">A layered stack. Infrastructure at the base (AWS RDS PostgreSQL 16, PostGIS, pgvector, KMS-encrypted S3, VPC). Above it the spatial core (organizations, projects, farms, plots, strata, sampling points, baseline control sites). Then two parallel lineages that meet at the plot: verification (sampling lifecycle, lab and SOC, QA1 model) and commercial (GHG reference and engine, credits and compliance). A governance layer of permissions, audit and retention wraps the data domains. An AI and agent layer sits on top, ready for the AI-MRV module.</desc>
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M1.5 1.5 L8.5 5 L1.5 8.5" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+
+        <!-- AI layer (top) -->
+        <rect x="14" y="20" width="952" height="64" rx="9" fill="none" stroke="var(--ai)" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text class="t-lane" x="30" y="42" fill="var(--ai)">AI / agent layer — next phase</text>
+        <g>
+          <rect x="250" y="50" width="156" height="26" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text class="t-tbl" x="264" y="67" fill="var(--ai)">agent_memory · pgvector</text>
+          <rect x="418" y="50" width="150" height="26" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text class="t-tbl" x="432" y="67" fill="var(--ai)">agent_action_policies</text>
+          <rect x="580" y="50" width="186" height="26" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text class="t-tbl" x="594" y="67" fill="var(--muted)">DNDC / DayCent runners ⟳</text>
+        </g>
+
+        <!-- GOVERNANCE wrap -->
+        <rect x="14" y="98" width="952" height="314" rx="10" fill="var(--gov-bg)" stroke="var(--audit)" stroke-width="1.3"/>
+        <text class="t-lane" x="30" y="120" fill="var(--audit)">Governance &amp; audit</text>
+        <g>
+          <rect x="744" y="132" width="208" height="26" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text class="t-tbl" x="758" y="149">users · project_memberships</text>
+          <rect x="744" y="164" width="208" height="26" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text class="t-tbl" x="758" y="181">audit_log · retention_policy</text>
+          <rect x="744" y="196" width="208" height="26" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text class="t-tbl" x="758" y="213" fill="var(--muted)">RLS policies · inert</text>
+          <text class="t-cap" x="744" y="238" fill="var(--muted)">append-only triggers on every</text>
+          <text class="t-cap" x="744" y="251" fill="var(--muted)">evidentiary table · single-tenant</text>
+        </g>
+
+        <!-- VERIFICATION lineage -->
+        <rect x="34" y="138" width="336" height="182" rx="9" fill="none" stroke="var(--verify)" stroke-width="1.5"/>
+        <text class="t-lane" x="48" y="159" fill="var(--verify)">Verification lineage</text>
+        <g>
+          <rect x="48" y="170" width="308" height="34" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text x="62" y="186" fill="var(--verify)" style="font-weight:640;font-size:11.5px">Sampling lifecycle</text>
+          <text class="t-cap" x="62" y="199" fill="var(--muted)">cycles · work_orders · events · samples</text>
+
+          <rect x="48" y="208" width="308" height="34" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text x="62" y="224" fill="var(--verify)" style="font-weight:640;font-size:11.5px">Lab &amp; SOC</text>
+          <text class="t-cap" x="62" y="237" fill="var(--muted)">labs · lab_imports · soc_measurements</text>
+
+          <rect x="48" y="246" width="308" height="34" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text x="62" y="262" fill="var(--verify)" style="font-weight:640;font-size:11.5px">Texture / ESM</text>
+          <text class="t-cap" x="62" y="275" fill="var(--muted)">texture_measurements · esm_soc_stocks</text>
+
+          <rect x="48" y="284" width="308" height="30" rx="6" fill="var(--panel)" stroke="var(--ai)" stroke-width="1.2"/>
+          <text x="62" y="303" fill="var(--ai)" style="font-weight:640;font-size:11.5px">QA1 model <tspan class="t-cap" fill="var(--muted)" style="font-weight:400">· model_runs · model_results · mvr</tspan></text>
+        </g>
+
+        <!-- COMMERCIAL lineage -->
+        <rect x="388" y="138" width="336" height="182" rx="9" fill="none" stroke="var(--commerce)" stroke-width="1.5"/>
+        <text class="t-lane" x="402" y="159" fill="var(--commerce)">Commercial &amp; GHG accounting</text>
+        <g>
+          <rect x="402" y="170" width="308" height="34" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text x="416" y="186" fill="var(--commerce)" style="font-weight:640;font-size:11.5px">GHG reference</text>
+          <text class="t-cap" x="416" y="199" fill="var(--muted)">ghg_parameters · fertilizers · machinery</text>
+
+          <rect x="402" y="208" width="308" height="34" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text x="416" y="224" fill="var(--commerce)" style="font-weight:640;font-size:11.5px">GHG engine</text>
+          <text class="t-cap" x="416" y="237" fill="var(--muted)">activity_data · emission_results · leakage</text>
+
+          <rect x="402" y="246" width="308" height="34" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text x="416" y="262" fill="var(--commerce)" style="font-weight:640;font-size:11.5px">Credits</text>
+          <text class="t-cap" x="416" y="275" fill="var(--muted)">products · alm_activities · credits · vcu</text>
+
+          <rect x="402" y="284" width="308" height="30" rx="6" fill="var(--panel)" stroke="var(--line-strong)"/>
+          <text x="416" y="303" fill="var(--commerce)" style="font-weight:640;font-size:11.5px">Compliance <tspan class="t-cap" fill="var(--muted)" style="font-weight:400">· checks · scores · stratum_stats</tspan></text>
+        </g>
+
+        <!-- SPATIAL CORE -->
+        <rect x="34" y="332" width="690" height="56" rx="8" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.6"/>
+        <text class="t-lane" x="48" y="354" fill="var(--accent)">Spatial core · PostGIS</text>
+        <text class="t-tbl" x="48" y="374" fill="var(--muted)">organizations › projects › farms › plots › strata › sampling_points · baseline_control_sites</text>
+        <text class="t-cap" x="712" y="349" fill="var(--accent)" text-anchor="end">both lineages meet at the plot ▾</text>
+
+        <!-- connectors: lineages down into the shared core -->
+        <g>
+          <path class="flow" d="M200 320 V332" marker-end="url(#ar2)"/>
+          <path class="flow" d="M556 320 V332" marker-end="url(#ar2)"/>
+        </g>
+
+        <!-- INFRASTRUCTURE base -->
+        <rect x="14" y="424" width="952" height="80" rx="10" fill="var(--panel-2)" stroke="var(--line-strong)" stroke-width="1.3"/>
+        <text class="t-lane" x="30" y="446" fill="var(--muted)">Infrastructure · AWS eu-west-1</text>
+        <g class="t-tbl" fill="var(--muted)">
+          <text x="30" y="472">PostgreSQL 16</text>
+          <text x="176" y="472">PostGIS 3.4</text>
+          <text x="312" y="472">pgvector</text>
+          <text x="430" y="472">RDS · PITR · backups</text>
+          <text x="642" y="472">S3 · KMS · Glacier 10 yr</text>
+          <text x="852" y="472">VPC</text>
+        </g>
+        <text x="30" y="490" fill="var(--faint)" class="t-cap">CloudWatch alarms: estimated charges (Free-plan credit cliff) · low storage</text>
+        <path class="flow" d="M490 412 V424" marker-end="url(#ar2)" opacity=".55"/>
+
+        <text class="t-cap" x="966" y="540" text-anchor="end" fill="var(--faint)">41 tables · 4 views · 16 migrations · 31 verification checks</text>
+      </svg>
+    </div>
+  </section>
+
+  <footer>
+    <span>github.com/nitzan-bauer/database-and-mrv-ai-module</span>
+    <span>Verra VM0042 v2.2 · generated 2026-07-23</span>
+  </footer>
+</div>
