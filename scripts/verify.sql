@@ -747,6 +747,19 @@ BEGIN
   RAISE NOTICE 'PASS  | audit-readiness views, audit_trail(), retention policy present';
 END $$;
 
+-- The GHG fuel-input helper must reproduce the calculator's Machinery-
+-- Diesel sheet: a heavy tractor, 50 ha -> 3986.51 L.
+DO $$
+DECLARE
+  l numeric;
+BEGIN
+  l := mrv.machinery_to_diesel(120, 0.55, 0.27, 6, 50);
+  IF l <> 3986.51 THEN
+    RAISE EXCEPTION 'FAIL  | machinery_to_diesel: expected 3986.51 L, got %', l;
+  END IF;
+  RAISE NOTICE 'PASS  | machinery_to_diesel reproduces the calculator (3986.51 L)';
+END $$;
+
 -- The point-in-plot query must stay well under the 2s / 500-point NFR.
 -- Timed against every real point; the demo estate is tiny, so this is a
 -- floor check, not a load test (GIS-CAPACITY.md has the scale numbers).

@@ -115,3 +115,23 @@ Its README lists these as Phase 2, and they remain open:
 - Buffer-pool percentage is currently 0 and must be set from the AFOLU Non-Permanence Risk Tool before any real VCU estimate
 
 The scope is also **open-field crops only** — explicitly not orchards, groves, or forests. Given that CarboNature's client folders already split tree crops into a fruit-plantations project, a second calculator variant will eventually be needed.
+
+---
+
+## Coverage verified against the workbook (23 July 2026)
+
+`mrv.compute_emissions()` was checked component-by-component against the calculator's own baseline rows, both farm-years, using an independent recomputation from the workbook inputs as the reference:
+
+| Component | VM0042 eq. | Farm_A | Farm_B | DB matches |
+|---|---|---|---|---|
+| FSN / FON (N applied) | 19 / 20 | 14.8 / 0.75 | 6.3 / 0.72 t N | ✓ |
+| N₂O direct | 18 | 1.6836 | 1.2668 | ✓ |
+| N₂O indirect (volat + leach) | 21–23 | 0.5501 | 0.4213 | ✓ |
+| N₂O from N-fixing residue | 24–25 | 0 | 0.0072 | ✓ |
+| CO₂ from fuel | 6–7 | 0.5195 | 0.5195 | ✓ |
+| N₂O from residue burning | 32 | 0 | 0.0005 | ✓ |
+| **Total tCO₂e/ha** | | **2.7532** | **2.2152** | ✓ |
+
+Farm_B exercises the full set — fuel, synthetic and organic N, residue burning, and N-fixing residue — and every component matches to four decimals. The database gives complete coverage of GHG emissions from fuel combustion and nitrogen-fertilizer use.
+
+`mrv.machinery_to_diesel()` (migration 0017) completes the input side: it reproduces the workbook's Machinery-Diesel sheet (a heavy tractor over 50 ha → 3986.51 L), for the case where a fuel invoice is unavailable. The litres feed `activity_data.diesel_l`.
