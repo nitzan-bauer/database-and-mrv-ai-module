@@ -35,11 +35,11 @@ With dbmate, which is the supported path:
 
 ```bash
 dbmate --migrations-dir ./migrations up
-psql "$DATABASE_URL" -f seeds/0001_reference_data.sql
+for f in seeds/*.sql; do psql "$DATABASE_URL" -f "$f"; done   # reference data, demo farms, products
 psql "$DATABASE_URL" -f scripts/verify.sql
 ```
 
-Or `DATABASE_URL="postgresql://..." ./scripts/apply.sh` to do all three with plain psql.
+Or `DATABASE_URL="postgresql://..." ./scripts/apply.sh` to do it all with plain psql.
 
 Every line of the verify output should read `PASS`. It probes the guarantees rather than just counting objects: that `audit_log` and `ghg_parameters` reject `UPDATE`, that a baseline control site beyond 250 km is refused, and that the SOC formula returns 19.5 t C/ha for the worked example.
 
@@ -110,3 +110,17 @@ TOC 1%, BD 1.3 g/cm³, depth 15 cm
 ```
 
 `mrv.soc_stock_t_per_ha()` implements the ×100 form, and `scripts/verify.sql` asserts it. Worth confirming with CropNut in writing before the first real lab import, since the spec text says otherwise.
+
+---
+
+## Next: the AI-MRV module
+
+The database is done. Everything below is deliberately out of its scope and belongs to the module that runs on top of it:
+
+- **DNDC / DayCent integration** — the models are containerised CLI binaries; running them needs a container host and a NAT gateway. The schema (`model_runs`, `model_results`, `mvr`) is ready to receive their output.
+- **The Eq. 74 uncertainty computation** — the columns to hold its inputs and output exist; the function walking VM0042 Eqs. 60–74 belongs in the service layer.
+- **The lab-ingestion pipeline** — read the CropNut workbook, validate, recompute SOC in the service layer, write or quarantine. The schema is ready; see [docs/STAGE-4.md](docs/STAGE-4.md).
+- **PostGIS → Mapbox sync** — deferred pending the one remaining open decision: which system owns plot geometry, this database or the SaaS. See [ROADMAP §Open decisions](docs/ROADMAP.md).
+- **RLS enablement** — the 11 policies are written and inert; turning them on needs a non-owner application role. See `scripts/rls-enable.sql`.
+
+The `saas_farm_id` / `saas_plot_id` columns already link every farm and plot back to the customer-facing Supabase records, so the two systems join cleanly whenever the module needs them.
