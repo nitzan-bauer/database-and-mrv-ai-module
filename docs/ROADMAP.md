@@ -12,8 +12,8 @@ An earlier draft of this file used an A/B/C lettering; that is superseded. What 
 | **3** | Sampling lifecycle | ✅ Done — [STAGE-3](STAGE-3.md) |
 | **4** | Lab ingestion + SOC schema | ✅ Done — [STAGE-4](STAGE-4.md) |
 | **5** | Credits & compliance | ✅ Done — [STAGE-5](STAGE-5.md) |
-| **6** | QA1 model structures | ◀ next |
-| **7** | Hardening, backups, audit-readiness | Ongoing from stage 6 |
+| **6** | QA1 model structures | ✅ Done — [STAGE-6](STAGE-6.md) |
+| **7** | Hardening, backups, audit-readiness | ◀ next |
 
 ---
 
@@ -73,7 +73,7 @@ Buildable now against a schema-conforming dummy file; validated against the firs
 
 ## Stage 6 — QA1 model structures
 
-`model_runs`, `model_results`, `mvr`. Tables now, DNDC/DayCent integration deferred. This is also where a NAT gateway becomes necessary, since containerised runners need outbound internet.
+✅ **Complete** — `model_runs`, `model_results`, `mvr` (migration 0015). Detail in [STAGE-6.md](STAGE-6.md). The schema is ready to receive DNDC/DayCent output; the model integration and the Eq. 74 computation are deferred to application/infrastructure work. A NAT gateway becomes necessary when the containerised runners land — stage 7.
 
 ## Stage 7 — Hardening
 

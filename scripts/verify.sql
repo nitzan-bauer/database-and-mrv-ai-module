@@ -28,14 +28,14 @@ BEGIN
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 37 THEN
-    RAISE EXCEPTION 'FAIL  | expected 37 base tables in mrv, found %', n;
+  IF n <> 40 THEN
+    RAISE EXCEPTION 'FAIL  | expected 40 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 37 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 40 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -641,6 +641,80 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | compliance_scores accepted an UPDATE';
   END IF;
   RAISE NOTICE 'PASS  | compliance engine present, compliance_scores append-only';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- Stage 6 — QA1 model structures
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  n int;
+  gen text;
+BEGIN
+  SELECT count(*) INTO n
+  FROM information_schema.tables
+  WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE'
+    AND table_name IN ('model_runs','model_results','mvr');
+  IF n <> 3 THEN
+    RAISE EXCEPTION 'FAIL  | expected 3 stage-6 tables, found %', n;
+  END IF;
+
+  -- net_t_ha = project - baseline, generated so it cannot drift.
+  SELECT c.is_generated INTO gen
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'mrv' AND c.table_name = 'model_results' AND c.column_name = 'net_t_ha';
+  IF gen IS DISTINCT FROM 'ALWAYS' THEN
+    RAISE EXCEPTION 'FAIL  | model_results.net_t_ha must be GENERATED';
+  END IF;
+
+  -- The MVR default records the VMD0053 fact that the VVB hires the IME.
+  IF (SELECT column_default FROM information_schema.columns
+      WHERE table_schema='mrv' AND table_name='mvr' AND column_name='ime_contracted_by')
+     NOT LIKE '%VVB%' THEN
+    RAISE EXCEPTION 'FAIL  | mvr.ime_contracted_by should default to VVB';
+  END IF;
+  RAISE NOTICE 'PASS  | stage 6 tables present, net_t_ha generated, MVR defaults to VVB';
+END $$;
+
+-- model_results is append-only, and a Monte Carlo count on an analytical
+-- run must be rejected (the constraint that keeps the two methods honest).
+DO $$
+DECLARE
+  ao boolean := false;
+  ck boolean := false;
+BEGIN
+  INSERT INTO mrv.organizations (org_id, name) VALUES ('00000000-0000-0000-0000-0000000000d6', '__v6__');
+  INSERT INTO mrv.projects (project_id, org_id, name) VALUES ('__V6__', '00000000-0000-0000-0000-0000000000d6', '__v6__');
+  INSERT INTO mrv.farms (farm_id, project_id, name) VALUES ('00000000-0000-0000-0000-0000000000d7', '__V6__', '__v6__');
+
+  DECLARE r uuid;
+  BEGIN
+    INSERT INTO mrv.model_runs (farm_id, model, status)
+      VALUES ('00000000-0000-0000-0000-0000000000d7', 'DNDC', 'completed') RETURNING run_id INTO r;
+    INSERT INTO mrv.model_results (run_id, delta_soc_wp_t_ha, delta_soc_bsl_t_ha)
+      VALUES (r, 1.0, 0.3);
+    BEGIN
+      UPDATE mrv.model_results SET uncertainty_pct = 5 WHERE run_id = r;
+    EXCEPTION WHEN others THEN ao := true;
+    END;
+    BEGIN
+      INSERT INTO mrv.model_runs (farm_id, model, uncertainty_method, monte_carlo_iters)
+        VALUES ('00000000-0000-0000-0000-0000000000d7', 'DayCent', 'analytical', 500);
+    EXCEPTION WHEN check_violation THEN ck := true;
+    END;
+  END;
+
+  ALTER TABLE mrv.model_results DISABLE TRIGGER trg_results_noupd;
+  DELETE FROM mrv.model_results WHERE run_id IN (SELECT run_id FROM mrv.model_runs WHERE farm_id='00000000-0000-0000-0000-0000000000d7');
+  ALTER TABLE mrv.model_results ENABLE TRIGGER trg_results_noupd;
+  DELETE FROM mrv.model_runs WHERE farm_id = '00000000-0000-0000-0000-0000000000d7';
+  DELETE FROM mrv.farms WHERE farm_id = '00000000-0000-0000-0000-0000000000d7';
+  DELETE FROM mrv.projects WHERE project_id = '__V6__';
+  DELETE FROM mrv.organizations WHERE org_id = '00000000-0000-0000-0000-0000000000d6';
+
+  IF NOT ao THEN RAISE EXCEPTION 'FAIL  | model_results accepted an UPDATE'; END IF;
+  IF NOT ck THEN RAISE EXCEPTION 'FAIL  | analytical run accepted monte_carlo_iters'; END IF;
+  RAISE NOTICE 'PASS  | model_results append-only, MC-iters constraint holds';
 END $$;
 
 \echo ''

@@ -8,7 +8,7 @@ This is a separate system from the customer-facing SaaS (`carbonature-saas`, the
 
 ## Where things stand
 
-**Stages 0 through 5 are done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector runs in `eu-west-1`; fourteen migrations are applied and 26 verification checks pass against the real instance.
+**Stages 0 through 6 are done and live.** RDS PostgreSQL 16.13 with PostGIS and pgvector runs in `eu-west-1`; fifteen migrations are applied and 28 verification checks pass against the real instance.
 
 **Everything seeded so far is DEMO data.** Elad Farm and Nitzan-Veg-Tech Farm are demonstration farms, not clients. This is enforced by trigger, not convention — see [docs/STAGE-1.md](docs/STAGE-1.md).
 
@@ -80,12 +80,12 @@ Three decisions worth knowing before reading the SQL:
 | **3** | Sampling lifecycle | **Done — 5 tables, state machines, texture as its own sample type** |
 | **4** | Lab ingestion + SOC schema | **Done — 6 tables, DIN 19539 fractions, ESM inputs** |
 | **5** | Credits & compliance | **Done — commercial + QA3 emissions engine + 8 hard checks** |
-| **6** | QA1 model structures | Not started |
+| **6** | QA1 model structures | **Done — model_runs, model_results, mvr (integration deferred)** |
 | **7** | Hardening, backups, audit-readiness | Backups and lifecycle configured in Terraform |
 
-37 base tables so far, plus the v_real_plots and v_plot_credits views. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
+40 base tables so far, plus the v_real_plots and v_plot_credits views. All 23 enum types are created up front, so later stages add tables without revisiting type definitions.
 
-Per-stage records: [STAGE-0](docs/STAGE-0.md) · [STAGE-1](docs/STAGE-1.md) · [STAGE-2](docs/STAGE-2.md) · [STAGE-3](docs/STAGE-3.md) · [STAGE-4](docs/STAGE-4.md) · [STAGE-5](docs/STAGE-5.md). Regulatory research: [REGULATORY-BASIS](docs/REGULATORY-BASIS.md) · [SAMPLE-SIZE-OPTIMISATION](docs/SAMPLE-SIZE-OPTIMISATION.md). Capacity measurements and the raster decision: [GIS-CAPACITY](docs/GIS-CAPACITY.md). [ROADMAP](docs/ROADMAP.md) has the open questions attached to each stage.
+Per-stage records: [STAGE-0](docs/STAGE-0.md) · [STAGE-1](docs/STAGE-1.md) · [STAGE-2](docs/STAGE-2.md) · [STAGE-3](docs/STAGE-3.md) · [STAGE-4](docs/STAGE-4.md) · [STAGE-5](docs/STAGE-5.md) · [STAGE-6](docs/STAGE-6.md). Regulatory research: [REGULATORY-BASIS](docs/REGULATORY-BASIS.md) · [SAMPLE-SIZE-OPTIMISATION](docs/SAMPLE-SIZE-OPTIMISATION.md). Capacity measurements and the raster decision: [GIS-CAPACITY](docs/GIS-CAPACITY.md). [ROADMAP](docs/ROADMAP.md) has the open questions attached to each stage.
 
 ---
 
