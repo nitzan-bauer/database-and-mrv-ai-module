@@ -13,7 +13,7 @@ An earlier draft of this file used an A/B/C lettering; that is superseded. What 
 | **4** | Lab ingestion + SOC schema | ✅ Done — [STAGE-4](STAGE-4.md) |
 | **5** | Credits & compliance | ✅ Done — [STAGE-5](STAGE-5.md) |
 | **6** | QA1 model structures | ✅ Done — [STAGE-6](STAGE-6.md) |
-| **7** | Hardening, backups, audit-readiness | ◀ next |
+| **7** | Hardening, backups, audit-readiness | ✅ Done — [STAGE-7](STAGE-7.md) |
 
 ---
 
@@ -73,11 +73,11 @@ Buildable now against a schema-conforming dummy file; validated against the firs
 
 ## Stage 6 — QA1 model structures
 
-✅ **Complete** — `model_runs`, `model_results`, `mvr` (migration 0015). Detail in [STAGE-6.md](STAGE-6.md). The schema is ready to receive DNDC/DayCent output; the model integration and the Eq. 74 computation are deferred to application/infrastructure work. A NAT gateway becomes necessary when the containerised runners land — stage 7.
+✅ **Complete** — `model_runs`, `model_results`, `mvr` (migration 0015). Detail in [STAGE-6.md](STAGE-6.md). The schema is ready to receive DNDC/DayCent output; the model integration and the Eq. 74 computation are deferred to application/infrastructure work in the AI-MRV module. A NAT gateway becomes necessary when the containerised runners land.
 
 ## Stage 7 — Hardening
 
-Automated backups and snapshots (partly configured in Terraform already), S3 lifecycle to Glacier (configured), spatial index tuning against the <2s / 500-point target, end-to-end data chain test, schema documentation in the repo.
+✅ **Complete** (migration 0016 + monitoring.tf). Detail in [STAGE-7.md](STAGE-7.md). Audit-readiness views (v_sample_chain, v_data_completeness), the audit_trail() function, a retention-policy declaration, and ANALYZE on the spatial tables. Infrastructure: RDS backups/PITR/deletion-protection and S3 lifecycle were already in place from stage 0; stage 7 adds CloudWatch alarms on estimated charges (the Free-plan credit cliff) and low RDS storage.
 
 ---
 

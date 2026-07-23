@@ -28,14 +28,14 @@ BEGIN
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 40 THEN
-    RAISE EXCEPTION 'FAIL  | expected 40 base tables in mrv, found %', n;
+  IF n <> 41 THEN
+    RAISE EXCEPTION 'FAIL  | expected 41 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 40 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 41 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -715,6 +715,55 @@ BEGIN
   IF NOT ao THEN RAISE EXCEPTION 'FAIL  | model_results accepted an UPDATE'; END IF;
   IF NOT ck THEN RAISE EXCEPTION 'FAIL  | analytical run accepted monte_carlo_iters'; END IF;
   RAISE NOTICE 'PASS  | model_results append-only, MC-iters constraint holds';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- Stage 7 — audit-readiness
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  n int;
+BEGIN
+  -- The four views: v_real_plots, v_plot_credits, v_sample_chain, v_data_completeness.
+  SELECT count(*) INTO n FROM information_schema.views
+  WHERE table_schema = 'mrv'
+    AND table_name IN ('v_real_plots','v_plot_credits','v_sample_chain','v_data_completeness');
+  IF n <> 4 THEN
+    RAISE EXCEPTION 'FAIL  | expected 4 mrv views, found %', n;
+  END IF;
+
+  -- audit_trail() walks the log for one object.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+    WHERE ns.nspname = 'mrv' AND p.proname = 'audit_trail'
+  ) THEN
+    RAISE EXCEPTION 'FAIL  | mrv.audit_trail function is missing';
+  END IF;
+
+  SELECT count(*) INTO n FROM mrv.retention_policy;
+  IF n < 4 THEN
+    RAISE EXCEPTION 'FAIL  | expected the retention policy to declare >=4 classes, found %', n;
+  END IF;
+  RAISE NOTICE 'PASS  | audit-readiness views, audit_trail(), retention policy present';
+END $$;
+
+-- The point-in-plot query must stay well under the 2s / 500-point NFR.
+-- Timed against every real point; the demo estate is tiny, so this is a
+-- floor check, not a load test (GIS-CAPACITY.md has the scale numbers).
+DO $$
+DECLARE
+  t0 timestamptz;
+  ms numeric;
+BEGIN
+  t0 := clock_timestamp();
+  PERFORM count(*)
+  FROM mrv.sampling_points sp
+  JOIN mrv.plots p ON ST_Within(sp.planned_geom, p.geom);
+  ms := extract(epoch FROM clock_timestamp() - t0) * 1000;
+  IF ms > 2000 THEN
+    RAISE EXCEPTION 'FAIL  | point-in-plot took % ms, over the 2000 ms NFR', round(ms);
+  END IF;
+  RAISE NOTICE 'PASS  | point-in-plot within NFR (% ms)', round(ms);
 END $$;
 
 \echo ''
