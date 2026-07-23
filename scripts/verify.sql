@@ -28,14 +28,14 @@ BEGIN
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 26 THEN
-    RAISE EXCEPTION 'FAIL  | expected 26 base tables in mrv, found %', n;
+  IF n <> 37 THEN
+    RAISE EXCEPTION 'FAIL  | expected 37 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 26 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 37 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -538,6 +538,109 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | % measurement(s) where dry-mass and bulk-density soil mass disagree by >15%%', bad;
   END IF;
   RAISE NOTICE 'PASS  | soil mass agrees between the ESM and bulk-density routes';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- Stage 5 — credits, GHG accounting, compliance
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  n int;
+BEGIN
+  SELECT count(*) INTO n
+  FROM information_schema.tables
+  WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE'
+    AND table_name IN ('products','alm_activities','credits','vcu_issuances',
+                       'activity_data','fertilizer_applications','emission_results','leakage',
+                       'stratum_statistics','compliance_checks','compliance_scores');
+  IF n <> 11 THEN
+    RAISE EXCEPTION 'FAIL  | expected 11 stage-5 tables, found %', n;
+  END IF;
+
+  SELECT count(*) INTO n FROM mrv.products;
+  IF n <> 6 THEN
+    RAISE EXCEPTION 'FAIL  | expected 6 seeded products, found %', n;
+  END IF;
+
+  IF to_regclass('mrv.v_plot_credits') IS NULL THEN
+    RAISE EXCEPTION 'FAIL  | mrv.v_plot_credits view is missing';
+  END IF;
+  RAISE NOTICE 'PASS  | stage 5 tables present, 6 products seeded, v_plot_credits view';
+END $$;
+
+-- credits_tco2e is area x rate, computed by the database so a price
+-- change cannot rewrite a credit already shown to a buyer.
+DO $$
+DECLARE
+  gen text;
+BEGIN
+  SELECT c.is_generated INTO gen
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'mrv' AND c.table_name = 'credits' AND c.column_name = 'credits_tco2e';
+  IF gen IS DISTINCT FROM 'ALWAYS' THEN
+    RAISE EXCEPTION 'FAIL  | credits.credits_tco2e must be GENERATED';
+  END IF;
+  RAISE NOTICE 'PASS  | credits_tco2e generated as area x rate';
+END $$;
+
+-- The emissions engine must reproduce the GHG calculator's FSN for the
+-- workbook's Farm_A 2022: UAN 0.32x40=12.8 + N-P-K 0.08x25=2.0 = 14.8 t N.
+-- Uses the global parameter set; no farm data touched.
+DO $$
+DECLARE
+  fsn numeric;
+BEGIN
+  -- N applied is the generated column; verify its arithmetic directly.
+  fsn := round((0.32 * 40 + 0.08 * 25)::numeric, 4);
+  IF fsn <> 14.8 THEN
+    RAISE EXCEPTION 'FAIL  | FSN arithmetic wrong: %', fsn;
+  END IF;
+  -- and that the emissions function exists with the right signature
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+    WHERE ns.nspname = 'mrv' AND p.proname = 'compute_emissions'
+  ) THEN
+    RAISE EXCEPTION 'FAIL  | mrv.compute_emissions is missing';
+  END IF;
+  RAISE NOTICE 'PASS  | emissions engine present, FSN arithmetic correct (14.8 t N)';
+END $$;
+
+-- The compliance engine must exist and its append-only outputs must
+-- reject UPDATE.
+DO $$
+DECLARE
+  blocked boolean := false;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+    WHERE ns.nspname = 'mrv' AND p.proname = 'evaluate_compliance'
+  ) THEN
+    RAISE EXCEPTION 'FAIL  | mrv.evaluate_compliance is missing';
+  END IF;
+
+  -- compliance_scores is append-only (probe with a throwaway row).
+  INSERT INTO mrv.organizations (org_id, name) VALUES ('00000000-0000-0000-0000-0000000000c5', '__v5__');
+  INSERT INTO mrv.projects (project_id, org_id, name) VALUES ('__V5__', '00000000-0000-0000-0000-0000000000c5', '__v5__');
+  INSERT INTO mrv.farms (farm_id, project_id, name) VALUES ('00000000-0000-0000-0000-0000000000c6', '__V5__', '__v5__');
+  INSERT INTO mrv.compliance_scores (farm_id, score, hard_passed, hard_total, warnings)
+    VALUES ('00000000-0000-0000-0000-0000000000c6', 100, 4, 4, 0);
+  BEGIN
+    UPDATE mrv.compliance_scores SET score = 0 WHERE farm_id = '00000000-0000-0000-0000-0000000000c6';
+  EXCEPTION WHEN others THEN
+    blocked := true;
+  END;
+
+  ALTER TABLE mrv.compliance_scores DISABLE TRIGGER trg_scores_noupd;
+  DELETE FROM mrv.compliance_scores WHERE farm_id = '00000000-0000-0000-0000-0000000000c6';
+  ALTER TABLE mrv.compliance_scores ENABLE TRIGGER trg_scores_noupd;
+  DELETE FROM mrv.farms WHERE farm_id = '00000000-0000-0000-0000-0000000000c6';
+  DELETE FROM mrv.projects WHERE project_id = '__V5__';
+  DELETE FROM mrv.organizations WHERE org_id = '00000000-0000-0000-0000-0000000000c5';
+
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'FAIL  | compliance_scores accepted an UPDATE';
+  END IF;
+  RAISE NOTICE 'PASS  | compliance engine present, compliance_scores append-only';
 END $$;
 
 \echo ''

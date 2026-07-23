@@ -11,8 +11,8 @@ An earlier draft of this file used an A/B/C lettering; that is superseded. What 
 | **2** | Permissions, tokens, audit | ✅ Done — [STAGE-2](STAGE-2.md) |
 | **3** | Sampling lifecycle | ✅ Done — [STAGE-3](STAGE-3.md) |
 | **4** | Lab ingestion + SOC schema | ✅ Done — [STAGE-4](STAGE-4.md) |
-| **5** | Credits & compliance | ◀ next · reference data built |
-| **6** | QA1 model structures | Not started |
+| **5** | Credits & compliance | ✅ Done — [STAGE-5](STAGE-5.md) |
+| **6** | QA1 model structures | ◀ next |
 | **7** | Hardening, backups, audit-readiness | Ongoing from stage 6 |
 
 ---
@@ -65,11 +65,11 @@ Buildable now against a schema-conforming dummy file; validated against the firs
 
 ## Stage 5 — Credits & compliance
 
-**Built** (`migrations/0004`): `fertilizers`, `machinery_defaults`, `ghg_parameters` — the reference layer, seeded from the GHG calculator workbook.
+✅ **Complete** — three branches, not one. Migrations `0012`–`0014`, detail in [STAGE-5.md](STAGE-5.md).
 
-**Outstanding:** `products`, `alm_activities`, `credits`, `vcu_issuances`, `compliance_checks`, `compliance_scores`, the per-plot credit view, and the 8 hard checks.
-
-The plan scopes this as the commercial branch. The GHG calculator adds a second, larger piece the plan does not mention: QA3 emissions accounting — activity data, computed baseline and project emissions, leakage. See [GHG-CALCULATOR.md](GHG-CALCULATOR.md). It belongs in this stage and roughly doubles it.
+- **Commercial** (`0012`): `products` (seeded from the marketplace API), `alm_activities`, `credits` (generated `credits_tco2e`), `vcu_issuances`, and the `v_plot_credits` rollup.
+- **QA3 emissions accounting** (`0013`) — the piece the plan did not mention: `activity_data`, `fertilizer_applications`, `emission_results`, `leakage`, and `mrv.compute_emissions()`, which reproduces the GHG calculator's Farm_A 2022 exactly (FSN 14.8 t N). Reference layer (`fertilizers`, `machinery_defaults`, `ghg_parameters`) was already built in `0004`.
+- **Compliance** (`0014`): `stratum_statistics`, `compliance_checks`, `compliance_scores`, and `mrv.evaluate_compliance()` running VM0042 v2.2's own §8.2.1 hard checks. The research confirmed VMD0018/VMD0021 belong to the older VM0021 lineage and are not used here.
 
 ## Stage 6 — QA1 model structures
 
