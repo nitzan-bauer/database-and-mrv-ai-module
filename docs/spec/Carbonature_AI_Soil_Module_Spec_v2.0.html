@@ -733,7 +733,7 @@
   <!-- ============================================================ -->
   <div class="part-open" id="p2" style="border-top-color:var(--agent)">
     <div class="ey" style="color:var(--agent)">Part II · Tier 2</div>
-    <h2>The Verified Credits Factory</h2>
+    <h2>Verified Credits Factory — the AI-Agent Department</h2>
     <p class="sub">An autonomous department of five AI agents that operates the whole credit pipeline — validation, verification, marketing, and admin — coordinated through a control-tower dashboard, each agent improving cycle over cycle through long-term memory.</p>
   </div>
 
@@ -838,61 +838,102 @@
     <figure>
       <div class="mock">
         <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/agents · Verified Credits Factory</span></div>
-        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">AI-Agent Department</span><span class="stat live">Live</span></span></div>
+        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">Verified Credits Factory</span><span class="stat live">Live</span></span></div>
         <div class="body">
           <svg viewBox="0 0 900 400" role="img" aria-label="Agent hierarchy mock-up">
             <rect width="900" height="400" fill="var(--soft)"/>
-            <!-- org chart left -->
-            <text class="m-lbl" x="24" y="34" fill="var(--agent)">AI-Agent Department</text>
-            <!-- John -->
-            <rect x="200" y="52" width="150" height="58" rx="10" fill="var(--agent)" />
-            <circle cx="224" cy="81" r="13" fill="#fff" fill-opacity=".9"/><text x="224" y="86" text-anchor="middle" font-size="13" fill="var(--agent)" font-weight="700">J</text>
-            <text x="246" y="76" fill="#fff" style="font-size:12px;font-weight:700">John</text><text x="246" y="92" fill="#e9dcff" style="font-size:9px;font-family:var(--mono)">Head of Dept</text>
-            <text x="246" y="104" fill="#d3befb" style="font-size:8px;font-family:var(--mono)">12 skills · 9 tools</text>
-            <circle cx="338" cy="64" r="4" fill="#8fdcc0"/>
+            <defs>
+              <symbol id="av-john" viewBox="0 0 48 48"><clipPath id="avcJ"><circle cx="24" cy="24" r="24"/></clipPath>
+                <g clip-path="url(#avcJ)"><rect width="48" height="48" fill="#efeafb"/>
+                <path d="M4 48 q0-14 20-14 t20 14Z" fill="#6d4bb0"/>
+                <rect x="20" y="27.5" width="8" height="8.5" fill="#cf9a6c"/>
+                <circle cx="24" cy="20" r="10.5" fill="#e0a878"/>
+                <path d="M12.5 18 q1-11 11.5-11 t11.5 11 q-4-4.5-11.5-4.5 t-11.5 4.5Z" fill="#9aa0aa"/>
+                <g stroke="#3b3f47" stroke-width="1.1" fill="none"><rect x="15.5" y="18.5" width="6.5" height="5" rx="2.5"/><rect x="26" y="18.5" width="6.5" height="5" rx="2.5"/><line x1="22" y1="20.8" x2="26" y2="20.8"/></g></g></symbol>
+              <symbol id="av-reveka" viewBox="0 0 48 48"><clipPath id="avcR"><circle cx="24" cy="24" r="24"/></clipPath>
+                <g clip-path="url(#avcR)"><rect width="48" height="48" fill="#e7eefb"/>
+                <path d="M6 48 q0-13 18-13 t18 13Z" fill="#2f6bd6"/>
+                <path d="M11 21 q0 14 4 21 h18 q4-7 4-21 q0-13-13-13 t-13 13Z" fill="#6b4a2f"/>
+                <rect x="20" y="27.5" width="8" height="8" fill="#c68f5f"/>
+                <circle cx="24" cy="20" r="10" fill="#d9a06f"/>
+                <path d="M13.5 18 q1-10 10.5-10 t10.5 10 q-3-6-10.5-6 t-10.5 6Z" fill="#6b4a2f"/></g></symbol>
+              <symbol id="av-dave" viewBox="0 0 48 48"><clipPath id="avcD"><circle cx="24" cy="24" r="24"/></clipPath>
+                <g clip-path="url(#avcD)"><rect width="48" height="48" fill="#e7f1ee"/>
+                <path d="M5 48 q0-14 19-14 t19 14Z" fill="#2b6161"/>
+                <rect x="20" y="27.5" width="8" height="8.5" fill="#d7a074"/>
+                <circle cx="24" cy="20" r="10.5" fill="#edb98f"/>
+                <path d="M15.5 22 q1.5 9.5 8.5 9.5 t8.5-9.5 q-2.5 3-8.5 3 t-8.5-3Z" fill="#5a4632"/>
+                <path d="M13 18 q1-11 11-11 t11 11 q-4-5-11-5 t-11 5Z" fill="#5a4632"/></g></symbol>
+              <symbol id="av-ron" viewBox="0 0 48 48"><clipPath id="avcO"><circle cx="24" cy="24" r="24"/></clipPath>
+                <g clip-path="url(#avcO)"><rect width="48" height="48" fill="#f7edd8"/>
+                <path d="M5 48 q0-14 19-14 t19 14Z" fill="#b07b2a"/>
+                <rect x="20" y="27.5" width="8" height="8.5" fill="#b47f52"/>
+                <circle cx="24" cy="20" r="10.5" fill="#c98f5f"/>
+                <path d="M13 19 q0-12 11-12 t11 12 q-2-6-11-6 t-11 6Z" fill="#2e2620"/></g></symbol>
+              <symbol id="av-jennifer" viewBox="0 0 48 48"><clipPath id="avcN"><circle cx="24" cy="24" r="24"/></clipPath>
+                <g clip-path="url(#avcN)"><rect width="48" height="48" fill="#eef1f0"/>
+                <path d="M6 48 q0-13 18-13 t18 13Z" fill="#5b6b66"/>
+                <circle cx="24" cy="8.5" r="4" fill="#caa24a"/>
+                <rect x="20" y="27.5" width="8" height="8" fill="#d8b28f"/>
+                <circle cx="24" cy="20" r="10" fill="#e8c3a0"/>
+                <path d="M14 18 q1-11 10-11 t10 11 q-3-6-10-6 t-10 6Z" fill="#caa24a"/></g></symbol>
+            </defs>
+            <text class="m-lbl" x="24" y="30" fill="var(--agent)">Verified Credits Factory · AI-Agent Department</text>
+            <!-- John (Head) -->
+            <rect x="348" y="44" width="204" height="62" rx="12" fill="var(--agent)"/>
+            <use href="#av-john" x="360" y="53" width="44" height="44"/>
+            <text x="414" y="70" fill="#fff" style="font-size:14px;font-weight:700">John</text>
+            <text x="414" y="85" fill="#e9dcff" style="font-size:9px;font-family:var(--mono)">Head of Department</text>
+            <text x="414" y="98" fill="#d3befb" style="font-size:8px;font-family:var(--mono)">12 skills · 9 tools</text>
+            <circle cx="540" cy="56" r="4" fill="#8fdcc0"/>
             <!-- connectors -->
-            <path d="M275 110 V128 M90 150 H460 M90 150 V168 M275 150 V168 M460 150 V168 M215 150 V168 M338 150 V168" stroke="var(--line-2)" fill="none" stroke-width="1.4"/>
-            <!-- four agents -->
-            <g>
-              <rect x="24" y="168" width="132" height="56" rx="9" fill="var(--paper)" stroke="var(--verify)"/>
-              <circle cx="44" cy="196" r="11" fill="var(--verify-tint)"/><text x="44" y="200" text-anchor="middle" font-size="11" fill="var(--verify)" font-weight="700">R</text>
-              <text x="62" y="190" style="font-size:11px;font-weight:700" fill="var(--ink)">Reveka</text><text x="62" y="204" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Validation</text><text x="62" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">6 sk · 5 t</text>
-              <circle cx="146" cy="178" r="3.5" fill="#8fdcc0"/>
-            </g>
-            <g>
-              <rect x="164" y="168" width="132" height="56" rx="9" fill="var(--forest)" stroke="var(--forest)"/>
-              <circle cx="184" cy="196" r="11" fill="#fff"/><text x="184" y="200" text-anchor="middle" font-size="11" fill="var(--forest)" font-weight="700">D</text>
-              <text x="202" y="190" style="font-size:11px;font-weight:700" fill="#fff">Dave</text><text x="202" y="204" style="font-size:8px;font-family:var(--mono)" fill="#d5f0e6">Verification</text><text x="202" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="#bfe6d6">9 sk · 8 t</text>
-              <circle cx="286" cy="178" r="3.5" fill="#c8f0dc"/>
-            </g>
-            <g>
-              <rect x="304" y="168" width="132" height="56" rx="9" fill="var(--paper)" stroke="var(--commerce)"/>
-              <circle cx="324" cy="196" r="11" fill="var(--commerce-tint)"/><text x="324" y="200" text-anchor="middle" font-size="11" fill="var(--commerce)" font-weight="700">R</text>
-              <text x="342" y="190" style="font-size:11px;font-weight:700" fill="var(--ink)">Ron</text><text x="342" y="204" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Marketing</text><text x="342" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">5 sk · 6 t</text>
-              <circle cx="426" cy="178" r="3.5" fill="#e8c07a"/>
-            </g>
-            <g>
-              <rect x="444" y="168" width="132" height="56" rx="9" fill="var(--paper)" stroke="var(--muted)"/>
-              <circle cx="464" cy="196" r="11" fill="var(--soft-2)"/><text x="464" y="200" text-anchor="middle" font-size="11" fill="var(--muted)" font-weight="700">J</text>
-              <text x="482" y="190" style="font-size:11px;font-weight:700" fill="var(--ink)">Jennifer</text><text x="482" y="204" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Admin</text><text x="482" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">4 sk · 5 t</text>
-              <circle cx="566" cy="178" r="3.5" fill="#8fdcc0"/>
-            </g>
-            <text class="m-cap" x="24" y="248" fill="var(--faint)">● active &nbsp; ● idle &nbsp; ● error &nbsp;·&nbsp; click a block → agent modal ▸</text>
+            <path d="M450 106 V140 M88 140 H502 M88 140 V168 M226 140 V168 M364 140 V168 M502 140 V168" stroke="var(--line-2)" fill="none" stroke-width="1.4"/>
+            <!-- Reveka -->
+            <rect x="24" y="168" width="128" height="74" rx="10" fill="#fff" stroke="var(--verify)"/>
+            <use href="#av-reveka" x="34" y="180" width="34" height="34"/>
+            <text x="74" y="192" style="font-size:10.5px;font-weight:700" fill="var(--ink)">Reveka</text>
+            <text x="74" y="205" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Validation</text>
+            <text x="74" y="217" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">6 sk · 5 t</text>
+            <circle cx="142" cy="178" r="3.5" fill="#4bbf8f"/>
+            <!-- Dave -->
+            <rect x="162" y="168" width="128" height="74" rx="10" fill="var(--forest)" stroke="var(--forest)"/>
+            <use href="#av-dave" x="172" y="180" width="34" height="34"/>
+            <text x="212" y="192" style="font-size:10.5px;font-weight:700" fill="#fff">Dave</text>
+            <text x="212" y="205" style="font-size:8px;font-family:var(--mono)" fill="#d5f0e6">Verification</text>
+            <text x="212" y="217" style="font-size:7.5px;font-family:var(--mono)" fill="#bfe6d6">9 sk · 8 t</text>
+            <circle cx="280" cy="178" r="3.5" fill="#c8f0dc"/>
+            <!-- Ron -->
+            <rect x="300" y="168" width="128" height="74" rx="10" fill="#fff" stroke="var(--commerce)"/>
+            <use href="#av-ron" x="310" y="180" width="34" height="34"/>
+            <text x="350" y="192" style="font-size:10.5px;font-weight:700" fill="var(--ink)">Ron</text>
+            <text x="350" y="205" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Marketing</text>
+            <text x="350" y="217" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">5 sk · 6 t</text>
+            <circle cx="418" cy="178" r="3.5" fill="#e0954a"/>
+            <!-- Jennifer -->
+            <rect x="438" y="168" width="128" height="74" rx="10" fill="#fff" stroke="var(--muted)"/>
+            <use href="#av-jennifer" x="448" y="180" width="34" height="34"/>
+            <text x="488" y="192" style="font-size:10.5px;font-weight:700" fill="var(--ink)">Jennifer</text>
+            <text x="488" y="205" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Admin</text>
+            <text x="488" y="217" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">4 sk · 5 t</text>
+            <circle cx="556" cy="178" r="3.5" fill="#4bbf8f"/>
+            <text class="m-cap" x="24" y="266" fill="var(--faint)">● active &nbsp; ● idle &nbsp; ● error &nbsp;·&nbsp; each block is one AI agent — click → agent modal ▸</text>
             <!-- modal on right -->
-            <rect x="596" y="52" width="280" height="320" rx="11" fill="var(--paper)" stroke="var(--forest)" stroke-width="1.4"/>
-            <text class="m-t" x="616" y="80" fill="var(--forest-deep)">Dave · Verification (AI-MRV)</text>
-            <line x1="616" y1="92" x2="856" y2="92" stroke="var(--line)"/>
-            <text class="m-lbl" x="616" y="112" fill="var(--forest)">Prompt — role</text>
-            <text class="m-cap" x="616" y="130" fill="var(--muted)">"Complete verification — field to VVB</text>
-            <text class="m-cap" x="616" y="143" fill="var(--muted)">to VCU — highest standard, fastest…"</text>
-            <text class="m-lbl" x="616" y="170" fill="var(--forest)">Connected tools</text>
-            <g class="m-cap" fill="var(--ink)"><text x="616" y="188">Project DATABASE</text><text x="850" y="188" text-anchor="end" fill="var(--ok)">●</text>
-              <text x="616" y="204">Verra registry acct</text><text x="850" y="204" text-anchor="end" fill="var(--ok)">●</text>
-              <text x="616" y="220">GHG Calculator</text><text x="850" y="220" text-anchor="end" fill="var(--ok)">●</text>
-              <text x="616" y="236">SOC Datasheet v2.0</text><text x="850" y="236" text-anchor="end" fill="var(--ok)">●</text>
-              <text x="616" y="252">Mailboxes (Dave/tech/Elad)</text><text x="850" y="252" text-anchor="end" fill="var(--commerce)">◐</text></g>
-            <text class="m-lbl" x="616" y="280" fill="var(--forest)">Skills</text>
-            <g class="m-cap" fill="var(--ink)"><text x="616" y="298">Stratification · Baseline-def</text><text x="616" y="314">DNDC · DayCent</text><text x="616" y="330">Uncertainty-Deduction (MC)</text><text x="616" y="346">GHG-Calculator</text></g>
+            <rect x="596" y="44" width="280" height="322" rx="14" fill="#fff" stroke="var(--forest)" stroke-width="1.4"/>
+            <use href="#av-dave" x="612" y="58" width="46" height="46"/>
+            <text class="m-t" x="668" y="78" fill="var(--forest-deep)">Dave</text>
+            <text x="668" y="93" style="font-size:8.5px;font-family:var(--mono)" fill="var(--muted)">Verification Manager (AI-MRV)</text>
+            <line x1="612" y1="112" x2="860" y2="112" stroke="var(--line)"/>
+            <text class="m-lbl" x="612" y="130" fill="var(--forest)">a · Prompt — role</text>
+            <text class="m-cap" x="612" y="146" fill="var(--muted)">"Complete verification — field to VVB</text>
+            <text class="m-cap" x="612" y="158" fill="var(--muted)">to VCU — highest standard, fastest…"</text>
+            <text class="m-lbl" x="612" y="182" fill="var(--forest)">b · Connected tools</text>
+            <g class="m-cap" fill="var(--ink)"><text x="612" y="199">Project DATABASE</text><text x="856" y="199" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="612" y="214">Verra registry acct</text><text x="856" y="214" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="612" y="229">GHG Calculator</text><text x="856" y="229" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="612" y="244">SOC Datasheet v2.0</text><text x="856" y="244" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="612" y="259">Mailboxes (Dave/tech/Elad)</text><text x="856" y="259" text-anchor="end" fill="var(--commerce)">◐</text></g>
+            <text class="m-lbl" x="612" y="285" fill="var(--forest)">c · Skills</text>
+            <g class="m-cap" fill="var(--ink)"><text x="612" y="302">Stratification · Baseline-def</text><text x="612" y="317">DNDC · DayCent</text><text x="612" y="332">Uncertainty-Deduction (MC)</text><text x="612" y="347">GHG-Calculator</text></g>
           </svg>
         </div>
       </div>
@@ -905,7 +946,7 @@
     <figure>
       <div class="mock">
         <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/project/CARBO-3988/forecast</span></div>
-        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">AI-Agent Department</span><span class="stat live">Live</span></span></div>
+        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">Verified Credits Factory</span><span class="stat live">Live</span></span></div>
         <div class="body">
           <svg viewBox="0 0 900 280" role="img" aria-label="Readiness and forecast mock-up">
             <rect width="900" height="280" fill="var(--soft)"/>
@@ -947,7 +988,7 @@
     <figure>
       <div class="mock">
         <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/project/CARBO-3988/report</span></div>
-        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">AI-Agent Department</span><span class="stat live">Live</span></span></div>
+        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">Verified Credits Factory</span><span class="stat live">Live</span></span></div>
         <div class="body">
           <svg viewBox="0 0 900 340" role="img" aria-label="Credit allocation report mock-up">
             <rect width="900" height="340" fill="var(--soft)"/>
@@ -993,7 +1034,7 @@
     <figure>
       <div class="mock">
         <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/market · VM0042 / ALM soil-carbon</span></div>
-        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">AI-Agent Department</span><span class="stat live">Live</span></span></div>
+        <div class="appbar"><span class="brand"></span><span class="who"><span class="nm">Verified Credits Factory</span><span class="stat live">Live</span></span></div>
         <div class="body">
           <svg viewBox="0 0 900 240" role="img" aria-label="Market tracker mock-up">
             <rect width="900" height="240" fill="var(--soft)"/>
