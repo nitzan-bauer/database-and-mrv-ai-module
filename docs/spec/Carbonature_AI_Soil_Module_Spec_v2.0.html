@@ -1,0 +1,1083 @@
+<meta charset="utf-8">
+<title>CarboNature — AI Soil MRV Module & Verified Credits Factory · Functional Specification v2.0</title>
+<style>
+  :root {
+    --ink:#14211c; --ground:#ffffff; --paper:#ffffff; --soft:#f4f7f5; --soft-2:#eaf0ec;
+    --line:#d9e2dd; --line-2:#c3d0c9; --muted:#546b62; --faint:#7d8f87;
+    --forest:#1f6f54; --forest-deep:#123c30; --forest-tint:#e7f1ec;
+    --verify:#2563eb; --verify-tint:#e8f0fe;
+    --commerce:#b45f06; --commerce-tint:#fbefe1;
+    --agent:#7c3aed; --agent-tint:#f0e9fc;
+    --warn:#b45309; --danger:#b42318; --ok:#1f7a54;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --ink:#e7efea; --ground:#0e1614; --paper:#141f1b; --soft:#182420; --soft-2:#1f2c27;
+      --line:#293833; --line-2:#374a43; --muted:#9fb0a8; --faint:#728379;
+      --forest:#4bbd93; --forest-deep:#8fdcc0; --forest-tint:#16241f;
+      --verify:#6ea0ff; --verify-tint:#16202f; --commerce:#e0954a; --commerce-tint:#2a2016;
+      --agent:#b48bff; --agent-tint:#211a2e; }
+  }
+  :root[data-theme="light"]{ --ink:#14211c; --ground:#ffffff; --paper:#ffffff; --soft:#f4f7f5; --soft-2:#eaf0ec;
+    --line:#d9e2dd; --line-2:#c3d0c9; --muted:#546b62; --faint:#7d8f87; --forest:#1f6f54; --forest-deep:#123c30; --forest-tint:#e7f1ec;
+    --verify:#2563eb; --verify-tint:#e8f0fe; --commerce:#b45f06; --commerce-tint:#fbefe1; --agent:#7c3aed; --agent-tint:#f0e9fc; }
+  :root[data-theme="dark"]{ --ink:#e7efea; --ground:#0e1614; --paper:#141f1b; --soft:#182420; --soft-2:#1f2c27;
+    --line:#293833; --line-2:#374a43; --muted:#9fb0a8; --faint:#728379; --forest:#4bbd93; --forest-deep:#8fdcc0; --forest-tint:#16241f;
+    --verify:#6ea0ff; --verify-tint:#16202f; --commerce:#e0954a; --commerce-tint:#2a2016; --agent:#b48bff; --agent-tint:#211a2e; }
+
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv11";}
+  .page{max-width:900px;margin:0 auto;padding:0 34px;}
+
+  /* ---- cover ---- */
+  .cover{min-height:96vh;display:flex;flex-direction:column;justify-content:center;
+    border-bottom:1px solid var(--line);}
+  .cover .brandline{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--forest);font-weight:600;}
+  .cover h1{font-size:clamp(30px,5.2vw,52px);line-height:1.05;letter-spacing:-.02em;margin:18px 0 10px;font-weight:680;text-wrap:balance;max-width:16ch;}
+  .cover .lede{font-size:19px;color:var(--muted);max-width:56ch;margin:0 0 30px;line-height:1.5;}
+  .cover .tiers{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:34px;}
+  .cover .tier{flex:1;min-width:200px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--paper);}
+  .cover .tier .n{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;}
+  .cover .tier.t1 .n{color:var(--verify);} .cover .tier.t2 .n{color:var(--agent);} .cover .tier.t3 .n{color:var(--muted);}
+  .cover .tier h3{margin:6px 0 4px;font-size:16px;font-weight:620;}
+  .cover .tier p{margin:0;font-size:13px;color:var(--muted);line-height:1.45;}
+  .cover .docmeta{display:flex;flex-wrap:wrap;gap:6px 26px;font-family:var(--mono);font-size:12px;color:var(--faint);border-top:1px solid var(--line);padding-top:18px;}
+  .cover .docmeta b{color:var(--muted);font-weight:600;}
+
+  /* ---- structure ---- */
+  .part-open{padding:44px 0 8px;border-top:2px solid var(--forest);margin-top:10px;}
+  .part-open .ey{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--forest);font-weight:600;}
+  .part-open h2{font-size:30px;margin:8px 0 6px;letter-spacing:-.015em;font-weight:660;text-wrap:balance;}
+  .part-open .sub{color:var(--muted);font-size:16px;margin:0;max-width:70ch;}
+
+  section{padding:26px 0;border-top:1px solid var(--line);}
+  section.tight{padding:18px 0;}
+  h3.sec{font-size:20px;margin:0 0 4px;letter-spacing:-.01em;font-weight:620;display:flex;align-items:baseline;gap:12px;}
+  h3.sec .id{font-family:var(--mono);font-size:13px;color:var(--forest);font-weight:600;}
+  h4{font-size:15.5px;margin:22px 0 8px;font-weight:640;letter-spacing:-.005em;}
+  p{margin:10px 0;}
+  .note{color:var(--muted);font-size:14px;}
+  strong{font-weight:640;}
+  code{font-family:var(--mono);font-size:.88em;background:var(--soft-2);padding:1px 5px;border-radius:4px;color:var(--forest-deep);}
+  @media (prefers-color-scheme: dark){ code{color:var(--forest);} }
+  ul,ol{margin:10px 0;padding-left:22px;}
+  li{margin:5px 0;}
+  a{color:var(--verify);text-decoration:none;}
+
+  .lead{font-size:16.5px;line-height:1.55;color:var(--ink);}
+  .callout{border-left:3px solid var(--forest);background:var(--forest-tint);border-radius:0 8px 8px 0;padding:12px 16px;margin:16px 0;font-size:14px;}
+  .callout.change{border-left-color:var(--commerce);background:var(--commerce-tint);}
+  .callout.change b{color:var(--commerce);}
+  .callout .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;color:var(--forest);display:block;margin-bottom:3px;}
+  .callout.change .tag{color:var(--commerce);}
+
+  /* tables */
+  .tbl{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;}
+  .tbl th{background:var(--forest-deep);color:#fff;text-align:left;padding:8px 11px;font-weight:600;font-size:12px;letter-spacing:.02em;}
+  @media (prefers-color-scheme: dark){ .tbl th{background:var(--forest);color:#0e1614;} }
+  .tbl td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .tbl tr:nth-child(even) td{background:var(--soft);}
+  .tbl code{background:none;padding:0;}
+  .tbl .mono{font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .wrap-x{overflow-x:auto;}
+
+  /* pills */
+  .pill{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;padding:2px 8px;border-radius:20px;font-weight:600;vertical-align:middle;}
+  .p-p1{background:var(--verify-tint);color:var(--verify);}
+  .p-p2{background:var(--agent-tint);color:var(--agent);}
+  .p-p3{background:var(--soft-2);color:var(--muted);}
+  .p-new{background:var(--commerce-tint);color:var(--commerce);}
+  .p-ok{background:var(--forest-tint);color:var(--forest);}
+
+  /* mockup frame */
+  figure{margin:20px 0;}
+  .mock{border:1px solid var(--line-2);border-radius:12px;overflow:hidden;background:var(--paper);box-shadow:0 1px 2px rgba(20,33,28,.05),0 10px 30px rgba(20,33,28,.05);}
+  .mock .bar{display:flex;align-items:center;gap:7px;padding:9px 13px;background:var(--soft);border-bottom:1px solid var(--line);}
+  .mock .bar .dots{display:flex;gap:5px;}
+  .mock .bar .dots i{width:10px;height:10px;border-radius:50%;background:var(--line-2);display:block;}
+  .mock .bar .url{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--ground);border:1px solid var(--line);border-radius:6px;padding:2px 10px;margin-left:6px;}
+  .mock .body{padding:0;}
+  .mock svg{display:block;width:100%;height:auto;}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:8px;font-family:var(--mono);}
+  figcaption b{color:var(--ink);font-weight:600;}
+
+  /* screen svg type */
+  svg text{font-family:var(--sans);fill:var(--ink);}
+  svg .m-t{font-weight:640;font-size:13px;}
+  svg .m-s{font-family:var(--mono);font-size:10px;fill:var(--muted);}
+  svg .m-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;fill:var(--faint);font-weight:600;}
+  svg .m-cap{font-family:var(--mono);font-size:9px;fill:var(--faint);}
+
+  /* TOC */
+  .toc{columns:2;column-gap:40px;font-size:13.5px;}
+  .toc a{display:block;padding:3px 0;color:var(--ink);border-bottom:1px dotted var(--line);break-inside:avoid;}
+  .toc a b{color:var(--forest);font-family:var(--mono);font-size:11px;margin-right:8px;}
+
+  footer{padding:30px 0;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+
+  @media print{
+    @page{size:A4;margin:16mm 15mm 18mm;}
+    body{font-size:10.5pt;background:#fff;}
+    .page{max-width:none;padding:0;}
+    .cover{min-height:auto;padding:8mm 0 10mm;page-break-after:always;justify-content:flex-start;}
+    .part-open{page-break-before:always;}
+    section{page-break-inside:auto;}
+    figure,.mock,.callout,.tbl{page-break-inside:avoid;}
+    h3.sec,h4{page-break-after:avoid;}
+    .mock{box-shadow:none;}
+    .toc{columns:2;}
+    a{color:var(--verify);}
+  }
+</style>
+
+<div class="page">
+
+  <!-- ============ COVER ============ -->
+  <div class="cover">
+    <div class="brandline">CarboNature · Verified Credits Factory</div>
+    <h1>AI Soil MRV Module &amp; Agent Department</h1>
+    <p class="lede">The build roadmap for CarboNature's Verra <b>VM0042 v2.2</b> carbon-credit engine — from field sampling and soil-carbon modelling to an autonomous AI-agent department that drives credits to issuance in the shortest possible time.</p>
+
+    <div class="tiers">
+      <div class="tier t1"><div class="n">Tier 1 · this build</div><h3>AI-Driven MRV Module</h3><p>Sampling, lab ingestion, DNDC/DayCent modelling, GHG accounting and VM0042 compliance — on the live database.</p></div>
+      <div class="tier t2"><div class="n">Tier 2 · next</div><h3>Verified Credits Factory</h3><p>Five AI agents (John, Reveka, Dave, Ron, Jennifer) with a control-tower dashboard and long-term memory.</p></div>
+      <div class="tier t3"><div class="n">Tier 3 · later</div><h3>Hardening &amp; scale</h3><p>Non-functional targets, in-house CRM, unified admin, multi-project scale.</p></div>
+    </div>
+
+    <div class="docmeta">
+      <span><b>Document</b> Functional Specification v2.0</span>
+      <span><b>Supersedes</b> AI Soil Module Spec v1.0 (Apr 2026)</span>
+      <span><b>Owner</b> Nitzan Bauer</span>
+      <span><b>Audience</b> Engineering / AI-tooling team</span>
+      <span><b>Date</b> 28 July 2026</span>
+      <span><b>Methodology</b> VM0042 v2.2 · ICVCM CCP</span>
+    </div>
+  </div>
+
+  <!-- ============ DOCUMENT CONTROL ============ -->
+  <section>
+    <h3 class="sec"><span class="id">0</span> Document control &amp; what changed in v2.0</h3>
+    <p class="lead">This revision rebuilds the April 2026 lean specification against two things that did not exist then: a <b>complete, live database</b> (41 tables on AWS RDS, seven build stages verified) and a <b>decision to build an autonomous AI-agent department</b> on top of the MRV module. Every screen, field list, and compliance hook here is reconciled with the database that is already running.</p>
+
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Area</th><th>v1.0 (April 2026)</th><th>v2.0 (this document)</th></tr>
+      <tr><td>Structure</td><td>One "lean" module, 9 screens, 3 priority tiers</td><td>Two product tiers — <b>Tier 1 MRV module</b> and <b>Tier 2 Verified Credits Factory</b> — plus a Tier 3 hardening backlog</td></tr>
+      <tr><td>Quantification</td><td>QA1 &amp; QA2</td><td><b>QA1 + QA2 + QA3</b>, full VM0042 v2.2 alignment, ICVCM CCP label</td></tr>
+      <tr><td>Composites / stratum</td><td>≥ 3</td><td><b>≥ 5</b> composites per stratum <span class="pill p-new">changed</span></td></tr>
+      <tr><td>MCP sampler token</td><td>window + 7 days</td><td>window + <b>14 days</b>, configurable <span class="pill p-new">changed</span></td></tr>
+      <tr><td>Forecast dashboard (old §6.8)</td><td>"Forecast vs Actuals"</td><td>Replaced by the <b>Agents Dashboard</b> (Tier 2, Part II)</td></tr>
+      <tr><td>AI Agent (old §7)</td><td>Single service account</td><td>A <b>department of five named agents</b> — see Part II</td></tr>
+      <tr><td>CRM (old §9)</td><td>Recommend HubSpot</td><td><b>Built in-house</b> after Tier 1 + 2; no external vendor <span class="pill p-new">changed</span></td></tr>
+      <tr><td>Admin (old §6.9)</td><td>Module-only roles</td><td><b>Unified admin</b> governing both the SaaS and the future CRM</td></tr>
+      <tr><td>Database</td><td>"DDL deferred to the developer"</td><td><b>Built and live</b> — this spec is written to it (Appendix B)</td></tr>
+      <tr><td>Non-functional (old §12)</td><td>Targets only</td><td>All <b>active</b>, delivered in Tier 3</td></tr>
+    </table></div>
+
+    <div class="callout"><span class="tag">Binding vs illustrative</span>
+      As in v1.0: <b>field lists, behaviours, compliance rules, and the agent memory protocol are binding.</b> The mock-ups throughout — colours, dimensions, exact layout — are illustrative and open to change during build.</div>
+  </section>
+
+  <!-- ============ CONTENTS ============ -->
+  <section>
+    <h3 class="sec"><span class="id">·</span> Contents</h3>
+    <nav class="toc">
+      <a href="#exec"><b>1</b> Executive summary</a>
+      <a href="#roadmap"><b>2</b> Tier roadmap &amp; backlog</a>
+      <a href="#p1"><b>I</b> TIER 1 — the MRV module</a>
+      <a href="#t1-scope"><b>3</b> Scope &amp; methodology alignment</a>
+      <a href="#t1-personas"><b>4</b> Personas &amp; roles</a>
+      <a href="#t1-arch"><b>5</b> Architecture (on the live DB)</a>
+      <a href="#t1-screens"><b>6</b> The eight screens</a>
+      <a href="#t1-compliance"><b>7</b> VM0042 v2.2 + CCP compliance</a>
+      <a href="#t1-soc"><b>8</b> Canonical SOC schema</a>
+      <a href="#t1-mcp"><b>9</b> MCP sampler integration</a>
+      <a href="#t1-accept"><b>10</b> Acceptance criteria (MVP)</a>
+      <a href="#p2"><b>II</b> TIER 2 — Verified Credits Factory</a>
+      <a href="#t2-mission"><b>11</b> Department mission</a>
+      <a href="#t2-agents"><b>12</b> The five agents</a>
+      <a href="#t2-dash"><b>13</b> The Agents Dashboard (A–D)</a>
+      <a href="#t2-feeds"><b>14</b> Outbound SaaS feeds</a>
+      <a href="#t2-memory"><b>15</b> Agent long-term memory protocol</a>
+      <a href="#p3"><b>III</b> TIER 3 — hardening</a>
+      <a href="#t3-nfr"><b>16</b> Non-functional requirements</a>
+      <a href="#appx-a"><b>A</b> VM0042 v2.2 checklist</a>
+      <a href="#appx-b"><b>B</b> Database alignment</a>
+    </nav>
+  </section>
+
+  <!-- ============ EXECUTIVE SUMMARY ============ -->
+  <section id="exec">
+    <h3 class="sec"><span class="id">1</span> Executive summary</h3>
+    <p class="lead">CarboNature is building a <b>verified-carbon factory</b>: a system that turns agricultural land management into high-integrity Verra Verified Carbon Units (VCUs), and does it faster each cycle. It is delivered in two tiers on one shared database.</p>
+
+    <p><b>Tier 1 — the AI-driven MRV module</b> is the operating layer for the measurement, reporting and verification work itself. It manages soil-sampling cycles on a Mapbox map, issues work orders to field contractors over the Model Context Protocol (MCP), ingests the laboratory's SOC datasheet, runs the DNDC and DayCent carbon models, computes GHG emissions from fuel and nitrogen fertiliser through the VM0042 GHG Calculator, and scores every cycle against the VM0042 v2.2 hard checks. It supports all three quantification approaches — <b>QA1 (Measure &amp; Model), QA2 (Measure &amp; Remeasure), and QA3 (default factors)</b> — and is built for the ICVCM Core Carbon Principles (CCP) label.</p>
+
+    <p><b>Tier 2 — the Verified Credits Factory</b> is an autonomous AI-agent department that operates the whole pipeline. Five named agents — <b>John</b> (head), <b>Reveka</b> (validation), <b>Dave</b> (verification / AI-MRV), <b>Ron</b> (marketing), and <b>Jennifer</b> (admin) — each carry a role prompt, a set of connected tools, and a growing library of skills, coordinated through a control-tower dashboard that shows, per project, how close each project is to issuance and how many credits the next Verification round will yield. Each agent keeps <b>long-term memory</b> in the project database so it improves cycle over cycle.</p>
+
+    <p>The whole system runs, for now, on the two <b>demo farms</b> — Elad Farm (Kenya) and Nitzan Veg-Tech Farm (Israel) — integrating with the CarboNature SaaS: pulling each farm's plots and Project Activities from the marketplace, and pushing forecast credits and readiness back into the farmer and credit-buyer dashboards. A dedicated <b>CRM is built in-house</b> after Tiers 1 and 2; no external CRM is procured.</p>
+
+    <div class="callout"><span class="tag">The north star</span>
+      The AI-Agent Department's mission, and the metric everything is judged against: <b>maximise the volume of Verra-verified carbon credits generated, in the shortest possible time.</b></div>
+  </section>
+
+  <!-- ============ ROADMAP / BACKLOG ============ -->
+  <section id="roadmap">
+    <h3 class="sec"><span class="id">2</span> Tier roadmap &amp; priority backlog</h3>
+    <p>Development proceeds tier by tier. Tier 1 ships the MRV module end-to-end on the demo farms; the moment it is accepted, Tier 2 (the agent department) begins; Tier 3 is hardening and scale. Within Tier 1 the priority tags <span class="pill p-p1">P1</span> <span class="pill p-p2">P2</span> <span class="pill p-p3">P3</span> order the screens.</p>
+
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>#</th><th>Capability</th><th>Tier</th><th>Notes</th></tr>
+      <tr><td>1</td><td>SSO login + workspace</td><td><span class="pill p-p1">T1 · P1</span></td><td>Single-tenant to start; project-scoped from day one</td></tr>
+      <tr><td>2</td><td>Project Map (Mapbox) — plots, strata, points, BSL</td><td><span class="pill p-p1">T1 · P1</span></td><td>Reads plot geometry from the live database / SaaS</td></tr>
+      <tr><td>3</td><td>Plot Details (history, lifecycle, lab, model runs)</td><td><span class="pill p-p1">T1 · P1</span></td><td>Pulls Project Activities from the marketplace pop-up</td></tr>
+      <tr><td>4</td><td>Sampling Plan Generator — 3-year view, ≥5 composites</td><td><span class="pill p-p1">T1 · P1</span></td><td>Grouped by project, filterable by farm</td></tr>
+      <tr><td>5</td><td>Work Order (PDF + email + MCP token, 14-day window)</td><td><span class="pill p-p1">T1 · P1</span></td><td>Starts real campaigns with the sampling lab</td></tr>
+      <tr><td>6</td><td>MCP Sampler view (GPS + barcode + photo)</td><td><span class="pill p-p1">T1 · P1</span></td><td>Field capture over the Model Context Protocol</td></tr>
+      <tr><td>7</td><td>Excel ingestion — SOC datasheet v2.0</td><td><span class="pill p-p1">T1 · P1</span></td><td>DIN 19539 fractions, ESM inputs, dry combustion</td></tr>
+      <tr><td>8</td><td>GHG Calculator engine (QA3)</td><td><span class="pill p-p1">T1 · P1</span></td><td>Fuel CO₂ + fertiliser N₂O; matches the workbook exactly</td></tr>
+      <tr><td>9</td><td>Model Run Console — DNDC v9.x / DayCent v6.x</td><td><span class="pill p-p2">T1 · P2</span></td><td>Paired baseline+project, Monte Carlo uncertainty</td></tr>
+      <tr><td>10</td><td>Compliance score — VM0042 hard checks + CCP</td><td><span class="pill p-p2">T1 · P2</span></td><td>Live in the DB as <code>evaluate_compliance()</code></td></tr>
+      <tr><td>11</td><td>MVR + IME workflow (QA1)</td><td><span class="pill p-p3">T1 · P3</span></td><td>VMD0053; IME contracted by the VVB</td></tr>
+      <tr><td>12</td><td>Unified Admin / permissions (SaaS + CRM)</td><td><span class="pill p-p1">T1 · P1</span></td><td>One admin governs both systems</td></tr>
+      <tr><td>13</td><td><b>Verified Credits Factory</b> — 5 agents + dashboard</td><td><span class="pill p-p2">Tier 2</span></td><td>Part II of this document</td></tr>
+      <tr><td>14</td><td>Agent long-term memory protocol</td><td><span class="pill p-p2">Tier 2</span></td><td>Postgres + pgvector, email-connected</td></tr>
+      <tr><td>15</td><td>In-house CRM · unified admin · NFR hardening</td><td><span class="pill p-p3">Tier 3</span></td><td>Built after Tiers 1 &amp; 2</td></tr>
+    </table></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- =====================  PART I — TIER 1  ===================== -->
+  <!-- ============================================================ -->
+  <div class="part-open" id="p1">
+    <div class="ey">Part I</div>
+    <h2>Tier 1 — the AI-driven MRV module</h2>
+    <p class="sub">The operating layer for one measurement–reporting–verification pipeline: sampling, lab ingestion, carbon modelling, GHG accounting, and VM0042 v2.2 compliance — running on the database that is already live.</p>
+  </div>
+
+  <section id="t1-scope">
+    <h3 class="sec"><span class="id">3</span> Scope &amp; methodology alignment</h3>
+    <p>The module is in <b>full alignment with Verra VM0042 v2.2</b> (Improved Agricultural Land Management, active 21 Oct 2025) and is built to qualify for the <b>ICVCM Core Carbon Principles (CCP)</b> high-integrity label. It supports all three quantification approaches simultaneously, because a single grouped project can carry plots on different approaches:</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Approach</th><th>What it does</th><th>Where it lives in the module</th></tr>
+      <tr><td><b>QA1</b> — Measure &amp; Model</td><td>DNDC / DayCent simulate SOC stock change against measured true-up points</td><td>Model Run Console · MVR / IME workflow</td></tr>
+      <tr><td><b>QA2</b> — Measure &amp; Remeasure</td><td>Direct SOC remeasurement against ≥3 baseline control sites</td><td>Sampling lifecycle · ESM stock computation</td></tr>
+      <tr><td><b>QA3</b> — Default factors</td><td>Fuel CO₂ and fertiliser N₂O from IPCC 2019 emission factors</td><td>GHG Calculator engine (fully built &amp; verified)</td></tr>
+    </table></div>
+
+    <h4>Cycle timing</h4>
+    <p>The interval between sampling rounds is driven by the crop cycle, and <b>can be as long as 10 months</b>. In short-growth crops a further sampling round may occur in <b>under a year</b>. The sampling-cycle state machine and the two trigger types (end-of-growth-cycle, and a cap from the previous cycle) accommodate both without assuming an annual cadence.</p>
+
+    <h4>The two workbooks the module operates against</h4>
+    <p>The module works in lockstep with the two spreadsheets attached to this spec, both already reconciled with the database:</p>
+    <ul>
+      <li><b>CarboNature_SOC_Datasheet_v2.0</b> — the file that goes to the laboratory, where SOC and bulk-density results are filled in. It carries the DIN 19539 carbon fractions (TOC = TOC400 + ROC600, TIC subtracted), ISO 11272 bulk density, coarse-fragment columns, and the dry-sample-mass + probe-area columns that make Equivalent-Soil-Mass reporting possible.</li>
+      <li><b>GHG_Calculator_VM0042_v2.2_OpenField_v1</b> — monitors emissions from nitrogen-based fertiliser use and fuel consumption in the farm operation. The module's emission engine reproduces this workbook to four decimals (Appendix B).</li>
+    </ul>
+
+    <h4>Model validation &amp; the VVB</h4>
+    <p>For the QA1 models, the <b>VVB appoints its own expert to audit the model calibration</b>. The module's <b>Model Validation Report (MVR)</b> and the <b>Independent Modeling Expert (IME)</b> workflow are built so that Dave (the Verification agent) communicates with that VVB-appointed expert directly. Per VMD0053, <b>the IME is contracted by the VVB, not by CarboNature</b> — the database records this explicitly.</p>
+
+    <div class="callout"><span class="tag">Confirmed — Monte Carlo uncertainty</span>
+      <b>Yes: VM0042 v2.2 supports Monte Carlo uncertainty.</b> Its §8.6.1.2 defines the Monte Carlo propagation path (Equations 65–69) for QA1, sampling the posterior predictive distribution of a Bayesian-calibrated model, and <b>recommends L = 500–1000 iterations</b>. It sits alongside the analytical error-propagation path (Eqs 60–64); either feeds the Equation 74 uncertainty deduction. Dave's Uncertainty-Deduction skill uses the Monte Carlo route, VMD0053-aligned.</div>
+  </section>
+
+  <section id="t1-personas">
+    <h3 class="sec"><span class="id">4</span> Personas &amp; roles</h3>
+    <p>Tier 1 has one human super-admin, one AI operator, and two field roles. Note the shift from v1.0: the "AI-MRV Agent" is no longer an anonymous service account — it is <b>Dave</b>, the Verification Manager agent from Tier 2, operating the module.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Persona</th><th>Type</th><th>Responsibility in the module</th></tr>
+      <tr><td><b>Super Admin</b> — Nitzan</td><td>Human · full access</td><td>Creates projects, approves baselines, signs off MVRs with the IME, manages tokens and model licences, holds override authority on every agent decision</td></tr>
+      <tr><td><b>Dave</b> — AI-MRV Agent</td><td>AI · service identity</td><td>Runs the whole verification pipeline: proposes sampling plans, runs DNDC/DayCent, ingests lab data, computes the GHG Calculator, drives compliance. Per-action AUTO / CONFIRM / OFF policy (default CONFIRM for anything that creates an artifact)</td></tr>
+      <tr><td><b>MRV Technician</b></td><td>Human · reports to Dave</td><td><b>Not an approver.</b> Executes sampling rounds on the ground with the lab's sampling teams and supervises adherence to CarboNature's protocols and Excels; feeds lab results back on the SOC Datasheet v2.0; collects fuel and fertiliser data from farmers for the GHG Calculator, after Dave emails follow-ups flagging the missing items</td></tr>
+      <tr><td><b>Soil Sampler</b></td><td>External contractor · MCP token</td><td>Reaches the module via a work-order-scoped MCP token; captures GPS, barcode, photo and notes per point. Cannot edit the plan or see other projects or lab results</td></tr>
+    </table></div>
+    <div class="callout"><span class="tag">Reporting line</span>
+      The MRV Technician's direct manager is <b>Dave</b> (the AI Verification Manager); above both sits the human <b>Super Admin &amp; CEO (Nitzan)</b>. Approval of Dave's proposals — sampling plans, work orders, model runs — rests with Dave and the Super Admin, never with the Technician.</div>
+  </section>
+
+  <section id="t1-arch">
+    <h3 class="sec"><span class="id">5</span> Architecture — on the live database</h3>
+    <p>Unlike v1.0, which deferred the data layer, the module is now written to a <b>database that already exists and is verified</b>. The DDL is not a future exercise; it is 16 applied migrations across seven build stages. The architecture below reflects what is running.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Layer</th><th>Choice</th><th>Status</th></tr>
+      <tr><td>Database</td><td>PostgreSQL 16 · PostGIS 3.4 · pgvector — schema <code>mrv</code>, 41 tables, 4 views</td><td><span class="pill p-ok">live on AWS RDS eu-west-1</span></td></tr>
+      <tr><td>Spatial</td><td>All geometry <code>SRID 4326</code>, GIST-indexed; point-in-plot &lt; 100 ms</td><td><span class="pill p-ok">built</span></td></tr>
+      <tr><td>Evidence integrity</td><td>Append-only triggers on every evidentiary table; full audit log</td><td><span class="pill p-ok">built</span></td></tr>
+      <tr><td>Object storage</td><td>S3 — raw lab workbooks, photos, model outputs, MVRs · KMS · Glacier 10 yr</td><td><span class="pill p-ok">provisioned</span></td></tr>
+      <tr><td>GHG engine</td><td><code>mrv.compute_emissions()</code> — reproduces the workbook exactly</td><td><span class="pill p-ok">built &amp; verified</span></td></tr>
+      <tr><td>Compliance engine</td><td><code>mrv.evaluate_compliance()</code> — VM0042 hard checks, 0–100 score</td><td><span class="pill p-ok">built</span></td></tr>
+      <tr><td>Agent memory</td><td><code>mrv.agent_memory</code> — pgvector(1536), per-agent, per-project</td><td><span class="pill p-ok">table live</span></td></tr>
+      <tr><td>Model runners</td><td>Containerised DNDC v9.x / DayCent v6.x (ECS/Fargate + NAT)</td><td><span class="pill p-p2">Tier 2 infra</span></td></tr>
+      <tr><td>Web client</td><td>React + TypeScript · Mapbox GL JS</td><td><span class="pill p-p1">Tier 1 build</span></td></tr>
+      <tr><td>Agent runtime</td><td>Claude (Anthropic) + MCP tool servers</td><td><span class="pill p-p2">Tier 2 build</span></td></tr>
+    </table></div>
+    <p class="note">The full data-flow and system-architecture diagrams accompany this spec as a separate two-page PDF. Appendix B summarises how each screen maps onto the database.</p>
+  </section>
+
+  <section id="t1-screens">
+    <h3 class="sec"><span class="id">6</span> The eight screens</h3>
+    <p>v1.0 had nine screens. The old §6.8 "Dashboard — Forecast vs Actuals" is <b>removed</b>: its job — readiness and forecast — is done far better by the Tier-2 Agents Dashboard (Part II), which also feeds those figures back to the SaaS. The remaining eight screens are updated below; each carries a mock-up. Field lists and validation are binding; the mock-ups are illustrative.</p>
+
+    <!-- SCREEN 1 -->
+    <h4>6.1 &nbsp;Login &amp; Workspace <span class="pill p-p1">P1</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/login · /workspace</span></h4>
+    <p>Single entry point for internal users via Google Workspace SSO; external samplers never log in here — they use a one-tap MCP token. Three failed passwords → 5-minute lockout; SSO preferred for <code>@carbonature.io</code>. First login routes to Project Map. <b>Unified sign-on:</b> the same identity carries into the future CRM and the SaaS admin (§6.8).</p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">app.carbonature.io/login</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 300" role="img" aria-label="Login screen mock-up">
+            <rect width="900" height="300" fill="var(--soft)"/>
+            <rect x="300" y="46" width="300" height="208" rx="12" fill="var(--paper)" stroke="var(--line)"/>
+            <circle cx="450" cy="86" r="16" fill="var(--forest)"/>
+            <text class="m-t" x="450" y="120" text-anchor="middle" fill="var(--forest-deep)">CarboNature MRV</text>
+            <text class="m-s" x="450" y="138" text-anchor="middle">Verified Credits Factory</text>
+            <rect x="326" y="158" width="248" height="30" rx="6" fill="var(--ground)" stroke="var(--line)"/>
+            <text class="m-s" x="338" y="177">email@carbonature.io</text>
+            <rect x="326" y="196" width="248" height="34" rx="7" fill="var(--forest)"/>
+            <text x="450" y="217" text-anchor="middle" fill="#fff" style="font-size:12px;font-weight:640">Sign in with Google Workspace</text>
+            <text class="m-cap" x="450" y="246" text-anchor="middle">SSO · password fallback · MFA</text>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 1 · Login</b> — SSO first; one identity across the module, the SaaS admin, and the CRM.</figcaption>
+    </figure>
+
+    <!-- SCREEN 2 -->
+    <h4>6.2 &nbsp;Project Map <span class="pill p-p1">P1</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/projects/{id}/map</span></h4>
+    <p>The primary spatial workspace on Mapbox: WP polygons, baseline control sites, sampling points colour-coded by status, and strata boundaries. Plot geometry is read from the live database, which is populated from the SaaS marketplace — so the map matches exactly what a farmer and a credit buyer see. Clicking a plot opens its Project-Activities pop-up (mycorrhizae, CoteN, mulching) and Plot Details. <span class="note">Reviewed against v1.0; layers and interactions unchanged except the geometry source is now the built database.</span></p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">app.carbonature.io/projects/CARBO-3988/map</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 380" role="img" aria-label="Project map mock-up">
+            <rect width="900" height="380" fill="#dfe8e2"/>
+            <!-- map field -->
+            <rect x="0" y="0" width="640" height="380" fill="#c9dccf"/>
+            <path d="M60 70 L250 60 L280 180 L120 210 Z" fill="#8fae9f" fill-opacity=".55" stroke="#1f6f54" stroke-width="2"/>
+            <path d="M300 90 L470 100 L450 230 L300 210 Z" fill="#e8743b" fill-opacity=".35" stroke="#e8743b" stroke-width="2"/>
+            <path d="M150 240 L360 250 L340 340 L140 330 Z" fill="#3969ac" fill-opacity=".30" stroke="#3969ac" stroke-width="2"/>
+            <!-- points -->
+            <g><circle cx="150" cy="130" r="5" fill="#1f6f54"/><circle cx="200" cy="150" r="5" fill="#1f6f54"/><circle cx="380" cy="150" r="5" fill="#e8a13b"/><circle cx="410" cy="180" r="5" fill="#8fbf6f"/><circle cx="250" cy="300" r="5" fill="#7a5c2e"/></g>
+            <!-- layers panel -->
+            <rect x="660" y="20" width="220" height="200" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="676" y="42">Layers</text>
+            <g class="m-s"><text x="694" y="66">Project plots (WP)</text><text x="694" y="88">Baseline control (BSL)</text><text x="694" y="110">Sampling points</text><text x="694" y="132">Strata boundaries</text><text x="694" y="154">Soil texture (FAO)</text><text x="694" y="176">SoilGrids — SOC %</text></g>
+            <g fill="var(--forest)"><rect x="676" y="58" width="10" height="10" rx="2"/><rect x="676" y="80" width="10" height="10" rx="2"/><rect x="676" y="102" width="10" height="10" rx="2"/><rect x="676" y="124" width="10" height="10" rx="2"/></g>
+            <rect x="676" y="146" width="10" height="10" rx="2" fill="none" stroke="var(--line-2)"/><rect x="676" y="168" width="10" height="10" rx="2" fill="none" stroke="var(--line-2)"/>
+            <!-- ask AI -->
+            <rect x="660" y="236" width="220" height="40" rx="20" fill="var(--agent)"/>
+            <text x="770" y="261" text-anchor="middle" fill="#fff" style="font-size:12px;font-weight:640">Ask Dave (AI-MRV)</text>
+            <!-- status legend -->
+            <rect x="660" y="292" width="220" height="70" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="676" y="312">Point status</text>
+            <g class="m-cap"><circle cx="682" cy="330" r="4" fill="#1f6f54"/><text x="694" y="334">planned</text><circle cx="762" cy="330" r="4" fill="#8fbf6f"/><text x="774" y="334">complete</text><circle cx="682" cy="350" r="4" fill="#e8a13b"/><text x="694" y="354">lab pending</text><circle cx="762" cy="350" r="4" fill="#7a5c2e"/><text x="774" y="354">baseline</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 2 · Project Map</b> — WP plots, strata, points by status, BSL; the "Ask AI" button now opens Dave.</figcaption>
+    </figure>
+
+    <!-- SCREEN 3 -->
+    <h4>6.3 &nbsp;Plot Details <span class="pill p-p1">P1</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/projects/{id}/plots/{plotId}</span></h4>
+    <p>One pane per plot, tabbed: Overview, Sampling history, Lab results, Photos &amp; barcodes, Model runs. The <b>Project Activities</b> for the plot are pulled from the marketplace pop-up and shown here, so the expected-credit forecast can be built alongside the GHG Calculator (avoidance + removal). <span class="note">Reviewed against v1.0; adjusted only to source Project Activities from the marketplace and to add the credit-forecast link.</span></p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">app.carbonature.io/projects/CARBO-3988/plots/ELD-WP-01</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 320" role="img" aria-label="Plot details mock-up">
+            <rect width="900" height="320" fill="var(--soft)"/>
+            <text class="m-t" x="24" y="36" fill="var(--forest-deep)">Elad Farm · Plot ELD-WP-01</text>
+            <text class="m-s" x="24" y="54">QA2 · 2.36 ha · Stratum A · tomatoes</text>
+            <!-- tabs -->
+            <g class="m-s"><text x="24" y="84" fill="var(--forest)" style="font-weight:700">Overview</text><text x="120" y="84">Sampling</text><text x="210" y="84">Lab</text><text x="270" y="84">Photos</text><text x="350" y="84">Model runs</text></g>
+            <line x1="24" y1="94" x2="876" y2="94" stroke="var(--line)"/>
+            <!-- overview grid -->
+            <g><rect x="24" y="110" width="270" height="88" rx="8" fill="var(--paper)" stroke="var(--line)"/>
+              <text class="m-lbl" x="40" y="130">Latest SOC stock</text><text class="m-t" x="40" y="158" fill="var(--forest)">19.5 t C/ha</text><text class="m-cap" x="40" y="178">ESM basis · 0–15 / 15–30 cm</text></g>
+            <g><rect x="312" y="110" width="270" height="88" rx="8" fill="var(--paper)" stroke="var(--line)"/>
+              <text class="m-lbl" x="328" y="130">Soil texture (USDA)</text><text class="m-t" x="328" y="158">Clay loam</text><text class="m-cap" x="328" y="178">sand 30 · silt 35 · clay 35</text></g>
+            <g><rect x="600" y="110" width="276" height="88" rx="8" fill="var(--paper)" stroke="var(--line)"/>
+              <text class="m-lbl" x="616" y="130">Sampling status</text><text class="m-t" x="616" y="158" fill="var(--commerce)">Lab pending</text><text class="m-cap" x="616" y="178">cycle 1 · initial · extended</text></g>
+            <!-- project activities -->
+            <rect x="24" y="214" width="852" height="86" rx="8" fill="var(--forest-tint)" stroke="var(--forest)" stroke-opacity=".4"/>
+            <text class="m-lbl" x="40" y="234" fill="var(--forest)">Project Activities — from marketplace · expected credits</text>
+            <g class="m-s"><text x="40" y="258">Apply Mycorrhiza (Rootella)</text><text x="40" y="278" fill="var(--muted)">3 tCO₂e/ha · removal</text>
+              <text x="320" y="258">Control-Release Fertiliser (Multicote)</text><text x="320" y="278" fill="var(--muted)">avoidance · GHG Calculator</text>
+              <text x="640" y="258" fill="var(--forest-deep)" style="font-weight:700">Forecast → Screen B</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 3 · Plot Details</b> — SOC, texture, status, and the marketplace Project Activities driving the credit forecast.</figcaption>
+    </figure>
+
+    <!-- SCREEN 4 -->
+    <h4>6.4 &nbsp;Sampling Plan Generator <span class="pill p-p1">P1</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/projects/{id}/plans</span></h4>
+    <p>The flagship planning screen. The user sees <b>all sampling plans for the coming 3 years, grouped by project and filterable by farmer/farm</b>; clicking a plan opens a detail window with its full parameters. The generator proposes a stratified-random plan that strictly meets VM0042 v2.2, and Dave overlays a recommendation with reasoning.</p>
+    <div class="callout change"><span class="tag">Changed from v1.0</span>
+      Minimum composites per stratum is <b>≥ 5</b> (was ≥ 3). The generator's <code>MIN_COMPOSITES</code> hard check and the compliance engine both enforce 5. First-cycle behaviour still adds extra soil-composition samples to define the baseline, and <b>every point in the first round also receives a Soil-Texture test</b> whose sand/silt/clay result drives the stratification.</div>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">app.carbonature.io/projects/plans · next 3 years</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 360" role="img" aria-label="Sampling plan generator mock-up">
+            <rect width="900" height="360" fill="var(--soft)"/>
+            <!-- filter bar -->
+            <text class="m-lbl" x="24" y="34">3-year sampling plans · grouped by project</text>
+            <rect x="620" y="20" width="120" height="26" rx="13" fill="var(--paper)" stroke="var(--line)"/><text class="m-s" x="636" y="37">Farm: all ▾</text>
+            <rect x="748" y="20" width="128" height="26" rx="13" fill="var(--paper)" stroke="var(--line)"/><text class="m-s" x="764" y="37">Project ▾</text>
+            <!-- timeline rows -->
+            <g class="m-s" fill="var(--muted)"><text x="24" y="74">2026</text><text x="304" y="74">2027</text><text x="584" y="74">2028</text></g>
+            <line x1="150" y1="60" x2="150" y2="330" stroke="var(--line)" stroke-dasharray="2 4"/><line x1="430" y1="60" x2="430" y2="330" stroke="var(--line)" stroke-dasharray="2 4"/><line x1="710" y1="60" x2="710" y2="330" stroke="var(--line)" stroke-dasharray="2 4"/>
+            <!-- Elad -->
+            <text class="m-t" x="24" y="104" font-size="12">Elad Farm</text>
+            <rect x="150" y="92" width="90" height="24" rx="6" fill="var(--forest)"/><text x="160" y="108" fill="#fff" style="font-size:10px;font-weight:640">Cycle 1 · init</text>
+            <rect x="430" y="92" width="80" height="24" rx="6" fill="var(--verify)" fill-opacity=".8"/><text x="440" y="108" fill="#fff" style="font-size:10px;font-weight:640">Cycle 2</text>
+            <rect x="640" y="92" width="80" height="24" rx="6" fill="var(--verify)" fill-opacity=".55"/><text x="650" y="108" fill="#fff" style="font-size:10px">Cycle 3</text>
+            <!-- Nitzan -->
+            <text class="m-t" x="24" y="144" font-size="12">Nitzan Veg-Tech</text>
+            <rect x="210" y="132" width="90" height="24" rx="6" fill="var(--forest)"/><text x="220" y="148" fill="#fff" style="font-size:10px;font-weight:640">Cycle 1 · init</text>
+            <rect x="380" y="132" width="80" height="24" rx="6" fill="var(--verify)" fill-opacity=".8"/><text x="390" y="148" fill="#fff" style="font-size:10px;font-weight:640">Cycle 2</text>
+            <text class="m-cap" x="470" y="148" fill="var(--faint)">short crop cycle · &lt; 1 yr gap</text>
+            <!-- config / proposal -->
+            <rect x="24" y="182" width="410" height="158" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="40" y="204">Plan configuration</text>
+            <g class="m-s"><text x="40" y="226">Approach</text><text x="250" y="226" fill="var(--ink)">QA2</text>
+              <text x="40" y="248">Depth scheme</text><text x="250" y="248" fill="var(--ink)">0–15 / 15–30 cm</text>
+              <text x="40" y="270">Confidence α / Power</text><text x="250" y="270" fill="var(--ink)">0.90 / 0.80</text>
+              <text x="40" y="292" fill="var(--commerce)" style="font-weight:700">Min composites / stratum</text><text x="250" y="292" fill="var(--commerce)" style="font-weight:700">5</text>
+              <text x="40" y="314">First-round texture test</text><text x="250" y="314" fill="var(--ink)">every point ✓</text></g>
+            <rect x="452" y="182" width="424" height="158" rx="9" fill="var(--agent-tint)" stroke="var(--agent)" stroke-opacity=".4"/>
+            <text class="m-lbl" x="468" y="204" fill="var(--agent)">Dave's proposal</text>
+            <text class="m-s" x="468" y="228" fill="var(--ink)">37 points across 4 strata; +1 in Stratum C</text>
+            <text class="m-s" x="468" y="248" fill="var(--muted)">reason: CV 38% — heterogeneous texture</text>
+            <text class="m-s" x="468" y="272" fill="var(--ink)">MDD target 0.50 t SOC/ha · same-season ✓</text>
+            <g><rect x="468" y="296" width="120" height="30" rx="7" fill="var(--forest)"/><text x="528" y="316" text-anchor="middle" fill="#fff" style="font-size:11px;font-weight:640">Approve</text>
+              <rect x="600" y="296" width="120" height="30" rx="7" fill="none" stroke="var(--line-2)"/><text x="660" y="316" text-anchor="middle" style="font-size:11px" fill="var(--muted)">Reject + note</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 4 · Sampling Plan Generator</b> — 3-year view grouped by project, ≥5 composites/stratum, first-round texture at every point.</figcaption>
+    </figure>
+
+    <!-- SCREEN 5 -->
+    <h4>6.5 &nbsp;Work Order <span class="pill p-p1">P1</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/projects/{id}/work-orders/{woId}</span></h4>
+    <p>The bridge from a planned cycle to a contractor in the field: a printable PDF, an email, and a one-tap MCP activation token. The document carries the header, assignment (contractor, sampling window, lab destination, project lead), the sampling-points table (Sample ID, stratum, WP/BSL, lat/lon, depth, composite cores, re-visit flag), the VM0042 §8.2.1.3 field protocol, and the MCP connection block. States: Draft → Sent → In progress → Completed → Closed; each transition is written to the audit log.</p>
+    <div class="callout change"><span class="tag">Changed from v1.0</span>
+      The MCP token now expires <b>14 days after the end of the sampling window</b> (was 7), and the window is <b>configurable</b> per work order.</div>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">app.carbonature.io/work-orders/WO-2026-0042</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 320" role="img" aria-label="Work order mock-up">
+            <rect width="900" height="320" fill="var(--soft)"/>
+            <rect x="24" y="20" width="560" height="280" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-t" x="44" y="48" fill="var(--forest-deep)">Work Order · WO-2026-0042</text>
+            <text class="m-s" x="44" y="66">Elad Farm · Cycle 1 · QA2 · Initial (extended)</text>
+            <line x1="44" y1="80" x2="564" y2="80" stroke="var(--line)"/>
+            <g class="m-s"><text x="44" y="104" fill="var(--muted)">Contractor</text><text x="200" y="104" fill="var(--ink)">CropNut Kenya — sampling team</text>
+              <text x="44" y="126" fill="var(--muted)">Sampling window</text><text x="200" y="126" fill="var(--ink)">10–24 Aug 2026 (configurable)</text>
+              <text x="44" y="148" fill="var(--muted)">Lab destination</text><text x="200" y="148" fill="var(--ink)">CropNut · ISO 17025 · dry combustion</text>
+              <text x="44" y="170" fill="var(--muted)">Points</text><text x="200" y="170" fill="var(--ink)">37 · ≥5 composites/stratum</text></g>
+            <text class="m-lbl" x="44" y="200">Sampling points (excerpt)</text>
+            <g class="m-cap" fill="var(--muted)"><text x="44" y="220">OFM0000000001 · A · WP · -0.917,37.19 · 0–30 · 5 cores</text>
+              <text x="44" y="238">OFM0000000002 · A · WP · -0.918,37.19 · 0–30 · 5 cores</text>
+              <text x="44" y="256">OFM0000000009 · — · BSL · -1.02,36.98 · 0–30 · 5 cores</text></g>
+            <text class="m-cap" x="44" y="284" fill="var(--faint)">Field protocol: clear surface · sieve &lt;2 mm · photograph · ship ≤5 days</text>
+            <!-- token block -->
+            <rect x="604" y="20" width="272" height="280" rx="9" fill="var(--forest-deep)"/>
+            <text x="620" y="48" fill="#fff" style="font-size:12px;font-weight:640;font-family:var(--mono)">MCP ACTIVATION</text>
+            <rect x="640" y="70" width="200" height="120" rx="8" fill="#fff"/>
+            <g fill="var(--forest-deep)"><rect x="662" y="92" width="14" height="14"/><rect x="686" y="92" width="14" height="14"/><rect x="710" y="92" width="14" height="14"/><rect x="758" y="92" width="14" height="14"/><rect x="662" y="116" width="14" height="14"/><rect x="710" y="116" width="14" height="14"/><rect x="734" y="116" width="14" height="14"/><rect x="782" y="116" width="14" height="14"/><rect x="662" y="140" width="14" height="14"/><rect x="686" y="140" width="14" height="14"/><rect x="734" y="140" width="14" height="14"/><rect x="782" y="140" width="14" height="14"/></g>
+            <text x="740" y="218" text-anchor="middle" fill="#cfe6db" style="font-size:10px;font-family:var(--mono)">mcp://sampler.carbonature.io</text>
+            <text x="740" y="234" text-anchor="middle" fill="#cfe6db" style="font-size:10px;font-family:var(--mono)">/wo/WO-2026-0042</text>
+            <text x="740" y="266" text-anchor="middle" fill="#8fdcc0" style="font-size:11px;font-weight:640">Expires: window + 14 days</text>
+            <text x="740" y="284" text-anchor="middle" fill="#7fbfa6" style="font-size:9px;font-family:var(--mono)">revocable by Super Admin / Dave</text>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 5 · Work Order</b> — PDF + email + scoped MCP token, expiring 14 days after the (configurable) window.</figcaption>
+    </figure>
+
+    <!-- SCREEN 6 -->
+    <h4>6.6 &nbsp;MCP Sampler View <span class="pill p-p1">P1</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/sampler/wo/{woId}?token=…</span></h4>
+    <p>The field web view an external contractor opens from the token, connected to Dave through MCP. Each capture — GPS, barcode scan, photo — is an MCP tool the agent can also call and inspect, and Dave surfaces context-aware reminders ("same-season window closes in 12 days"). Validation per point: GPS within 25 m of target (soft), barcode must match the expected Sample ID exactly (hard), photo required, then "Confirm &amp; next point". <span class="note">Reviewed against v1.0; unchanged except the token window (§6.5) and that the agent is now Dave.</span></p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">sampler.carbonature.io/wo/WO-2026-0042 · field</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 300" role="img" aria-label="MCP sampler view mock-up">
+            <rect width="900" height="300" fill="var(--soft)"/>
+            <!-- points list -->
+            <rect x="24" y="20" width="230" height="260" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="40" y="42">Points · 12 / 37 done</text>
+            <g class="m-s"><rect x="40" y="54" width="198" height="24" rx="5" fill="var(--forest-tint)"/><text x="52" y="70" fill="var(--forest-deep)">✓ OFM…001 · A</text>
+              <text x="52" y="98">✓ OFM…002 · A</text><rect x="40" y="106" width="198" height="24" rx="5" fill="var(--verify-tint)"/><text x="52" y="122" fill="var(--verify)">▶ OFM…003 · A (now)</text>
+              <text x="52" y="150">OFM…004 · B</text><text x="52" y="174">OFM…005 · B</text><text x="52" y="198">OFM…006 · C</text></g>
+            <!-- capture -->
+            <rect x="270" y="20" width="360" height="260" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-t" x="288" y="46" fill="var(--forest-deep)">OFM0000000003 · Stratum A</text>
+            <g><rect x="288" y="62" width="324" height="40" rx="7" fill="var(--forest-tint)"/><text class="m-s" x="304" y="86" fill="var(--forest-deep)">GPS ✓ 2.1 m from target · -0.9172, 37.190</text></g>
+            <g><rect x="288" y="110" width="324" height="40" rx="7" fill="var(--forest-tint)"/><text class="m-s" x="304" y="134" fill="var(--forest-deep)">Barcode ✓ matches OFM0000000003</text></g>
+            <g><rect x="288" y="158" width="324" height="40" rx="7" fill="var(--soft-2)" stroke="var(--line)"/><text class="m-s" x="304" y="182">Photo — tap to capture bag</text></g>
+            <rect x="288" y="212" width="324" height="40" rx="8" fill="var(--forest)"/><text x="450" y="237" text-anchor="middle" fill="#fff" style="font-size:12px;font-weight:640">Confirm &amp; next point</text>
+            <!-- agent reminders -->
+            <rect x="646" y="20" width="230" height="260" rx="9" fill="var(--agent-tint)" stroke="var(--agent)" stroke-opacity=".35"/>
+            <text class="m-lbl" x="662" y="42" fill="var(--agent)">Dave reminds</text>
+            <g class="m-s" fill="var(--ink)"><text x="662" y="70">Same-season window</text><text x="662" y="86" fill="var(--muted)">closes in 12 days</text>
+              <text x="662" y="118">Stratum C: 5 points left,</text><text x="662" y="134" fill="var(--muted)">you're closest to point 31</text>
+              <text x="662" y="166">Lab cutoff in 5 days —</text><text x="662" y="182" fill="var(--muted)">ship by 22 Aug</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 6 · MCP Sampler View</b> — GPS + barcode + photo per point, with Dave's field reminders over MCP.</figcaption>
+    </figure>
+
+    <!-- SCREEN 7 -->
+    <h4>6.7 &nbsp;Model Run Console — DNDC / DayCent <span class="pill p-p2">P2</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/projects/{id}/model-runs/{runId}</span></h4>
+    <p>The control surface for QA1. Inputs are pre-validated (initial SOC, bulk density, texture, PRISM daily climate, the per-plot ALM schedule, true-up SOC); the run executes in a containerised worker; logs stream live; the project-vs-baseline SOC trajectory and preliminary KPIs render as it runs. Results write back to the database (<code>model_runs</code>, <code>model_results</code>) and S3. <b>Monte Carlo uncertainty</b> (L 500–1000, VMD0053) produces the Equation-74 deduction. <span class="note">Reviewed against v1.0; adjusted so results land in the built tables and the MVR/IME workflow is explicit.</span></p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">app.carbonature.io/model-runs/run-2026-c1-dndc</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 320" role="img" aria-label="Model run console mock-up">
+            <rect width="900" height="320" fill="var(--soft)"/>
+            <!-- inputs -->
+            <rect x="24" y="20" width="250" height="280" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="40" y="42">Inputs status</text>
+            <g class="m-s"><text x="40" y="66">Initial SOC (t=0)</text><text x="230" y="66" fill="var(--ok)" text-anchor="end">✓</text>
+              <text x="40" y="88">Bulk density</text><text x="230" y="88" fill="var(--ok)" text-anchor="end">✓</text>
+              <text x="40" y="110">Soil texture</text><text x="230" y="110" fill="var(--ok)" text-anchor="end">✓</text>
+              <text x="40" y="132">Climate (PRISM)</text><text x="230" y="132" fill="var(--ok)" text-anchor="end">✓</text>
+              <text x="40" y="154">ALM schedule</text><text x="230" y="154" fill="var(--ok)" text-anchor="end">✓</text>
+              <text x="40" y="176">True-up SOC</text><text x="230" y="176" fill="var(--commerce)" text-anchor="end">23/37</text></g>
+            <text class="m-lbl" x="40" y="206">Configuration</text>
+            <g class="m-s"><text x="40" y="228">Model</text><text x="230" y="228" text-anchor="end" fill="var(--ink)">DNDC v9.5</text>
+              <text x="40" y="250">Scenario</text><text x="230" y="250" text-anchor="end" fill="var(--ink)">paired</text>
+              <text x="40" y="272">Uncertainty</text><text x="230" y="272" text-anchor="end" fill="var(--agent)">Monte Carlo · L=1000</text></g>
+            <!-- log + kpi -->
+            <rect x="290" y="20" width="330" height="180" rx="9" fill="#0e1a16"/>
+            <text x="306" y="42" fill="#8fdcc0" style="font-size:11px;font-family:var(--mono)">running · baseline → project → MC</text>
+            <g style="font-family:var(--mono)" font-size="9.5" fill="#cfe6db"><text x="306" y="66">[14:02] load PRISM 6yr × 4 strata … ok</text><text x="306" y="84">[14:05] baseline scenario … done</text><text x="306" y="102">[14:09] project scenario … done</text><text x="306" y="120">[14:11] Monte Carlo 1000 draws …</text><text x="306" y="138" fill="#8fdcc0">[14:18] ████████████░░░ 78%</text></g>
+            <text class="m-cap" x="306" y="180" fill="#7fbfa6">ECS Fargate · logs → S3</text>
+            <!-- kpi -->
+            <rect x="636" y="20" width="240" height="180" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="652" y="42">Preliminary KPIs</text>
+            <g class="m-s"><text x="652" y="66">ΔSOC project</text><text x="860" y="66" text-anchor="end" fill="var(--forest)" style="font-weight:700">1.40 t/ha</text>
+              <text x="652" y="90">ΔSOC baseline</text><text x="860" y="90" text-anchor="end" fill="var(--ink)">0.20 t/ha</text>
+              <text x="652" y="114" fill="var(--ink)" style="font-weight:700">Net removal</text><text x="860" y="114" text-anchor="end" fill="var(--forest)" style="font-weight:700">1.20 t/ha</text>
+              <text x="652" y="138">Uncertainty (Eq 74)</text><text x="860" y="138" text-anchor="end" fill="var(--commerce)">12.5%</text>
+              <text x="652" y="162">After deduction</text><text x="860" y="162" text-anchor="end" fill="var(--forest)" style="font-weight:700">1.05 t/ha</text></g>
+            <!-- mvr strip -->
+            <rect x="290" y="212" width="586" height="88" rx="9" fill="var(--verify-tint)" stroke="var(--verify)" stroke-opacity=".35"/>
+            <text class="m-lbl" x="306" y="232" fill="var(--verify)">MVR &amp; IME workflow (QA1 · VMD0053)</text>
+            <g class="m-s" fill="var(--ink)"><text x="306" y="256">Dave generates the Model Validation Report from this run</text>
+              <text x="306" y="278" fill="var(--muted)">→ IME (contracted by the VVB) reviews &amp; signs → recorded in mrv.mvr</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 7 · Model Run Console</b> — DNDC/DayCent paired run, Monte Carlo deduction, MVR handed to the VVB's IME.</figcaption>
+    </figure>
+
+    <!-- SCREEN 8 -->
+    <h4>6.8 &nbsp;Admin / User Management — unified <span class="pill p-p1">P1</span> &nbsp;<span class="mono" style="font-family:var(--mono);font-size:12px;color:var(--faint)">/admin</span></h4>
+    <p>A <b>single, unified permissions-and-admin system that centralises administration for both the MRV module / future CRM and the CarboNature SaaS</b>. The module connects to the SaaS admin, pulls all of its data, and governs it from here — one place to manage users, roles, project access, SSO, MCP tokens, model licences, storage, audit log, and lab integrations, across both systems.</p>
+    <div class="callout change"><span class="tag">Changed from v1.0</span>
+      Admin is no longer module-only. It is the <b>authoritative admin for the SaaS as well</b>, so a user, role, or permission is defined once and applies everywhere. The in-house CRM (Tier 3) plugs into the same system.</div>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">app.carbonature.io/admin · governs MRV + SaaS + CRM</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 300" role="img" aria-label="Unified admin mock-up">
+            <rect width="900" height="300" fill="var(--soft)"/>
+            <!-- sidebar -->
+            <rect x="24" y="20" width="180" height="260" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="40" y="42">Admin</text>
+            <g class="m-s"><text x="40" y="66" fill="var(--forest)" style="font-weight:700">Users &amp; Roles</text><text x="40" y="90">SSO &amp; Security</text><text x="40" y="114">MCP tokens</text><text x="40" y="138">Model licences</text><text x="40" y="162">Lab integrations</text><text x="40" y="186">Storage (S3)</text><text x="40" y="210">Audit log</text><text x="40" y="238" fill="var(--agent)">Agent policies</text></g>
+            <!-- governed systems -->
+            <rect x="220" y="20" width="656" height="70" rx="9" fill="var(--forest-tint)" stroke="var(--forest)" stroke-opacity=".35"/>
+            <text class="m-lbl" x="236" y="42" fill="var(--forest)">One admin governs three systems</text>
+            <g><rect x="236" y="52" width="180" height="26" rx="13" fill="var(--paper)" stroke="var(--line)"/><text class="m-s" x="252" y="69">MRV module · live</text>
+              <rect x="428" y="52" width="180" height="26" rx="13" fill="var(--paper)" stroke="var(--line)"/><text class="m-s" x="444" y="69">CarboNature SaaS · pulled</text>
+              <rect x="620" y="52" width="180" height="26" rx="13" fill="var(--paper)" stroke="var(--line)"/><text class="m-s" x="636" y="69" fill="var(--muted)">In-house CRM · Tier 3</text></g>
+            <!-- users table -->
+            <rect x="220" y="102" width="656" height="178" rx="9" fill="var(--paper)" stroke="var(--line)"/>
+            <g class="m-lbl" fill="var(--faint)"><text x="240" y="126">User</text><text x="440" y="126">Role</text><text x="620" y="126">Scope</text><text x="770" y="126">System</text></g>
+            <line x1="236" y1="134" x2="860" y2="134" stroke="var(--line)"/>
+            <g class="m-s" fill="var(--ink)"><text x="240" y="158">Nitzan Bauer</text><text x="440" y="158">Super Admin</text><text x="620" y="158" fill="var(--muted)">all</text><text x="770" y="158" fill="var(--forest)">all</text>
+              <text x="240" y="184">Dave (AI-MRV)</text><text x="440" y="184">Verification · service</text><text x="620" y="184" fill="var(--muted)">CARBO-3988</text><text x="770" y="184" fill="var(--forest)">MRV</text>
+              <text x="240" y="210">MRV Technician</text><text x="440" y="210">Field · reports to Dave</text><text x="620" y="210" fill="var(--muted)">CARBO-3988</text><text x="770" y="210" fill="var(--forest)">MRV</text>
+              <text x="240" y="236">Elad (farmer)</text><text x="440" y="236">Grower · portal</text><text x="620" y="236" fill="var(--muted)">Elad Farm</text><text x="770" y="236" fill="var(--verify)">SaaS</text>
+              <text x="240" y="262">Reserve buyer</text><text x="440" y="262">Credit buyer · portal</text><text x="620" y="262" fill="var(--muted)">reserved plots</text><text x="770" y="262" fill="var(--verify)">SaaS</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen 8 · Unified Admin</b> — one permissions system governing the MRV module, the SaaS, and the future CRM.</figcaption>
+    </figure>
+  </section>
+
+  <section id="t1-compliance">
+    <h3 class="sec"><span class="id">7</span> VM0042 v2.2 + CCP compliance hooks</h3>
+    <p>Compliance is not a report generated at the end; it is computed continuously by <code>mrv.evaluate_compliance()</code> in the database, which scores every farm-cycle 0–100. A hard failure caps the score below 100 regardless of warnings, so the dashboard reads red the moment a rule is broken. The module must qualify for both <b>VM0042 v2.2</b> and the <b>ICVCM CCP</b> label.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>#</th><th>Hard check (must pass)</th><th>VM0042</th><th>Status</th></tr>
+      <tr><td>1</td><td>Stratified random sampling every cycle</td><td>§8.2.1.2</td><td><span class="pill p-ok">enforced</span></td></tr>
+      <tr><td>2</td><td><b>≥ 5 composite samples per stratum</b> <span class="pill p-new">was 3</span></td><td>§8.2.1.2</td><td><span class="pill p-ok">enforced</span></td></tr>
+      <tr><td>3</td><td>ESM reporting — 2 depth increments (0–15 / 15–30 cm)</td><td>§8.2.1.6</td><td><span class="pill p-ok">enforced</span></td></tr>
+      <tr><td>4</td><td>Same-season sampling window respected</td><td>§8.2.1.1</td><td><span class="pill p-ok">enforced</span></td></tr>
+      <tr><td>5</td><td>QA2: ≥ 3 baseline control sites, each ≤ 250 km, all 9 similarity criteria</td><td>§8.3 · Table 7</td><td><span class="pill p-ok">enforced</span></td></tr>
+      <tr><td>6</td><td>QA1: model validated per VMD0053; MVR present and IME-signed</td><td>§8.6.1.3</td><td><span class="pill p-p3">P3</span></td></tr>
+      <tr><td>7</td><td>Lab ISO/IEC 17025 (or NAPT / GLOSOLAN)</td><td>§8.2.1.4</td><td><span class="pill p-ok">enforced</span></td></tr>
+      <tr><td>8</td><td>Dry combustion (Dumas) unless a deviation is documented</td><td>§8.2.1.4</td><td><span class="pill p-ok">enforced</span></td></tr>
+    </table></div>
+    <p><b>Soft warnings</b> (raise, don't block): per-stratum CV &gt; 30% (suggest +1 sample next cycle); model true-up due within 6 months; verification approaching with &gt; 5% sampling shortfall.</p>
+    <div class="callout"><span class="tag">ICVCM CCP — the DSM condition</span>
+      To carry the CCP label, SOC must be measured by any permitted technique <b>except Digital Soil Mapping (DSM / VT0014)</b>, which ICVCM did not assess. The module and Reveka's PDD infrastructure are built to that condition; VT0014 is deliberately out of scope for CCP-labelled projects.</div>
+  </section>
+
+  <section id="t1-soc">
+    <h3 class="sec"><span class="id">8</span> Canonical SOC schema — from the SOC Datasheet v2.0</h3>
+    <p>The laboratory returns <code>CarboNature_SOC_Datasheet_v2.0</code>; the ingestion pipeline maps it to the canonical <code>mrv.soc_measurements</code> table, recomputing SOC in the service layer rather than trusting the sheet's formula. The v2.0 datasheet reflects everything the module learned about dry combustion and ESM.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Field</th><th>Canonical column</th><th>Notes</th></tr>
+      <tr><td>Sample ID</td><td class="mono">sample_id</td><td><code>OFM</code> + 10 digits, e.g. <code>OFM0000021615</code></td></tr>
+      <tr><td>Depth increment</td><td class="mono">depth_top / depth_base</td><td>0–15 &amp; 15–30 cm — two rows per sample (ESM)</td></tr>
+      <tr><td>TOC 400 / ROC 600 / TIC 900</td><td class="mono">toc_400 · roc_600 · tic_900</td><td>DIN 19539 / ISO 17505 ramped fractions</td></tr>
+      <tr><td>TOC (organic)</td><td class="mono">toc_pct <b>(generated)</b></td><td><b>TOC = TOC400 + ROC600</b>; never entered by hand</td></tr>
+      <tr><td>Bulk density</td><td class="mono">bulk_density</td><td>ISO 11272, fine-earth (&lt; 2 mm) only</td></tr>
+      <tr><td>Coarse fragments</td><td class="mono">small_cf · large_cf</td><td>2–10 mm mass % · &gt; 10 mm vol %</td></tr>
+      <tr><td>Dry sample mass · probe area</td><td class="mono">dry_sample_mass_g · probe_area_cm2</td><td><b>Required for ESM</b> — soil mass = mass ÷ area (§8.2.1.6)</td></tr>
+      <tr><td>SOC stock</td><td class="mono">soc_t_per_ha</td><td>Factor ×100 (not ×1000); recomputed in service layer</td></tr>
+      <tr><td>Texture (cycle 1)</td><td class="mono">sand · silt · clay → usda_class</td><td>Drives stratification; sum = 100</td></tr>
+    </table></div>
+    <div class="callout"><span class="tag">Two corrections baked into v2.0</span>
+      <b>TOC is not TOC400 alone</b> — treating the labile fraction as total organic carbon under-reports any soil holding char or soot (common where residue is burnt). And <b>ESM needs mass and area, not bulk density and depth</b> — omitting the dry-mass and probe-area columns makes equivalent-soil-mass reporting impossible in retrospect, which is irreversible.</div>
+  </section>
+
+  <section id="t1-mcp">
+    <h3 class="sec"><span class="id">9</span> MCP sampler integration</h3>
+    <p>The external contractor has no SSO account. When Dave (or the Super Admin) sends a work order, the system issues a scoped MCP token; the contractor opens the URL in any browser and the Sampler View (Screen 6) speaks to the Sampler MCP server. The same tool surface — <code>capture_gps</code>, <code>scan_barcode</code>, <code>capture_photo</code>, <code>submit_point</code> — is used by both the human contractor and Dave, so there is no code drift between the human and agent paths.</p>
+    <ul>
+      <li><b>Scope:</b> one work order and its sampling points only.</li>
+      <li><b>Expiry:</b> end of the sampling window <b>+ 14 days</b>, configurable <span class="pill p-new">changed</span>.</li>
+      <li><b>Revocable</b> by Super Admin or Dave at any time; stored as a hash in <code>mrv.mcp_tokens</code>, never the raw token.</li>
+    </ul>
+  </section>
+
+  <section id="t1-accept">
+    <h3 class="sec"><span class="id">10</span> Acceptance criteria — Tier 1 MVP</h3>
+    <ol>
+      <li>Super Admin logs in via SSO and sees the demo project(s) on the map.</li>
+      <li>Any plot opens a populated Plot Details panel, including its marketplace Project Activities.</li>
+      <li>A 3-year sampling plan can be generated (manual rules), grouped by project and filtered by farm, meeting <b>≥ 5 composites/stratum</b>, and approved.</li>
+      <li>Approving a plan creates a Work Order with a downloadable PDF, a contractor email, and an MCP token URL valid for the window + 14 days.</li>
+      <li>An external sampler opens the token URL and captures GPS + barcode + photo + notes for at least one point.</li>
+      <li>The <code>CarboNature_SOC_Datasheet_v2.0</code> lands and within a minute the parsed rows appear under the plot's Lab tab and the map flips the point green.</li>
+      <li>The GHG Calculator engine reproduces a baseline farm-year to four decimals (fuel CO₂ + fertiliser N₂O).</li>
+      <li>The compliance score computes for a cycle, flagging any hard-check failure.</li>
+      <li>The unified Admin shows users from both the MRV module and the SaaS, governed from one place.</li>
+      <li>Every action above is written to the audit log with timestamp, actor, action, and target.</li>
+    </ol>
+    <p class="note">All runs are on the designated demo farms — <b>Elad Farm</b> and <b>Nitzan Veg-Tech Farm</b>.</p>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- =====================  PART II — TIER 2  ==================== -->
+  <!-- ============================================================ -->
+  <div class="part-open" id="p2" style="border-top-color:var(--agent)">
+    <div class="ey" style="color:var(--agent)">Part II · Tier 2</div>
+    <h2>The Verified Credits Factory</h2>
+    <p class="sub">An autonomous department of five AI agents that operates the whole credit pipeline — validation, verification, marketing, and admin — coordinated through a control-tower dashboard, each agent improving cycle over cycle through long-term memory.</p>
+  </div>
+
+  <section id="t2-mission">
+    <h3 class="sec"><span class="id">11</span> Department mission &amp; overview</h3>
+    <p class="lead">The AI-Agent Department's mission is the company's north star: <b>generate the maximum volume of Verra-verified carbon credits, in the shortest possible time.</b> Every agent, skill, and screen is measured against that one outcome.</p>
+    <p>The department is a hierarchy: <b>John</b> heads it and owns the dashboard; beneath him, <b>Reveka</b> drives validation, <b>Dave</b> drives verification (he is the AI-MRV agent that operates the Tier-1 module), <b>Ron</b> drives marketing, and <b>Jennifer</b> keeps admin and records clean. A human <b>MRV Technician</b> executes field work under Dave. Everything reports, ultimately, to the CEO.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Agent</th><th>Title</th><th>Owns</th></tr>
+      <tr><td><b>John</b></td><td>Head of Department</td><td>The mission, the four agents, and the control-tower dashboard</td></tr>
+      <tr><td><b>Reveka</b></td><td>Validation Manager</td><td>PDD, baseline, additionality, VVB validation audit, grouped-project design</td></tr>
+      <tr><td><b>Dave</b></td><td>Verification Manager (AI-MRV)</td><td>Sampling → modelling → GHG accounting → VVB verification → VCU issuance</td></tr>
+      <tr><td><b>Ron</b></td><td>Marketing Manager</td><td>Farmer acquisition (Funnel A) and credit-buyer acquisition (Funnel B)</td></tr>
+      <tr><td><b>Jennifer</b></td><td>Admin Secretary</td><td>Document centralisation, CRM/DB hygiene, scheduling, board-meeting protocol</td></tr>
+    </table></div>
+  </section>
+
+  <section id="t2-agents">
+    <h3 class="sec"><span class="id">12</span> The five agents</h3>
+    <p>Each agent carries a role prompt, a set of connected tools, and a library of skills — some shared, some the agent develops itself to reach its goal faster. Below is each agent's mission and the core of its responsibilities; the full role prompts are stored in the agent registry and shown verbatim in the dashboard's agent modal (§13, Screen A).</p>
+
+    <!-- JOHN -->
+    <div style="border:1px solid var(--line);border-left:4px solid var(--agent);border-radius:0 10px 10px 0;padding:16px 20px;margin:18px 0;background:var(--paper)">
+      <h4 style="margin-top:0;font-size:17px">John — Head of Department</h4>
+      <p class="note" style="margin-top:2px"><b>Mission:</b> generate the maximum volume of Verra-verified credits in the shortest possible time. <b>Reports to:</b> the CEO (Nitzan).</p>
+      <ul style="margin-bottom:0">
+        <li><b>Lead the four agents</b> — direct, prioritise and coordinate Validation, Verification, Marketing and Admin so they pull in one direction.</li>
+        <li><b>Detect and clear bottlenecks</b> in the validation/verification pipeline; master the Verra and VVB process and its common failure points; benchmark comparable VM0042 / ALM projects to extract the levers that shorten time-to-issuance.</li>
+        <li><b>Maximise credit yield</b> — command both Carbon Removal and Carbon Avoidance generation, and drive high-yield activities (mycorrhizae, CoteN, mulching) across more farmer hectares.</li>
+        <li><b>Own and operate the Agents Dashboard</b> — feed it complete, current data from every source (Verra registry, the database, the model engine, each agent), run it day to day, consolidate the full picture, and govern the outbound feeds to the SaaS so no numbers diverge across audiences.</li>
+        <li><b>Controls &amp; QA</b> — reconcile forecast-vs-actual, validate the credit-allocation math against the model and stakeholder agreements, and confirm figures are audit-ready before they surface.</li>
+        <li><b>Ensure integrity &amp; compliance</b> — keep every project aligned with VM0042 v2.2 and the ICVCM CCP standard; report to the CEO on volume, cycle time, pipeline health, and blockers.</li>
+      </ul>
+    </div>
+
+    <!-- REVEKA -->
+    <div style="border:1px solid var(--line);border-left:4px solid var(--verify);border-radius:0 10px 10px 0;padding:16px 20px;margin:18px 0;background:var(--paper)">
+      <h4 style="margin-top:0;font-size:17px">Reveka — Validation Manager</h4>
+      <p class="note" style="margin-top:2px"><b>Mission:</b> complete the validation certification to the highest standard in the shortest time. <b>Reports to:</b> John.</p>
+      <ul style="margin-bottom:0">
+        <li><b>Produce a submission-ready PDD in ≤ 30 minutes</b> from Verra's official Word template, in full alignment with VM0042 v2.2. Run a preliminary digital questionnaire — <b>directed to the Super Admin (Nitzan), not the client</b> — to gather inputs; on the first round, partially complete the PDD and submit under "Under Development" to register the project.</li>
+        <li><b>Own the single source of truth for project data</b> (jointly with Jennifer) — farmer records, plot geometries, activities, evidence — and run QA/QC on boundaries, areas and soil inputs before every submission.</li>
+        <li><b>Document baseline, additionality, applicability</b> exactly as VM0042 v2.2 requires; compile the eligibility evidence pack linking each activity to its VM0042 reference (Appendix 1 p.141; definitions p.9).</li>
+        <li><b>Design the project as a grouped project</b> so farmers and instances can be added post-validation; prepare the KMZ/KML for every farmer's plots and the Listing Representation form.</li>
+        <li><b>Ensure the monitoring plan meets the CCP condition</b> — SOC by any permitted technique <b>except DSM</b>. Build the PDD-level infrastructure for the DayCent / DNDC models and for the ICVCM CCP label.</li>
+        <li><b>Manage all VVB validation communications</b>, resolve every reject/finding, run the public-comment step, and hand off cleanly to Dave once validation is complete.</li>
+        <li><b>Skill — PDD Generator:</b> a dedicated skill that researches every issued PDD in the category on the Verra registry, anchors the draft to the closest projects (crop, geography, climate, activities, approach), and writes the PDD end-to-end from the official template, traceable to its sources.</li>
+      </ul>
+    </div>
+
+    <!-- DAVE -->
+    <div style="border:1px solid var(--line);border-left:4px solid var(--forest);border-radius:0 10px 10px 0;padding:16px 20px;margin:18px 0;background:var(--paper)">
+      <h4 style="margin-top:0;font-size:17px">Dave — Verification Manager (AI-MRV)</h4>
+      <p class="note" style="margin-top:2px"><b>Mission:</b> complete verification — from field measurement through carbon modelling to VVB verification and VCU issuance — to the highest standard in the shortest time. <b>Reports to:</b> John. <b>Operates the entire Tier-1 module.</b></p>
+      <ul style="margin-bottom:0">
+        <li><b>First-round texture at every point</b> — ensure every sampling point in the first round gets a soil-texture test, and use the results to divide the project into homogeneous strata; apply the same texture-based stratification to the baseline (BSL) plots.</li>
+        <li><b>Run a dedicated skill suite:</b> Stratification (VM0042 §8.2.1, re-stratify as texture/lab data arrive), Baseline-definition (BSL sites: QA2 ≥3 within 250 km, all 9 Table-7 criteria), DNDC (v9.x, paired, stratum-by-stratum, true-up), DayCent (v6.x, same wrapper), Uncertainty-Deduction (Monte Carlo, VMD0053, L≈500–1000), and a GHG-Calculator skill that runs the whole workbook end-to-end.</li>
+        <li><b>Own the two VM0042 audit workbooks</b> — and above all <b>understand deeply what each one computes and why</b>, not merely how to fill it:
+          <ul>
+            <li><b>GHG Calculator</b> (Approach 3): baseline (3-yr pre-project average) and project activity per farm-year — fertilisers, fuel, residues, N-fixing crops — commanding direct and indirect N₂O, N₂O from N-fixing residues and residue burning, CO₂ from fuel, the conservativeness auto-selection of factors, the QA3-vs-QA1 soil-N₂O double-counting switch, leakage, and the roll-up to estimated VCUs with AFOLU buffer withholding.</li>
+            <li><b>SOC &amp; Bulk-Density Datasheet v2.0</b>: Sample IDs, depth increments, coarse fragments, the DIN 19539 fractions (TOC = TOC400 + ROC600, TIC subtracted), ISO 11272 bulk density, and the dry-mass + probe-area columns for ESM (§8.2.1.6); enforce dry combustion, ISO 17025 lab consistency, and the built-in QC checks.</li>
+          </ul></li>
+        <li><b>Defend every number</b> — trace any output back to its inputs, equations, and VM0042 / IPCC 2019 source, and answer the VVB's questions on both workbooks without hesitation.</li>
+        <li><b>Enforce the hard checks</b> (stratified random; <b>≥5 composites/stratum</b>; ESM ≥2 increments; same-season; QA2 ≥3 control sites ≤250 km; QA1 MVR + IME-signed; ISO 17025; dry combustion) and surface the soft warnings.</li>
+        <li><b>MVR &amp; IME sign-off</b> for QA1 per VMD0053; interface with the VVB and its appointed modelist/auditor; resolve every reject until VCUs issue; keep a full replayable audit log of every run, input set, and parameter version.</li>
+      </ul>
+    </div>
+
+    <!-- RON -->
+    <div style="border:1px solid var(--line);border-left:4px solid var(--commerce);border-radius:0 10px 10px 0;padding:16px 20px;margin:18px 0;background:var(--paper)">
+      <h4 style="margin-top:0;font-size:17px">Ron — Marketing Manager</h4>
+      <p class="note" style="margin-top:2px"><b>Mission:</b> drive the two conversions that feed the north star. <b>Reports to:</b> John.</p>
+      <ul style="margin-bottom:0">
+        <li><b>Funnel A — farmer acquisition:</b> get as many growers as possible to join CarboNature (register on <code>app.carbonature.io</code> and enrol their plots). More enrolled hectares = more credits produced.</li>
+        <li><b>Funnel B — buyer acquisition:</b> get as many credit buyers as possible to close financing deals (Reserve → login → deal flow on <code>carbonature.io</code>). More funded deals = more credits sold and pre-financed.</li>
+        <li><b>Prospecting, multichannel outreach, LinkedIn campaigns, organic SEO</b> toward those two conversion actions; lead qualification and routing (hectares on the farmer side; mandate/volume/budget on the buyer side); nurture cadences so no lead goes cold.</li>
+        <li><b>Farmer onboarding via the <code>onboard-new-client</code> skill</b> — when an acquired farmer registers, create the farm's data-driven public page on <code>carbonature.io</code> and add its card to the Marketplace, turning a new farmer into a live, buyable listing.</li>
+        <li><b>Content &amp; collateral</b> — decks, one-pagers, case studies (Groundwork BioAg, Agreena, AgriCarbon), SEO articles, LinkedIn content; A/B-test and optimise the AI-SDR campaigns for both funnels.</li>
+      </ul>
+    </div>
+
+    <!-- JENNIFER -->
+    <div style="border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:0 10px 10px 0;padding:16px 20px;margin:18px 0;background:var(--paper)">
+      <h4 style="margin-top:0;font-size:17px">Jennifer — Admin Secretary</h4>
+      <p class="note" style="margin-top:2px"><b>Mission:</b> keep the department running smoothly — accurate intake, organised records, reliable scheduling, clean data. <b>Reports to:</b> John.</p>
+      <ul style="margin-bottom:0">
+        <li><b>Document centralisation</b> — maintain each client's folders and centralise all project documents (registration PDFs, contracts, KML/KMZ, kickoff docs, deals tracker) in one organised, current store.</li>
+        <li><b>Database &amp; CRM hygiene</b> — enter and maintain project records in the database and keep the CRM clean, deduplicated and current so every agent works from accurate data.</li>
+        <li><b>Scheduling, correspondence, records &amp; retrieval</b> — calendars, meetings, the shared inbox routing, and versioned, easy-to-retrieve records for agents, the VVB, auditors and counsel.</li>
+        <li><b>Board-of-Directors meeting protocol</b> — run CarboNature's board management end-to-end as a scheduled protocol: notices, quorum, agenda and board pack, official documents, the signature workflow, minutes and resolutions, and a version-controlled corporate-records repository. <span class="note">Transition: this currently runs on a small "CarboNature Agent"; when Jennifer is established the task transfers to her and that agent is retired.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="t2-dash">
+    <h3 class="sec"><span class="id">13</span> The Agents Dashboard — the control tower</h3>
+    <p>The dashboard does two things at once: it visualises the department as an interactive hierarchy of clickable agents, and — for every project separately and at any moment — it shows how close the project is to credit issuance and forecasts the credits the next Verification round will yield, broken down per stratum and allocated across stakeholders. <b>Screens A and B are the MVP</b>; C and D follow once the forecast engine and stakeholder-agreement data are wired.</p>
+
+    <!-- SCREEN A -->
+    <h4>Screen A — Agent hierarchy <span class="pill p-p2">MVP</span></h4>
+    <p>An org chart: John on top, Reveka, Dave, Ron and Jennifer beneath. Each block shows the agent's name, title, an avatar, a status dot (active / idle / error), and a badge with its skill and tool counts. Clicking a block opens a modal with three sections — <b>Prompt</b> (the full role definition, verbatim), <b>Connected tools</b> (mailboxes, the Verra registry account, the project database, the GHG Calculator, the SOC datasheet — each with a connection status), and <b>Skills</b> (shared plus agent-developed, e.g. Reveka's PDD Generator; Dave's DNDC, DayCent, Stratification, Uncertainty-Deduction skills).</p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/agents · Verified Credits Factory</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 400" role="img" aria-label="Agent hierarchy mock-up">
+            <rect width="900" height="400" fill="var(--soft)"/>
+            <!-- org chart left -->
+            <text class="m-lbl" x="24" y="34" fill="var(--agent)">AI-Agent Department</text>
+            <!-- John -->
+            <rect x="200" y="52" width="150" height="58" rx="10" fill="var(--agent)" />
+            <circle cx="224" cy="81" r="13" fill="#fff" fill-opacity=".9"/><text x="224" y="86" text-anchor="middle" font-size="13" fill="var(--agent)" font-weight="700">J</text>
+            <text x="246" y="76" fill="#fff" style="font-size:12px;font-weight:700">John</text><text x="246" y="92" fill="#e9dcff" style="font-size:9px;font-family:var(--mono)">Head of Dept</text>
+            <text x="246" y="104" fill="#d3befb" style="font-size:8px;font-family:var(--mono)">12 skills · 9 tools</text>
+            <circle cx="338" cy="64" r="4" fill="#8fdcc0"/>
+            <!-- connectors -->
+            <path d="M275 110 V128 M90 150 H460 M90 150 V168 M275 150 V168 M460 150 V168 M215 150 V168 M338 150 V168" stroke="var(--line-2)" fill="none" stroke-width="1.4"/>
+            <!-- four agents -->
+            <g>
+              <rect x="24" y="168" width="132" height="56" rx="9" fill="var(--paper)" stroke="var(--verify)"/>
+              <circle cx="44" cy="196" r="11" fill="var(--verify-tint)"/><text x="44" y="200" text-anchor="middle" font-size="11" fill="var(--verify)" font-weight="700">R</text>
+              <text x="62" y="190" style="font-size:11px;font-weight:700" fill="var(--ink)">Reveka</text><text x="62" y="204" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Validation</text><text x="62" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">6 sk · 5 t</text>
+              <circle cx="146" cy="178" r="3.5" fill="#8fdcc0"/>
+            </g>
+            <g>
+              <rect x="164" y="168" width="132" height="56" rx="9" fill="var(--forest)" stroke="var(--forest)"/>
+              <circle cx="184" cy="196" r="11" fill="#fff"/><text x="184" y="200" text-anchor="middle" font-size="11" fill="var(--forest)" font-weight="700">D</text>
+              <text x="202" y="190" style="font-size:11px;font-weight:700" fill="#fff">Dave</text><text x="202" y="204" style="font-size:8px;font-family:var(--mono)" fill="#d5f0e6">Verification</text><text x="202" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="#bfe6d6">9 sk · 8 t</text>
+              <circle cx="286" cy="178" r="3.5" fill="#c8f0dc"/>
+            </g>
+            <g>
+              <rect x="304" y="168" width="132" height="56" rx="9" fill="var(--paper)" stroke="var(--commerce)"/>
+              <circle cx="324" cy="196" r="11" fill="var(--commerce-tint)"/><text x="324" y="200" text-anchor="middle" font-size="11" fill="var(--commerce)" font-weight="700">R</text>
+              <text x="342" y="190" style="font-size:11px;font-weight:700" fill="var(--ink)">Ron</text><text x="342" y="204" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Marketing</text><text x="342" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">5 sk · 6 t</text>
+              <circle cx="426" cy="178" r="3.5" fill="#e8c07a"/>
+            </g>
+            <g>
+              <rect x="444" y="168" width="132" height="56" rx="9" fill="var(--paper)" stroke="var(--muted)"/>
+              <circle cx="464" cy="196" r="11" fill="var(--soft-2)"/><text x="464" y="200" text-anchor="middle" font-size="11" fill="var(--muted)" font-weight="700">J</text>
+              <text x="482" y="190" style="font-size:11px;font-weight:700" fill="var(--ink)">Jennifer</text><text x="482" y="204" style="font-size:8px;font-family:var(--mono)" fill="var(--muted)">Admin</text><text x="482" y="216" style="font-size:7.5px;font-family:var(--mono)" fill="var(--faint)">4 sk · 5 t</text>
+              <circle cx="566" cy="178" r="3.5" fill="#8fdcc0"/>
+            </g>
+            <text class="m-cap" x="24" y="248" fill="var(--faint)">● active &nbsp; ● idle &nbsp; ● error &nbsp;·&nbsp; click a block → agent modal ▸</text>
+            <!-- modal on right -->
+            <rect x="596" y="52" width="280" height="320" rx="11" fill="var(--paper)" stroke="var(--forest)" stroke-width="1.4"/>
+            <text class="m-t" x="616" y="80" fill="var(--forest-deep)">Dave · Verification (AI-MRV)</text>
+            <line x1="616" y1="92" x2="856" y2="92" stroke="var(--line)"/>
+            <text class="m-lbl" x="616" y="112" fill="var(--forest)">Prompt — role</text>
+            <text class="m-cap" x="616" y="130" fill="var(--muted)">"Complete verification — field to VVB</text>
+            <text class="m-cap" x="616" y="143" fill="var(--muted)">to VCU — highest standard, fastest…"</text>
+            <text class="m-lbl" x="616" y="170" fill="var(--forest)">Connected tools</text>
+            <g class="m-cap" fill="var(--ink)"><text x="616" y="188">Project DATABASE</text><text x="850" y="188" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="616" y="204">Verra registry acct</text><text x="850" y="204" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="616" y="220">GHG Calculator</text><text x="850" y="220" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="616" y="236">SOC Datasheet v2.0</text><text x="850" y="236" text-anchor="end" fill="var(--ok)">●</text>
+              <text x="616" y="252">Mailboxes (Dave/tech/Elad)</text><text x="850" y="252" text-anchor="end" fill="var(--commerce)">◐</text></g>
+            <text class="m-lbl" x="616" y="280" fill="var(--forest)">Skills</text>
+            <g class="m-cap" fill="var(--ink)"><text x="616" y="298">Stratification · Baseline-def</text><text x="616" y="314">DNDC · DayCent</text><text x="616" y="330">Uncertainty-Deduction (MC)</text><text x="616" y="346">GHG-Calculator</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen A · Agent hierarchy</b> — clickable org chart; the modal shows each agent's prompt, connected tools, and skills.</figcaption>
+    </figure>
+
+    <!-- SCREEN B -->
+    <h4>Screen B — Issuance readiness &amp; forecast <span class="pill p-p2">MVP</span></h4>
+    <p>Selecting a project scopes the whole dashboard to it. The KPI row answers, for that project alone: <b>how close are we, and how much will we get.</b> Readiness (%) is derived from the sampling-cycle state machine — sampling completion, lab results received, model true-up done, audit steps cleared. Forecast VCUs is computed from modelled net SOC removals plus quantified emission reductions, after the uncertainty deduction and buffer withholding — the same engine Dave runs. Both figures are live, per-project, with an all-projects roll-up.</p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/project/CARBO-3988/forecast</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 280" role="img" aria-label="Readiness and forecast mock-up">
+            <rect width="900" height="280" fill="var(--soft)"/>
+            <!-- project tabs -->
+            <g class="m-s"><rect x="24" y="20" width="150" height="28" rx="14" fill="var(--agent)"/><text x="42" y="38" fill="#fff" style="font-weight:640">Elad Farm</text>
+              <text x="196" y="38" fill="var(--muted)">Nitzan Veg-Tech</text><text x="340" y="38" fill="var(--muted)">All projects ▾</text></g>
+            <!-- readiness -->
+            <rect x="24" y="66" width="270" height="180" rx="10" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="44" y="90">Issuance readiness</text>
+            <circle cx="159" cy="160" r="52" fill="none" stroke="var(--soft-2)" stroke-width="14"/>
+            <circle cx="159" cy="160" r="52" fill="none" stroke="var(--forest)" stroke-width="14" stroke-linecap="round" stroke-dasharray="212 327" transform="rotate(-90 159 160)"/>
+            <text x="159" y="158" text-anchor="middle" style="font-size:26px;font-weight:700" fill="var(--forest-deep)">65%</text>
+            <text x="159" y="176" text-anchor="middle" class="m-cap">to next issuance</text>
+            <text class="m-cap" x="44" y="234" fill="var(--muted)">sampling ✓ · lab ◐ · true-up ○ · audit ○</text>
+            <!-- forecast -->
+            <rect x="308" y="66" width="270" height="180" rx="10" fill="var(--forest-deep)"/>
+            <text x="328" y="90" fill="#bfe6d6" style="font-size:10px;font-family:var(--mono);letter-spacing:.08em">FORECAST VCUs · NEXT ROUND</text>
+            <text x="328" y="140" fill="#fff" style="font-size:40px;font-weight:720">1,158</text>
+            <text x="328" y="164" fill="#8fdcc0" style="font-size:12px;font-family:var(--mono)">tCO₂e · after deduction + buffer</text>
+            <line x1="328" y1="182" x2="558" y2="182" stroke="#2b5548"/>
+            <g style="font-size:11px;font-family:var(--mono)" fill="#cfe6db"><text x="328" y="204">Removal</text><text x="558" y="204" text-anchor="end" fill="#fff">742</text>
+              <text x="328" y="224" >Avoidance</text><text x="558" y="224" text-anchor="end" fill="#fff">416</text></g>
+            <!-- window -->
+            <rect x="592" y="66" width="284" height="180" rx="10" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="612" y="90">Verification window</text>
+            <text class="m-t" x="612" y="122" fill="var(--forest-deep)" font-size="18">Q2 2027</text>
+            <text class="m-cap" x="612" y="142" fill="var(--muted)">target issuance date</text>
+            <text class="m-lbl" x="612" y="176">Pipeline</text>
+            <g class="m-cap" fill="var(--ink)"><text x="612" y="196">Next sampling · Aug 2026</text><text x="612" y="214">Model true-up · due 5 mo</text><text x="612" y="232">MVR re-submission · Q1 2027</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen B · Readiness &amp; Forecast</b> — per project: how close to issuance, and the forecast VCUs (removal + avoidance) for the next round.</figcaption>
+    </figure>
+
+    <!-- SCREEN C -->
+    <h4>Screen C — Credit-issuance &amp; allocation report <span class="pill p-p3">follow-on</span></h4>
+    <p>A drill-in per project. <b>Per-stratum forecast:</b> every stratum and the credits it will receive, split into Carbon Removal and Carbon Avoidance, with a stratum total and a project TOTAL. <b>Stakeholder allocation — the bottom line:</b> how the forecast credits are shared across credit buyers, farmers, and CarboNature, each tied to its indicative revenue, priced by credit type at current category rates. Exportable for the VVB and internal review. <span class="note">Split percentages and pricing are configurable per project and per grower agreement; values below are illustrative.</span></p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/project/CARBO-3988/report</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 340" role="img" aria-label="Credit allocation report mock-up">
+            <rect width="900" height="340" fill="var(--soft)"/>
+            <text class="m-t" x="24" y="34" fill="var(--forest-deep)">Elad Farm · next issuance · detailed report</text>
+            <!-- per stratum table -->
+            <text class="m-lbl" x="24" y="60">Per-stratum forecast (tCO₂e)</text>
+            <g class="m-lbl" fill="var(--faint)"><text x="24" y="82">Stratum</text><text x="220" y="82">Area ha</text><text x="330" y="82">Removal</text><text x="450" y="82">Avoidance</text><text x="580" y="82">Total</text></g>
+            <line x1="24" y1="90" x2="660" y2="90" stroke="var(--line)"/>
+            <g class="m-s" fill="var(--ink)">
+              <text x="24" y="110">A — clay loam</text><text x="220" y="110">18.4</text><text x="330" y="110" fill="var(--forest)">288</text><text x="450" y="110" fill="var(--commerce)">160</text><text x="580" y="110" style="font-weight:700">448</text>
+              <text x="24" y="132">B — loam</text><text x="220" y="132">14.1</text><text x="330" y="132" fill="var(--forest)">214</text><text x="450" y="132" fill="var(--commerce)">128</text><text x="580" y="132" style="font-weight:700">342</text>
+              <text x="24" y="154">C — sandy loam</text><text x="220" y="154">9.2</text><text x="330" y="154" fill="var(--forest)">156</text><text x="450" y="154" fill="var(--commerce)">96</text><text x="580" y="154" style="font-weight:700">252</text>
+              <text x="24" y="176">BSL — control</text><text x="220" y="176">3.3</text><text x="330" y="176" fill="var(--faint)">—</text><text x="450" y="176" fill="var(--commerce)">32</text><text x="580" y="176" style="font-weight:700">116</text></g>
+            <line x1="24" y1="188" x2="660" y2="188" stroke="var(--line)"/>
+            <text x="24" y="208" class="m-s" style="font-weight:700" fill="var(--forest-deep)">TOTAL</text><text x="330" y="208" class="m-s" fill="var(--forest)" style="font-weight:700">742</text><text x="450" y="208" class="m-s" fill="var(--commerce)" style="font-weight:700">416</text><text x="580" y="208" class="m-s" style="font-weight:700">1,158</text>
+            <!-- stakeholder allocation -->
+            <rect x="690" y="52" width="186" height="264" rx="10" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="706" y="74" fill="var(--commerce)">Where credits go</text>
+            <!-- buyers -->
+            <text class="m-s" x="706" y="98" fill="var(--ink)">Credit Buyers</text>
+            <rect x="706" y="106" width="154" height="10" rx="5" fill="var(--soft-2)"/><rect x="706" y="106" width="77" height="10" rx="5" fill="var(--verify)"/>
+            <text class="m-cap" x="706" y="132" fill="var(--muted)">579 VCU · $28,950</text>
+            <!-- farmers -->
+            <text class="m-s" x="706" y="158" fill="var(--ink)">Farmers (50%)</text>
+            <rect x="706" y="166" width="154" height="10" rx="5" fill="var(--soft-2)"/><rect x="706" y="166" width="46" height="10" rx="5" fill="var(--forest)"/>
+            <text class="m-cap" x="706" y="192" fill="var(--muted)">347 VCU · $17,370</text>
+            <!-- carbonature -->
+            <text class="m-s" x="706" y="218" fill="var(--ink)">CarboNature</text>
+            <rect x="706" y="226" width="154" height="10" rx="5" fill="var(--soft-2)"/><rect x="706" y="226" width="31" height="10" rx="5" fill="var(--commerce)"/>
+            <text class="m-cap" x="706" y="252" fill="var(--muted)">232 VCU · $11,600</text>
+            <line x1="706" y1="268" x2="860" y2="268" stroke="var(--line)"/>
+            <text class="m-cap" x="706" y="288" fill="var(--faint)">priced by type · category rate</text>
+            <text class="m-cap" x="706" y="304" fill="var(--faint)">export → VVB / internal</text>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen C · Allocation report</b> — credits per stratum (removal vs avoidance) and the stakeholder split with revenue.</figcaption>
+    </figure>
+
+    <!-- SCREEN D -->
+    <h4>Screen D — Category market tracker <span class="pill p-p3">follow-on</span></h4>
+    <p>The dashboard follows verified-credit transactions in the same category (VM0042 / ALM soil-carbon) — recent deals, volumes, buyers, prices — to price the next issuance and keep monitoring going forward. Maintained by Ron; it feeds the pricing used in the Screen-C revenue figures.</p>
+    <figure>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">factory.carbonature.io/market · VM0042 / ALM soil-carbon</span></div>
+        <div class="body">
+          <svg viewBox="0 0 900 240" role="img" aria-label="Market tracker mock-up">
+            <rect width="900" height="240" fill="var(--soft)"/>
+            <text class="m-t" x="24" y="34" fill="var(--forest-deep)">Category market — VM0042 / ALM soil-carbon</text>
+            <!-- price trend -->
+            <rect x="24" y="52" width="380" height="160" rx="10" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="40" y="74">Category price · $/tCO₂e</text>
+            <polyline points="44,180 100,172 156,166 212,150 268,142 324,138 380,128" fill="none" stroke="var(--commerce)" stroke-width="2.5"/>
+            <circle cx="380" cy="128" r="4" fill="var(--commerce)"/>
+            <text x="388" y="126" class="m-s" fill="var(--commerce)" style="font-weight:700">$52</text>
+            <text class="m-cap" x="44" y="200" fill="var(--faint)">removal premium · avoidance discount</text>
+            <!-- recent deals -->
+            <rect x="418" y="52" width="458" height="160" rx="10" fill="var(--paper)" stroke="var(--line)"/>
+            <text class="m-lbl" x="434" y="74">Recent verified deals</text>
+            <g class="m-lbl" fill="var(--faint)"><text x="434" y="96">Buyer</text><text x="620" y="96">Volume</text><text x="720" y="96">$/t</text><text x="800" y="96">Type</text></g>
+            <line x1="434" y1="104" x2="860" y2="104" stroke="var(--line)"/>
+            <g class="m-s" fill="var(--ink)">
+              <text x="434" y="124">Microsoft</text><text x="620" y="124">40,000</text><text x="720" y="124">$58</text><text x="800" y="124" fill="var(--forest)">removal</text>
+              <text x="434" y="146">Agreena buyer</text><text x="620" y="146">12,500</text><text x="720" y="146">$47</text><text x="800" y="146" fill="var(--commerce)">avoid</text>
+              <text x="434" y="168">Boomitra offtake</text><text x="620" y="168">8,200</text><text x="720" y="168">$51</text><text x="800" y="168" fill="var(--forest)">removal</text>
+              <text x="434" y="190">Regional buyer</text><text x="620" y="190">5,000</text><text x="720" y="190">$44</text><text x="800" y="190" fill="var(--commerce)">avoid</text></g>
+          </svg>
+        </div>
+      </div>
+      <figcaption><b>Screen D · Market tracker</b> — category deals and prices (maintained by Ron) that set the Screen-C revenue figures.</figcaption>
+    </figure>
+  </section>
+
+  <section id="t2-feeds">
+    <h3 class="sec"><span class="id">14</span> Outbound feeds to the SaaS dashboards</h3>
+    <p>Beyond its own screens, the Agents Dashboard is a <b>data source</b> that feeds the farmer and credit-buyer dashboards already built in the CarboNature SaaS — pushing the relevant figures into the relevant parts of each, so every audience sees one consistent source of truth. The same forecast engine and allocation logic drive the internal dashboard and both external feeds, so numbers never diverge.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Destination</th><th>Receives (relevant slice only)</th></tr>
+      <tr><td><b>Farmer dashboard</b></td><td>Their plots' issuance readiness, forecast credits for the next round, per-stratum breakdown for their land, and their credit/revenue share</td></tr>
+      <tr><td><b>Credit-buyer dashboard</b></td><td>Forecast available volume, issuance timing, the credits reserved/contracted to them, and matching pricing from the category market tracker</td></tr>
+    </table></div>
+    <p class="note">Each external dashboard receives only its own slice — a farmer sees their farm, a buyer sees their reserved credits. The full cross-stakeholder view stays internal to the Agents Dashboard.</p>
+  </section>
+
+  <section id="t2-memory">
+    <h3 class="sec"><span class="id">15</span> Agent long-term memory protocol</h3>
+    <p>A standalone protocol, implemented alongside the agents (independently of the dashboard build), that governs how every agent builds and manages memory. The long-term tier is what lets an agent improve cycle over cycle.</p>
+    <h4>A · Two memory tiers</h4>
+    <ul>
+      <li><b>Short-term (session):</b> the working context of the current task; discarded or summarised at session end.</li>
+      <li><b>Long-term (persistent):</b> per-agent, per-project knowledge that survives across sessions — stored in the project database (<code>mrv.agent_memory</code>, PostgreSQL + pgvector) for semantic retrieval.</li>
+    </ul>
+    <h4>B · What each agent writes</h4>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Category</th><th>Example</th></tr>
+      <tr><td>Decisions &amp; rationale</td><td>A stratification choice, a chosen baseline, a model parameter set — with the reasoning</td></tr>
+      <tr><td>Artifacts &amp; versions</td><td>PDD versions, model runs and inputs, calculator outputs, submitted forms — versioned and traceable</td></tr>
+      <tr><td>VVB interactions</td><td>Rejects/findings and how they were resolved, so the same issue is never repeated</td></tr>
+      <tr><td>Parameters &amp; references</td><td>DNDC/DayCent parameter sets, emission factors, and the VM0042 / IPCC citations behind them</td></tr>
+      <tr><td>Email context</td><td>Directives, approvals, and context received by email (see D)</td></tr>
+      <tr><td>Outcomes &amp; timings</td><td>Cycle durations and results, to learn what shortens time-to-issuance</td></tr>
+    </table></div>
+    <h4>C · Write / retrieve / retain</h4>
+    <ul>
+      <li><b>Write</b> on task completion and on every CONFIRM-gated approved action; nothing sensitive is stored outside project scope.</li>
+      <li><b>Retrieve</b> the most relevant prior memories (semantic + project-scoped filter) before acting, so proven approaches are reused.</li>
+      <li><b>Scope &amp; isolate</b> per project and per agent; cross-project reuse is allowed only for methodology knowledge, never client data.</li>
+      <li><b>Retain &amp; audit</b> — every entry timestamped, versioned, and replayable in the audit log; retention follows the project's data-retention policy.</li>
+      <li><b>Human override</b> — the Head (John) and the CEO can inspect, correct, or purge any agent memory.</li>
+    </ul>
+    <div class="callout"><span class="tag">D · Email connection</span>
+      The agents' long-term memory is connected to the CEO's mailbox <b>nitzan@carbonature.io</b>. Directives, approvals, decisions and context to or from this mailbox are ingested into the relevant agent's memory, so instructions given by email persist and inform future actions. Only project- and department-relevant messages are captured; the CEO can review, correct or purge anything ingested at any time. Additional mailboxes (project inboxes, the MRV Technician, Elad) can be connected under the same rules.</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- =====================  PART III — TIER 3  =================== -->
+  <!-- ============================================================ -->
+  <div class="part-open" id="p3" style="border-top-color:var(--muted)">
+    <div class="ey" style="color:var(--muted)">Part III · Tier 3</div>
+    <h2>Hardening, scale &amp; cross-cutting</h2>
+    <p class="sub">Delivered after Tiers 1 and 2: the non-functional targets, the in-house CRM, and the reference material the developer builds against.</p>
+  </div>
+
+  <section id="t3-nfr">
+    <h3 class="sec"><span class="id">16</span> Non-functional requirements</h3>
+    <p>All requirements below are <b>active</b> and delivered in Tier 3 where the new spec finds them relevant. Several are already met by the built database (noted).</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Aspect</th><th>Target</th><th>Status</th></tr>
+      <tr><td>Availability</td><td>99.5% (business hours) — workflow-driven, not real-time critical</td><td><span class="pill p-p3">Tier 3</span></td></tr>
+      <tr><td>Map render</td><td>&lt; 2 s for a 500-point project</td><td><span class="pill p-ok">met — 83 ms measured</span></td></tr>
+      <tr><td>Excel ingestion</td><td>&lt; 30 s end-to-end for &lt; 100 rows</td><td><span class="pill p-p1">Tier 1 pipeline</span></td></tr>
+      <tr><td>DNDC run</td><td>~30 min for a 150-plot × 6-yr project</td><td><span class="pill p-p2">Tier 2 runners</span></td></tr>
+      <tr><td>Storage retention</td><td>10+ years; S3 → Glacier after 2 yr</td><td><span class="pill p-ok">configured</span></td></tr>
+      <tr><td>Security</td><td>Encryption at rest (KMS) &amp; in transit (TLS 1.3); SSO + MFA</td><td><span class="pill p-ok">KMS live</span></td></tr>
+      <tr><td>Audit retention</td><td>Project lifetime + 5 years; append-only, S3-mirrored</td><td><span class="pill p-ok">enforced</span></td></tr>
+      <tr><td>In-house CRM</td><td>Built after Tiers 1 &amp; 2; unified with the module's admin; no external vendor</td><td><span class="pill p-p3">Tier 3</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="appx-a">
+    <h3 class="sec"><span class="id">A</span> Appendix — VM0042 v2.2 + CCP reference checklist</h3>
+    <p>The compliance engine validates against this checklist; each rule maps to a VM0042 section and is enforced in the built database.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Rule</th><th>VM0042 §</th><th>Where enforced</th></tr>
+      <tr><td>Stratified random sampling</td><td>§8.2.1.2</td><td>Sampling Plan Generator · compliance engine</td></tr>
+      <tr><td><b>≥ 5 composite samples per stratum</b></td><td>§8.2.1.2</td><td>Plan Generator · <code>evaluate_compliance()</code></td></tr>
+      <tr><td>3 baseline control sites (QA2)</td><td>§8.3</td><td>Baseline-definition skill · <code>bsl_distance_chk</code> (≤250 km enforced at insert)</td></tr>
+      <tr><td>9 similarity criteria for BSL (QA2)</td><td>Table 7</td><td>Project setup · <code>similarity_criteria</code> jsonb</td></tr>
+      <tr><td>30 cm depth, 2 increments</td><td>§8.2.1.3</td><td>SOC datasheet · <code>soc_measurements</code></td></tr>
+      <tr><td>ESM-based SOC reporting</td><td>§8.2.1.6</td><td>dry-mass ÷ probe-area · <code>esm_soc_stocks</code></td></tr>
+      <tr><td>Same-season sampling window</td><td>§8.2.1.1</td><td>Plan Generator · Dave's reminders</td></tr>
+      <tr><td>Dry combustion (Dumas) preferred</td><td>§8.2.1.4</td><td>Lab integration config</td></tr>
+      <tr><td>ISO/IEC 17025 or NAPT / GLOSOLAN lab</td><td>§8.2.1.4</td><td>Admin · <code>labs</code> flags</td></tr>
+      <tr><td>VMD0053 model validation · IME sign-off (QA1)</td><td>§8.6.1.3</td><td>Model Run Console · <code>mvr</code> (IME contracted by VVB)</td></tr>
+      <tr><td>Monte Carlo uncertainty (QA1)</td><td>§8.6.1.2</td><td>Uncertainty-Deduction skill · L 500–1000</td></tr>
+      <tr><td>ICVCM CCP — no DSM for SOC</td><td>CCP condition</td><td>VT0014 excluded from CCP projects by design</td></tr>
+    </table></div>
+  </section>
+
+  <section id="appx-b">
+    <h3 class="sec"><span class="id">B</span> Appendix — database alignment</h3>
+    <p>This spec is written to a database that is already built and verified — 41 tables in the <code>mrv</code> schema, 16 migrations, seven build stages, running on AWS RDS. The screens map onto it as follows.</p>
+    <div class="wrap-x"><table class="tbl">
+      <tr><th>Module area</th><th>Database objects</th></tr>
+      <tr><td>Spatial core</td><td class="mono">organizations · projects · farms · plots · strata · sampling_points · baseline_control_sites</td></tr>
+      <tr><td>Sampling lifecycle</td><td class="mono">sampling_cycles · work_orders · mcp_tokens · sampling_events · samples</td></tr>
+      <tr><td>Lab &amp; SOC</td><td class="mono">labs · lab_imports · soc_measurements · texture_measurements · esm_soc_stocks · import_quarantine</td></tr>
+      <tr><td>GHG accounting (QA3)</td><td class="mono">ghg_parameters · fertilizers · machinery_defaults · activity_data · fertilizer_applications · emission_results · leakage · compute_emissions()</td></tr>
+      <tr><td>Credits &amp; compliance</td><td class="mono">products · alm_activities · credits · vcu_issuances · compliance_checks · compliance_scores · stratum_statistics · evaluate_compliance()</td></tr>
+      <tr><td>QA1 models</td><td class="mono">model_runs · model_results · mvr</td></tr>
+      <tr><td>Agents &amp; governance</td><td class="mono">users · project_memberships · agent_memory · agent_action_policies · audit_log · retention_policy</td></tr>
+      <tr><td>Audit-readiness views</td><td class="mono">v_sample_chain · v_data_completeness · v_plot_credits · v_real_plots</td></tr>
+    </table></div>
+    <p class="note">The GHG engine was verified component-by-component against the calculator workbook (fuel CO₂ + fertiliser N₂O, both farm-years, to four decimals). The compliance engine, the append-only evidence guarantees, and the demo-data interlock are all live. Full detail: the repository's per-stage records and the two-page data-flow / architecture diagrams.</p>
+  </section>
+
+  <footer>
+    <span>CarboNature · AI Soil MRV Module &amp; Verified Credits Factory · Functional Specification v2.0</span>
+    <span>VM0042 v2.2 · ICVCM CCP · 28 July 2026</span>
+  </footer>
+</div>
