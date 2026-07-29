@@ -204,6 +204,70 @@ export interface SamplingPlan {
   plannedPoints: number;
 }
 
+/* ─────────── Work orders & MCP tokens (spec §6.5, §9) ─────────── */
+
+/** mrv.wo_state */
+export type WorkOrderState = "draft" | "sent" | "in_progress" | "completed" | "closed";
+
+/** mrv.labs — the destination laboratory. */
+export interface Lab {
+  labId: string;
+  name: string;
+  iso17025: boolean;
+  naptMember: boolean;
+  glosolanMember: boolean;
+  defaultMethod: string | null;
+  contact: string | null;
+}
+
+/** mrv.mcp_tokens — scoped, revocable field access. Never holds the raw token. */
+export interface McpToken {
+  tokenId: string;
+  workOrderId: string;
+  contractorEmail: string | null;
+  issuedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+}
+
+/** A row of the work order's sampling-points table. */
+export interface WorkOrderPoint {
+  sampleId: string;
+  pointId: string;
+  stratumCode: string | null;
+  scenario: SampleScenario;
+  lat: number;
+  lon: number;
+  depthScheme: string;
+  compositeCores: number | null;
+  isRevisit: boolean;
+}
+
+/** mrv.work_orders */
+export interface WorkOrder {
+  woId: string;
+  farmId: string;
+  farmName: string;
+  cycleId: string;
+  cycleNumber: number;
+  cycleType: CycleType;
+  approach: QuantApproach;
+  contractorName: string | null;
+  contractorEmail: string | null;
+  lab: Lab | null;
+  projectLead: string | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+  depthScheme: string;
+  state: WorkOrderState;
+  pdfUrl: string | null;
+  issuedAt: string | null;
+  closedAt: string | null;
+  points: WorkOrderPoint[];
+  token: McpToken | null;
+}
+
 /** Everything the Plot Details screen needs, in one payload. */
 export interface PlotDetail {
   plot: Plot;

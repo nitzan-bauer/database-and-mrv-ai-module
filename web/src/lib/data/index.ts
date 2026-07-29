@@ -9,6 +9,8 @@ import type {
   SampleRow,
   SamplingPlan,
   SamplingPoint,
+  WorkOrder,
+  WorkOrderPoint,
 } from "./types";
 import {
   DEMO_ACTIVITIES,
@@ -21,6 +23,7 @@ import {
   DEMO_SAMPLING_POINTS,
   DEMO_SOC,
   DEMO_TEXTURE,
+  DEMO_WORK_ORDERS,
 } from "./fixtures";
 
 /**
@@ -184,6 +187,144 @@ export async function listPlans(projectId: string): Promise<SamplingPlan[]> {
     approvedAt: fmtDate(r.approved_at),
     plannedPoints: Number(r.planned_points ?? 0),
   }));
+}
+
+/** All work orders for a project (spec §6.5). */
+export async function listWorkOrders(projectId: string): Promise<WorkOrder[]> {
+  if (DATA_MODE === "fixtures") {
+    const farmIds = new Set(
+      DEMO_FARMS.filter((f) => f.projectId === projectId).map((f) => f.farmId),
+    );
+    return DEMO_WORK_ORDERS.filter((w) => farmIds.has(w.farmId));
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT w.wo_id, w.farm_id, f.name AS farm_name, w.cycle_id,
+            c.cycle_number, c.cycle_type, c.approach,
+            w.contractor_name, w.contractor_email, w.project_lead,
+            w.window_start, w.window_end, w.depth_scheme, w.state,
+            w.pdf_url, w.issued_at, w.closed_at,
+            l.lab_id, l.name AS lab_name, l.iso_17025, l.napt_member,
+            l.glosolan_member, l.default_method, l.contact AS lab_contact
+       FROM mrv.work_orders w
+       JOIN mrv.farms f ON f.farm_id = w.farm_id
+       JOIN mrv.sampling_cycles c ON c.cycle_id = w.cycle_id
+       LEFT JOIN mrv.labs l ON l.lab_id = w.lab_id
+      WHERE f.project_id = $1
+      ORDER BY w.created_at DESC`,
+    [projectId],
+  );
+  const out: WorkOrder[] = [];
+  for (const r of rows) out.push(await hydrateWorkOrder(r));
+  return out;
+}
+
+/** One work order with its points and token. */
+export async function getWorkOrder(woId: string): Promise<WorkOrder | null> {
+  if (DATA_MODE === "fixtures") {
+    return DEMO_WORK_ORDERS.find((w) => w.woId === woId) ?? null;
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT w.wo_id, w.farm_id, f.name AS farm_name, w.cycle_id,
+            c.cycle_number, c.cycle_type, c.approach,
+            w.contractor_name, w.contractor_email, w.project_lead,
+            w.window_start, w.window_end, w.depth_scheme, w.state,
+            w.pdf_url, w.issued_at, w.closed_at,
+            l.lab_id, l.name AS lab_name, l.iso_17025, l.napt_member,
+            l.glosolan_member, l.default_method, l.contact AS lab_contact
+       FROM mrv.work_orders w
+       JOIN mrv.farms f ON f.farm_id = w.farm_id
+       JOIN mrv.sampling_cycles c ON c.cycle_id = w.cycle_id
+       LEFT JOIN mrv.labs l ON l.lab_id = w.lab_id
+      WHERE w.wo_id = $1`,
+    [woId],
+  );
+  return rows.length ? hydrateWorkOrder(rows[0]) : null;
+}
+
+/** Attach the sampling-points table and the current token to a work-order row. */
+async function hydrateWorkOrder(r: Record<string, unknown>): Promise<WorkOrder> {
+  const { query } = await import("../db");
+  const woId = String(r.wo_id);
+
+  const pointRows = await query<Record<string, unknown>>(
+    `SELECT s.sample_id, sp.point_id, s.stratum_code, sp.scenario,
+            ST_Y(sp.planned_geom) AS lat, ST_X(sp.planned_geom) AS lon,
+            sp.composite_cores, sp.is_revisit
+       FROM mrv.sampling_events ev
+       JOIN mrv.sampling_points sp ON sp.point_id = ev.point_id
+       LEFT JOIN mrv.samples s ON s.event_id = ev.event_id AND s.sample_type = 'soc'
+      WHERE ev.work_order_id = $1
+      ORDER BY s.sample_id NULLS LAST, sp.point_id`,
+    [woId],
+  );
+
+  const tokenRows = await query<Record<string, unknown>>(
+    `SELECT token_id, work_order_id, contractor_email, issued_at,
+            expires_at, revoked_at, last_used_at
+       FROM mrv.mcp_tokens WHERE work_order_id = $1
+      ORDER BY issued_at DESC LIMIT 1`,
+    [woId],
+  );
+
+  const depthScheme = String(r.depth_scheme ?? "0-15/15-30");
+  return {
+    woId,
+    farmId: String(r.farm_id),
+    farmName: String(r.farm_name),
+    cycleId: String(r.cycle_id),
+    cycleNumber: Number(r.cycle_number),
+    cycleType: (r.cycle_type as WorkOrder["cycleType"]) ?? "initial",
+    approach: (r.approach as WorkOrder["approach"]) ?? "QA2",
+    contractorName: (r.contractor_name as string | null) ?? null,
+    contractorEmail: (r.contractor_email as string | null) ?? null,
+    lab: r.lab_id
+      ? {
+          labId: String(r.lab_id),
+          name: String(r.lab_name),
+          iso17025: Boolean(r.iso_17025),
+          naptMember: Boolean(r.napt_member),
+          glosolanMember: Boolean(r.glosolan_member),
+          defaultMethod: (r.default_method as string | null) ?? null,
+          contact: (r.lab_contact as string | null) ?? null,
+        }
+      : null,
+    projectLead: (r.project_lead as string | null) ?? null,
+    windowStart: fmtDate(r.window_start),
+    windowEnd: fmtDate(r.window_end),
+    depthScheme,
+    state: (r.state as WorkOrder["state"]) ?? "draft",
+    pdfUrl: (r.pdf_url as string | null) ?? null,
+    issuedAt: r.issued_at ? new Date(String(r.issued_at)).toISOString() : null,
+    closedAt: r.closed_at ? new Date(String(r.closed_at)).toISOString() : null,
+    points: pointRows.map((p) => ({
+      sampleId: String(p.sample_id ?? ""),
+      pointId: String(p.point_id),
+      stratumCode: (p.stratum_code as string | null) ?? null,
+      scenario: (p.scenario as WorkOrderPoint["scenario"]) ?? "WP",
+      lat: Number(p.lat),
+      lon: Number(p.lon),
+      depthScheme,
+      compositeCores: p.composite_cores == null ? null : Number(p.composite_cores),
+      isRevisit: Boolean(p.is_revisit),
+    })),
+    token: tokenRows.length
+      ? {
+          tokenId: String(tokenRows[0].token_id),
+          workOrderId: woId,
+          contractorEmail: (tokenRows[0].contractor_email as string | null) ?? null,
+          issuedAt: new Date(String(tokenRows[0].issued_at)).toISOString(),
+          expiresAt: new Date(String(tokenRows[0].expires_at)).toISOString(),
+          revokedAt: tokenRows[0].revoked_at
+            ? new Date(String(tokenRows[0].revoked_at)).toISOString()
+            : null,
+          lastUsedAt: tokenRows[0].last_used_at
+            ? new Date(String(tokenRows[0].last_used_at)).toISOString()
+            : null,
+        }
+      : null,
+  };
 }
 
 /**

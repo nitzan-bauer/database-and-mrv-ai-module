@@ -1,9 +1,11 @@
 import { generatePlan } from "@/lib/planner/generate";
+import { tokenExpiry } from "@/lib/mcp/token";
 import type {
   AlmActivity,
   CycleStatus,
   CycleType,
   Farm,
+  Lab,
   ModelRunSummary,
   Plot,
   Product,
@@ -13,6 +15,8 @@ import type {
   SamplingPoint,
   SocMeasurement,
   TextureMeasurement,
+  WorkOrder,
+  WorkOrderPoint,
 } from "./types";
 
 /**
@@ -350,3 +354,94 @@ export const DEMO_PLANS: SamplingPlan[] = PLAN_ROWS.map((r) => {
     plannedPoints: plan.totalPoints,
   };
 });
+
+/* ═══════════ Work orders + MCP tokens (spec §6.5) ═══════════
+   One work order per cycle that has left draft. Elad's cycle 1 is in the
+   field, so it carries a live token; Nitzan-Veg-Tech's cycle 1 is approved
+   but not yet sent, so its order sits in draft with no token issued.     */
+
+export const DEMO_LAB: Lab = {
+  labId: "lab-cropnut",
+  name: "CropNut Kenya",
+  iso17025: true,
+  naptMember: false,
+  glosolanMember: true,
+  defaultMethod: "dry_combustion",
+  contact: "lab@cropnut.example",
+};
+
+/** Sample IDs run OFM + 10 digits, as the database's next_sample_id() does. */
+const ofm = (n: number) => `OFM${String(n).padStart(10, "0")}`;
+
+function pointsForWorkOrder(farmId: string, startSeq: number): WorkOrderPoint[] {
+  const plotIds = new Set(DEMO_PLOTS.filter((p) => p.farmId === farmId).map((p) => p.plotId));
+  return DEMO_SAMPLING_POINTS.filter((sp) => sp.plotId && plotIds.has(sp.plotId)).map((sp, i) => ({
+    sampleId: ofm(startSeq + i),
+    pointId: sp.pointId,
+    stratumCode: "A",
+    scenario: sp.scenario,
+    lat: sp.lonLat[1],
+    lon: sp.lonLat[0],
+    depthScheme: "0-15/15-30",
+    compositeCores: sp.compositeCores,
+    isRevisit: sp.isRevisit,
+  }));
+}
+
+const ELD_WINDOW_END = "2026-08-24";
+
+export const DEMO_WORK_ORDERS: WorkOrder[] = [
+  {
+    woId: "WO-2026-0042",
+    farmId: ELD,
+    farmName: "Elad Farm",
+    cycleId: "ELD-DEMO-C1",
+    cycleNumber: 1,
+    cycleType: "initial",
+    approach: "QA2",
+    contractorName: "CropNut Kenya — sampling team",
+    contractorEmail: "sampling@cropnut.example",
+    lab: DEMO_LAB,
+    projectLead: "Nitzan Bauer",
+    windowStart: "2026-08-10",
+    windowEnd: ELD_WINDOW_END,
+    depthScheme: "0-15/15-30",
+    state: "in_progress",
+    pdfUrl: null,
+    issuedAt: "2026-08-03T09:12:00Z",
+    closedAt: null,
+    points: pointsForWorkOrder(ELD, 1),
+    token: {
+      tokenId: "tok-eld-c1",
+      workOrderId: "WO-2026-0042",
+      contractorEmail: "sampling@cropnut.example",
+      issuedAt: "2026-08-03T09:12:00Z",
+      // window end + 14 days, per DEFAULT_GRACE_DAYS
+      expiresAt: tokenExpiry(ELD_WINDOW_END).toISOString(),
+      revokedAt: null,
+      lastUsedAt: "2026-08-12T06:41:00Z",
+    },
+  },
+  {
+    woId: "WO-2026-0043",
+    farmId: NVT,
+    farmName: "Nitzan-Veg-Tech Farm",
+    cycleId: "NVT-DEMO-C1",
+    cycleNumber: 1,
+    cycleType: "initial",
+    approach: "QA2",
+    contractorName: null,
+    contractorEmail: null,
+    lab: null,
+    projectLead: "Nitzan Bauer",
+    windowStart: "2026-09-07",
+    windowEnd: "2026-09-21",
+    depthScheme: "0-15/15-30",
+    state: "draft",
+    pdfUrl: null,
+    issuedAt: null,
+    closedAt: null,
+    points: pointsForWorkOrder(NVT, 100),
+    token: null,
+  },
+];
