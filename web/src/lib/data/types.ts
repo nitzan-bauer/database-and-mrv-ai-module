@@ -57,3 +57,20 @@ export interface Plot {
 export interface FarmWithPlots extends Farm {
   plots: Plot[];
 }
+
+/** mrv.point_status */
+export type PointStatus = "planned" | "sampled" | "lab_pending" | "complete";
+/** mrv.sample_scenario */
+export type SampleScenario = "BSL" | "PR" | "WP";
+
+export interface SamplingPoint {
+  pointId: string;
+  plotId: string | null;
+  bslId: string | null;
+  scenario: SampleScenario;
+  /** [lon, lat] of planned_geom */
+  lonLat: [number, number];
+  compositeCores: number | null;
+  isRevisit: boolean;
+  status: PointStatus;
+}

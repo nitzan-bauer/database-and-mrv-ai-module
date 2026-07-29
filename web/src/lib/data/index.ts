@@ -1,7 +1,7 @@
 import "server-only";
 import { DATA_MODE } from "../env";
-import type { Farm, FarmWithPlots, Plot, Project } from "./types";
-import { DEMO_FARMS, DEMO_PLOTS, DEMO_PROJECT } from "./fixtures";
+import type { Farm, FarmWithPlots, Plot, Project, SamplingPoint } from "./types";
+import { DEMO_FARMS, DEMO_PLOTS, DEMO_PROJECT, DEMO_SAMPLING_POINTS } from "./fixtures";
 
 /**
  * The single data-access surface for the module. Every screen reads through
@@ -78,6 +78,41 @@ export async function listPlots(farmId: string): Promise<Plot[]> {
     [farmId],
   );
   return rows.map(rowToPlot);
+}
+
+/** All sampling points for a project (WP + BSL), for the map. */
+export async function listSamplingPoints(projectId: string): Promise<SamplingPoint[]> {
+  if (DATA_MODE === "fixtures") {
+    const farmIds = new Set(
+      DEMO_FARMS.filter((f) => f.projectId === projectId).map((f) => f.farmId),
+    );
+    const plotIds = new Set(
+      DEMO_PLOTS.filter((p) => farmIds.has(p.farmId)).map((p) => p.plotId),
+    );
+    return DEMO_SAMPLING_POINTS.filter((sp) => sp.plotId && plotIds.has(sp.plotId));
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT sp.point_id, sp.plot_id, sp.bsl_id, sp.scenario,
+            ST_X(sp.planned_geom) AS lon, ST_Y(sp.planned_geom) AS lat,
+            sp.composite_cores, sp.is_revisit, sp.status
+       FROM mrv.sampling_points sp
+       LEFT JOIN mrv.plots p  ON p.plot_id = sp.plot_id
+       LEFT JOIN mrv.baseline_control_sites b ON b.bsl_id = sp.bsl_id
+       LEFT JOIN mrv.farms f  ON f.farm_id = coalesce(p.farm_id, b.farm_id)
+      WHERE f.project_id = $1`,
+    [projectId],
+  );
+  return rows.map((r) => ({
+    pointId: String(r.point_id),
+    plotId: (r.plot_id as string | null) ?? null,
+    bslId: (r.bsl_id as string | null) ?? null,
+    scenario: (r.scenario as SamplingPoint["scenario"]) ?? "WP",
+    lonLat: [Number(r.lon), Number(r.lat)],
+    compositeCores: r.composite_cores == null ? null : Number(r.composite_cores),
+    isRevisit: Boolean(r.is_revisit),
+    status: (r.status as SamplingPoint["status"]) ?? "planned",
+  }));
 }
 
 /* ──────────────────────────── row mappers ──────────────────────────── */

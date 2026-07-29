@@ -1,4 +1,4 @@
-import type { Farm, Plot, Project } from "./types";
+import type { Farm, Plot, Project, SamplingPoint } from "./types";
 
 /**
  * DEV-FIXTURES — the demonstration project and its two demo farms, mirroring
@@ -89,3 +89,43 @@ export const DEMO_PLOTS: Plot[] = [
     geom: { type: "Polygon", coordinates: [[[37.20329451848548,-0.9028493520487473],[37.204354352377834,-0.9057208023442627],[37.206644961112005,-0.9046269167857446],[37.20708940758169,-0.9055156988264912],[37.20849112337524,-0.9058575380158231],[37.210508226588985,-0.9034646630178003],[37.20992702735788,-0.903191191489114],[37.20862787613541,-0.9031228236030842],[37.20695265482152,-0.8991916680324579],[37.20096972156094,-0.901687097712383],[37.20124322708131,-0.9027809841575021],[37.20079878061034,-0.9032253754303952],[37.201345791651136,-0.9044218132061133],[37.201790238122044,-0.9045243649967176],[37.202679131063945,-0.9043876292748507],[37.202508190113434,-0.903157007546298],[37.20329451848548,-0.9028493520487473]]] },
   },
 ];
+
+/* ────────────────── demo sampling points (fixtures only) ──────────────────
+   The seeds carry no sampling points yet (planning starts in Slice 3), so
+   fixtures generate a deterministic demo round: 5 composite points per plot
+   (VM0042 ≥5/stratum), placed inside each polygon by interpolating from the
+   ring centroid toward its vertices. Statuses are mixed so the map legend
+   shows every colour. Replaced by real rows once plans exist in the DB.   */
+
+const POINT_STATUS_CYCLE = ["complete", "complete", "lab_pending", "sampled", "planned"] as const;
+
+function ringCentroid(ring: number[][]): [number, number] {
+  // last vertex repeats the first — skip it
+  const pts = ring.slice(0, -1);
+  const [sx, sy] = pts.reduce(([ax, ay], [x, y]) => [ax + x, ay + y], [0, 0]);
+  return [sx / pts.length, sy / pts.length];
+}
+
+function demoPointsForPlot(plot: Plot): SamplingPoint[] {
+  const ring = plot.geom.coordinates[0];
+  const [cx, cy] = ringCentroid(ring);
+  const verts = ring.slice(0, -1);
+  const out: SamplingPoint[] = [];
+  for (let i = 0; i < 5; i++) {
+    const [vx, vy] = verts[Math.floor((i * verts.length) / 5) % verts.length];
+    const t = 0.3; // stay well inside the polygon
+    out.push({
+      pointId: `${plot.plotId}-P${String(i + 1).padStart(2, "0")}`,
+      plotId: plot.plotId,
+      bslId: null,
+      scenario: "WP",
+      lonLat: [cx + t * (vx - cx), cy + t * (vy - cy)],
+      compositeCores: 5,
+      isRevisit: false,
+      status: POINT_STATUS_CYCLE[i],
+    });
+  }
+  return out;
+}
+
+export const DEMO_SAMPLING_POINTS: SamplingPoint[] = DEMO_PLOTS.flatMap(demoPointsForPlot);
