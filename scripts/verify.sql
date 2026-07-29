@@ -801,7 +801,10 @@ BEGIN
   DELETE FROM mrv.soc_measurements
     WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event);
   ALTER TABLE mrv.soc_measurements ENABLE TRIGGER trg_soc_noupd;
+  -- samples are evidence too, so its guard comes down for the cleanup
+  ALTER TABLE mrv.samples DISABLE TRIGGER trg_samples_noupd;
   DELETE FROM mrv.samples WHERE event_id = v_event;
+  ALTER TABLE mrv.samples ENABLE TRIGGER trg_samples_noupd;
   DELETE FROM mrv.sampling_events WHERE event_id = v_event;
   DELETE FROM mrv.sampling_points WHERE point_id = v_point;
   DELETE FROM mrv.plots WHERE plot_id = '__V19P__';
