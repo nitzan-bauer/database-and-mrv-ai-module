@@ -726,9 +726,11 @@ BEGIN
   -- and exactly in the way here: lift the guard to drive the violations,
   -- and put it back before leaving.
   ALTER TABLE mrv.soc_measurements DISABLE TRIGGER trg_soc_noupd;
+  ALTER TABLE mrv.compliance_scores DISABLE TRIGGER trg_scores_noupd;
 
   -- ---- 1. move the event outside the window --------------------------
   UPDATE mrv.sampling_events SET sampling_date = DATE '2026-09-30' WHERE event_id = v_event;
+  DELETE FROM mrv.compliance_scores WHERE farm_id = v_farm;
   PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
   SELECT result::text INTO r FROM mrv.compliance_checks
     WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'SAME_SEASON_WINDOW'
@@ -742,6 +744,7 @@ BEGIN
   UPDATE mrv.soc_measurements SET lab_id = v_lab_bad
     WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
       AND depth_top_cm = 0;
+  DELETE FROM mrv.compliance_scores WHERE farm_id = v_farm;
   PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
   SELECT result::text INTO r FROM mrv.compliance_checks
     WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'LAB_ACCREDITED'
@@ -756,6 +759,7 @@ BEGIN
   UPDATE mrv.soc_measurements SET method = 'wet_oxidation', method_deviation_note = NULL
     WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
       AND depth_top_cm = 0;
+  DELETE FROM mrv.compliance_scores WHERE farm_id = v_farm;
   PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
   SELECT result::text INTO r FROM mrv.compliance_checks
     WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'DRY_COMBUSTION'
@@ -768,6 +772,7 @@ BEGIN
   UPDATE mrv.soc_measurements SET method_deviation_note = '   '
     WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
       AND depth_top_cm = 0;
+  DELETE FROM mrv.compliance_scores WHERE farm_id = v_farm;
   PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
   SELECT result::text INTO r FROM mrv.compliance_checks
     WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'DRY_COMBUSTION'
@@ -780,6 +785,7 @@ BEGIN
   UPDATE mrv.soc_measurements SET method_deviation_note = 'Carbonate-rich soil; approved 2026-08-01.'
     WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
       AND depth_top_cm = 0;
+  DELETE FROM mrv.compliance_scores WHERE farm_id = v_farm;
   PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
   SELECT result::text INTO r FROM mrv.compliance_checks
     WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'DRY_COMBUSTION'
@@ -789,7 +795,6 @@ BEGIN
   END IF;
 
   -- ---- clean up (evidence tables need their guards lifted) -----------
-  ALTER TABLE mrv.compliance_scores DISABLE TRIGGER trg_scores_noupd;
   DELETE FROM mrv.compliance_scores WHERE farm_id = v_farm;
   ALTER TABLE mrv.compliance_scores ENABLE TRIGGER trg_scores_noupd;
   DELETE FROM mrv.compliance_checks WHERE farm_id = v_farm;
