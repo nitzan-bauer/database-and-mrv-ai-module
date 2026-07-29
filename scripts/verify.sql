@@ -643,6 +643,172 @@ BEGIN
   RAISE NOTICE 'PASS  | compliance engine present, compliance_scores append-only';
 END $$;
 
+-- The hard checks added in 0019 must actually catch what they exist to
+-- catch. A check that only ever passes proves nothing, so each is driven
+-- through a violation and back, and the recorded result is read.
+DO $$
+DECLARE
+  v_org     constant uuid := '00000000-0000-0000-0000-0000000000d1';
+  v_farm    constant uuid := '00000000-0000-0000-0000-0000000000d2';
+  v_cycle   uuid;
+  v_point   uuid;
+  v_event   uuid;
+  v_lab_ok  uuid;
+  v_lab_bad uuid;
+  v_sample  text;
+  r         text;
+  fn        text;
+BEGIN
+  -- All three rules must be present before their behaviour is asserted.
+  FOREACH fn IN ARRAY ARRAY['SAME_SEASON_WINDOW','LAB_ACCREDITED','DRY_COMBUSTION'] LOOP
+    IF position(fn in pg_get_functiondef(
+         (SELECT p.oid FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+           WHERE ns.nspname = 'mrv' AND p.proname = 'evaluate_compliance' LIMIT 1))) = 0 THEN
+      RAISE EXCEPTION 'FAIL  | evaluate_compliance does not implement %', fn;
+    END IF;
+  END LOOP;
+
+  INSERT INTO mrv.organizations (org_id, name) VALUES (v_org, '__v19__');
+  INSERT INTO mrv.projects (project_id, org_id, name) VALUES ('__V19__', v_org, '__v19__');
+  INSERT INTO mrv.farms (farm_id, project_id, name) VALUES (v_farm, '__V19__', '__v19__');
+  INSERT INTO mrv.labs (name, iso_17025) VALUES ('__v19_ok__', true)  RETURNING lab_id INTO v_lab_ok;
+  INSERT INTO mrv.labs (name, iso_17025) VALUES ('__v19_bad__', false) RETURNING lab_id INTO v_lab_bad;
+
+  INSERT INTO mrv.sampling_cycles (farm_id, cycle_number, cycle_type, approach,
+                                   planned_start, planned_end, same_season)
+    VALUES (v_farm, 1, 'initial', 'QA3', DATE '2026-08-10', DATE '2026-08-24', true)
+    RETURNING cycle_id INTO v_cycle;
+
+  INSERT INTO mrv.plots (plot_id, farm_id, name, geom, area_ha, quantification_approach)
+    VALUES ('__V19P__', v_farm, '__v19__',
+            ST_GeomFromText('POLYGON((0 0,0 0.01,0.01 0.01,0.01 0,0 0))', 4326), 1, 'QA3');
+  INSERT INTO mrv.sampling_points (plot_id, scenario, planned_geom)
+    VALUES ('__V19P__', 'WP', ST_SetSRID(ST_MakePoint(0.005, 0.005), 4326))
+    RETURNING point_id INTO v_point;
+
+  -- One event inside the window, with both ESM increments, good lab, dry combustion.
+  INSERT INTO mrv.sampling_events (point_id, cycle_id, sampling_date, captured_geom, submitted_at)
+    VALUES (v_point, v_cycle, DATE '2026-08-14',
+            ST_SetSRID(ST_MakePoint(0.005, 0.005), 4326), now())
+    RETURNING event_id INTO v_event;
+
+  INSERT INTO mrv.samples (event_id, farm_id, sample_type, scenario, depth_top_cm, depth_base_cm)
+    VALUES (v_event, v_farm, 'soc', 'WP', 0, 15) RETURNING sample_id INTO v_sample;
+  INSERT INTO mrv.soc_measurements (sample_id, lab_id, method, depth_top_cm, depth_base_cm,
+                                    bulk_density, toc_400_pct, roc_600_pct)
+    VALUES (v_sample, v_lab_ok, 'dry_combustion', 0, 15, 1.3, 1.0, 0.0);
+  INSERT INTO mrv.samples (event_id, farm_id, sample_type, scenario, depth_top_cm, depth_base_cm)
+    VALUES (v_event, v_farm, 'soc', 'WP', 15, 30) RETURNING sample_id INTO v_sample;
+  INSERT INTO mrv.soc_measurements (sample_id, lab_id, method, depth_top_cm, depth_base_cm,
+                                    bulk_density, toc_400_pct, roc_600_pct)
+    VALUES (v_sample, v_lab_ok, 'dry_combustion', 15, 30, 1.4, 0.6, 0.0);
+
+  -- ---- baseline: all three should pass -------------------------------
+  PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
+  FOREACH fn IN ARRAY ARRAY['SAME_SEASON_WINDOW','LAB_ACCREDITED','DRY_COMBUSTION'] LOOP
+    SELECT result::text INTO r FROM mrv.compliance_checks
+      WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = fn
+      ORDER BY evaluated_at DESC LIMIT 1;
+    IF r IS DISTINCT FROM 'pass' THEN
+      RAISE EXCEPTION 'FAIL  | % should pass on a clean cycle, got %', fn, coalesce(r, 'no row');
+    END IF;
+  END LOOP;
+
+  -- ---- ESM must pass, grouped per point not per sample ---------------
+  SELECT result::text INTO r FROM mrv.compliance_checks
+    WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'ESM_TWO_INCREMENTS'
+    ORDER BY evaluated_at DESC LIMIT 1;
+  IF r IS DISTINCT FROM 'pass' THEN
+    RAISE EXCEPTION 'FAIL  | ESM_TWO_INCREMENTS should pass when a point has 0-15 and 15-30, got %', r;
+  END IF;
+
+  -- soc_measurements is append-only, which is exactly right in production
+  -- and exactly in the way here: lift the guard to drive the violations,
+  -- and put it back before leaving.
+  ALTER TABLE mrv.soc_measurements DISABLE TRIGGER trg_soc_noupd;
+
+  -- ---- 1. move the event outside the window --------------------------
+  UPDATE mrv.sampling_events SET sampling_date = DATE '2026-09-30' WHERE event_id = v_event;
+  PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
+  SELECT result::text INTO r FROM mrv.compliance_checks
+    WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'SAME_SEASON_WINDOW'
+    ORDER BY evaluated_at DESC LIMIT 1;
+  IF r IS DISTINCT FROM 'fail' THEN
+    RAISE EXCEPTION 'FAIL  | SAME_SEASON_WINDOW missed an event outside the window (got %)', r;
+  END IF;
+  UPDATE mrv.sampling_events SET sampling_date = DATE '2026-08-14' WHERE event_id = v_event;
+
+  -- ---- 2. send one measurement to an unaccredited lab ----------------
+  UPDATE mrv.soc_measurements SET lab_id = v_lab_bad
+    WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
+      AND depth_top_cm = 0;
+  PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
+  SELECT result::text INTO r FROM mrv.compliance_checks
+    WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'LAB_ACCREDITED'
+    ORDER BY evaluated_at DESC LIMIT 1;
+  IF r IS DISTINCT FROM 'fail' THEN
+    RAISE EXCEPTION 'FAIL  | LAB_ACCREDITED missed an unaccredited laboratory (got %)', r;
+  END IF;
+  UPDATE mrv.soc_measurements SET lab_id = v_lab_ok
+    WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event);
+
+  -- ---- 3. switch a method, then document the deviation ---------------
+  UPDATE mrv.soc_measurements SET method = 'wet_oxidation', method_deviation_note = NULL
+    WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
+      AND depth_top_cm = 0;
+  PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
+  SELECT result::text INTO r FROM mrv.compliance_checks
+    WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'DRY_COMBUSTION'
+    ORDER BY evaluated_at DESC LIMIT 1;
+  IF r IS DISTINCT FROM 'fail' THEN
+    RAISE EXCEPTION 'FAIL  | DRY_COMBUSTION missed an undocumented method deviation (got %)', r;
+  END IF;
+
+  -- whitespace is not documentation
+  UPDATE mrv.soc_measurements SET method_deviation_note = '   '
+    WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
+      AND depth_top_cm = 0;
+  PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
+  SELECT result::text INTO r FROM mrv.compliance_checks
+    WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'DRY_COMBUSTION'
+    ORDER BY evaluated_at DESC LIMIT 1;
+  IF r IS DISTINCT FROM 'fail' THEN
+    RAISE EXCEPTION 'FAIL  | DRY_COMBUSTION accepted a whitespace-only deviation note (got %)', r;
+  END IF;
+
+  -- a real note is
+  UPDATE mrv.soc_measurements SET method_deviation_note = 'Carbonate-rich soil; approved 2026-08-01.'
+    WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event)
+      AND depth_top_cm = 0;
+  PERFORM mrv.evaluate_compliance(v_farm, v_cycle);
+  SELECT result::text INTO r FROM mrv.compliance_checks
+    WHERE farm_id = v_farm AND cycle_id = v_cycle AND rule_code = 'DRY_COMBUSTION'
+    ORDER BY evaluated_at DESC LIMIT 1;
+  IF r IS DISTINCT FROM 'pass' THEN
+    RAISE EXCEPTION 'FAIL  | DRY_COMBUSTION rejected a documented deviation (got %)', r;
+  END IF;
+
+  -- ---- clean up (evidence tables need their guards lifted) -----------
+  ALTER TABLE mrv.compliance_scores DISABLE TRIGGER trg_scores_noupd;
+  DELETE FROM mrv.compliance_scores WHERE farm_id = v_farm;
+  ALTER TABLE mrv.compliance_scores ENABLE TRIGGER trg_scores_noupd;
+  DELETE FROM mrv.compliance_checks WHERE farm_id = v_farm;
+  DELETE FROM mrv.soc_measurements
+    WHERE sample_id IN (SELECT sample_id FROM mrv.samples WHERE event_id = v_event);
+  ALTER TABLE mrv.soc_measurements ENABLE TRIGGER trg_soc_noupd;
+  DELETE FROM mrv.samples WHERE event_id = v_event;
+  DELETE FROM mrv.sampling_events WHERE event_id = v_event;
+  DELETE FROM mrv.sampling_points WHERE point_id = v_point;
+  DELETE FROM mrv.plots WHERE plot_id = '__V19P__';
+  DELETE FROM mrv.sampling_cycles WHERE cycle_id = v_cycle;
+  DELETE FROM mrv.labs WHERE lab_id IN (v_lab_ok, v_lab_bad);
+  DELETE FROM mrv.farms WHERE farm_id = v_farm;
+  DELETE FROM mrv.projects WHERE project_id = '__V19__';
+  DELETE FROM mrv.organizations WHERE org_id = v_org;
+
+  RAISE NOTICE 'PASS  | 0019 hard checks catch their violations (season, lab, method)';
+END $$;
+
 -- ---------------------------------------------------------------------
 -- Stage 6 — QA1 model structures
 -- ---------------------------------------------------------------------
