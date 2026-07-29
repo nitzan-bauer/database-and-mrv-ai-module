@@ -1,5 +1,6 @@
 import { generatePlan } from "@/lib/planner/generate";
 import { tokenExpiry } from "@/lib/mcp/token";
+import type { ActivityData } from "@/lib/ghg/engine";
 import type {
   AlmActivity,
   CycleStatus,
@@ -443,5 +444,50 @@ export const DEMO_WORK_ORDERS: WorkOrder[] = [
     closedAt: null,
     points: pointsForWorkOrder(NVT, 100),
     token: null,
+  },
+];
+
+/* ═══════════ GHG activity data (spec AC#7) ═══════════
+   Farm-years shaped after the calculator workbook's own verified rows: Elad
+   mirrors Farm_B (fuel + synthetic and organic N + residue burning +
+   N-fixing residue — the full set), Nitzan-Veg-Tech mirrors Farm_A. Baseline
+   is the three-year pre-project average, which is why BSL is a single row. */
+
+const UREA = (massT: number) => ({
+  fertilizerName: "Urea", massT, nContent: 0.46,
+  class: "synthetic" as const, intervalYears: 1,
+});
+const COMPOST = (massT: number, intervalYears = 1) => ({
+  fertilizerName: "Compost", massT, nContent: 0.015,
+  class: "organic" as const, intervalYears,
+});
+
+export const DEMO_ACTIVITY_DATA: ActivityData[] = [
+  // Elad Farm — the full-coverage case
+  {
+    farmId: ELD, scenario: "BSL", year: 2025, areaHa: 30,
+    dieselL: 5400, gasolineL: 0, residueBurntKg: 1617,
+    nfixDryMatterT: 2.66, nfixNContent: 0.015,
+    fertilizers: [UREA(13.6957), COMPOST(48)],
+  },
+  {
+    farmId: ELD, scenario: "PR", year: 2026, areaHa: 30,
+    // project year: less synthetic N, no burning, more compost
+    dieselL: 4900, gasolineL: 0, residueBurntKg: 0,
+    nfixDryMatterT: 3.10, nfixNContent: 0.015,
+    fertilizers: [UREA(9.5652), COMPOST(60)],
+  },
+  // Nitzan-Veg-Tech Farm
+  {
+    farmId: NVT, scenario: "BSL", year: 2025, areaHa: 50,
+    dieselL: 9000, gasolineL: 0, residueBurntKg: 0,
+    nfixDryMatterT: 0, nfixNContent: 0,
+    fertilizers: [UREA(32.1739), COMPOST(50)],
+  },
+  {
+    farmId: NVT, scenario: "PR", year: 2026, areaHa: 50,
+    dieselL: 8200, gasolineL: 0, residueBurntKg: 0,
+    nfixDryMatterT: 0, nfixNContent: 0,
+    fertilizers: [UREA(24.1304), COMPOST(70)],
   },
 ];
