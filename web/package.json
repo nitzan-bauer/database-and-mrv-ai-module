@@ -7,10 +7,11 @@
     "clean:conflicts": "node scripts/clean-sync-conflicts.mjs",
     "predev": "npm run clean:conflicts",
     "dev": "next dev",
-    "prebuild": "npm run clean:conflicts",
+    "prebuild": "npm run clean:conflicts && npm run check:sql",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:sql": "node scripts/check-db-queries.mjs"
   },
   "dependencies": {
     "@turf/area": "^7.3.5",

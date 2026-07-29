@@ -49,7 +49,7 @@ export function PlotTabs({ detail, initialTab }: { detail: PlotDetail; initialTa
 /* ─────────────────────────── Overview ─────────────────────────── */
 
 function Overview({ detail }: { detail: PlotDetail }) {
-  const { plot, soc, texture, points, activities } = detail;
+  const { soc, texture, points, activities } = detail;
 
   // Latest SOC stock = sum of the two increments at the most recent analysis.
   const socByDepth = new Map<string, number[]>();

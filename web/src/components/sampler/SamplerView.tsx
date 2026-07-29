@@ -46,7 +46,24 @@ export function SamplerView({ wo, reminders }: { wo: WorkOrder; reminders: Remin
     });
   }, [point, cap]);
 
-  if (!point) return null;
+  // A work order with no points would otherwise render a blank white page:
+  // the contractor opens the link they were emailed and sees nothing, with
+  // no way to tell whether it is broken or simply empty. Say which.
+  if (!point) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-cream px-5">
+        <div className="w-full max-w-sm rounded-2xl border border-line bg-white p-7 text-center shadow-[var(--shadow-card)]">
+          <IconMark size={44} className="mx-auto" />
+          <h1 className="mt-4 text-base font-bold text-pine-700">No points to sample</h1>
+          <p className="mt-2 text-sm text-muted">
+            {wo.woId} has no sampling points assigned yet — nothing to do in the field until
+            CarboNature adds them.
+          </p>
+          <p className="mt-5 font-mono text-[10.5px] text-faint">{wo.farmName}</p>
+        </div>
+      </div>
+    );
+  }
 
   /* ── MCP tool calls (browser side) ──────────────────────────────── */
 
