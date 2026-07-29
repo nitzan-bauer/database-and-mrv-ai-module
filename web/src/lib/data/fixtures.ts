@@ -189,10 +189,15 @@ export const DEMO_ACTIVITIES: AlmActivity[] = DEMO_PLOTS.flatMap((p, i) => {
 /** SOC + texture samples for the completed points, two depth increments each. */
 const DEPTHS: Array<[number, number]> = [[0, 15], [15, 30]];
 
+/** Cycle-1 sampling window per farm, so dates satisfy the same-season check. */
+const CYCLE1_DATE: Record<string, string> = { [ELD]: "2026-08-14", [NVT]: "2026-09-11" };
+
 export const DEMO_SAMPLES: SampleRow[] = DEMO_SAMPLING_POINTS.filter(
   (sp) => sp.status === "complete" || sp.status === "lab_pending",
 ).flatMap((sp, idx) => {
   const seq = idx * 3;
+  const farmId = DEMO_PLOTS.find((p) => p.plotId === sp.plotId)?.farmId ?? ELD;
+  const sampledOn = CYCLE1_DATE[farmId];
   const rows: SampleRow[] = DEPTHS.map(([top, base], d) => ({
     sampleId: `OFM${String(seq + d + 1).padStart(10, "0")}`,
     pointId: sp.pointId,
@@ -203,7 +208,7 @@ export const DEMO_SAMPLES: SampleRow[] = DEMO_SAMPLING_POINTS.filter(
     depthBaseCm: base,
     compositeCores: sp.compositeCores,
     barcode: `OFM${String(seq + d + 1).padStart(10, "0")}`,
-    samplingDate: "2026-05-18",
+    samplingDate: sampledOn,
     distanceFromTargetM: 2.1 + d,
     photoUrl: null,
     fieldNotes: null,
@@ -219,7 +224,7 @@ export const DEMO_SAMPLES: SampleRow[] = DEMO_SAMPLING_POINTS.filter(
     depthBaseCm: 15,
     compositeCores: null,
     barcode: `OFM${String(seq + 3).padStart(10, "0")}`,
-    samplingDate: "2026-05-18",
+    samplingDate: sampledOn,
     distanceFromTargetM: 2.1,
     photoUrl: null,
     fieldNotes: "surface cleared, sieved <2 mm",
