@@ -542,3 +542,59 @@ export const DEMO_MODEL_LOG: Array<{ t: string; line: string; kind: "info" | "st
   { t: "14:19:02", line: "Eq. 74 deduction computed from stored variances", kind: "done" },
   { t: "14:19:05", line: "results → mrv.model_results · logs → S3", kind: "done" },
 ];
+
+/* ═══════════ Unified admin + audit (spec §6.8) ═══════════
+   One permissions system over three systems. MRV rows mirror mrv.users and
+   mrv.project_memberships; SaaS rows are what the module pulls from the
+   CarboNature SaaS admin, so a person is defined once and governed here. */
+
+export type AdminSystem = "MRV" | "SaaS" | "CRM";
+
+export interface AdminUser {
+  name: string;
+  email: string;
+  role: string;
+  scope: string;
+  system: AdminSystem;
+  authMethod: "sso" | "password" | "mcp_token";
+  isActive: boolean;
+  lastActiveAt: string | null;
+}
+
+export const DEMO_ADMIN_USERS: AdminUser[] = [
+  { name: "Nitzan Bauer", email: "nitzan@carbonature.io", role: "Super Admin", scope: "all projects", system: "MRV", authMethod: "sso", isActive: true, lastActiveAt: "2026-07-29" },
+  { name: "Dave (AI-MRV)", email: "dave@carbonature.io", role: "Verification · service identity", scope: "CARBO-3988-DEMO", system: "MRV", authMethod: "sso", isActive: true, lastActiveAt: "2026-07-29" },
+  { name: "MRV Technician", email: "tech@carbonature.io", role: "Field · reports to Dave", scope: "CARBO-3988-DEMO", system: "MRV", authMethod: "sso", isActive: true, lastActiveAt: "2026-07-28" },
+  { name: "CropNut sampling team", email: "sampling@cropnut.example", role: "Sampler · work-order scoped", scope: "WO-2026-0042", system: "MRV", authMethod: "mcp_token", isActive: true, lastActiveAt: "2026-08-12" },
+  { name: "Elad", email: "elad@eladfarm.example", role: "Grower · farmer portal", scope: "Elad Farm", system: "SaaS", authMethod: "password", isActive: true, lastActiveAt: "2026-07-27" },
+  { name: "Nitzan Veg-Tech", email: "ops@vegtech.example", role: "Grower · farmer portal", scope: "Nitzan-Veg-Tech Farm", system: "SaaS", authMethod: "password", isActive: true, lastActiveAt: "2026-07-20" },
+  { name: "Reserve buyer", email: "buyer@example.com", role: "Credit buyer · portal", scope: "reserved plots", system: "SaaS", authMethod: "password", isActive: true, lastActiveAt: "2026-07-25" },
+];
+
+/** mrv.agent_action_policies — the AUTO / CONFIRM / OFF gate per action. */
+export const DEMO_AGENT_POLICIES: Array<{ action: string; mode: "auto" | "confirm" | "off"; note: string }> = [
+  { action: "propose_sampling_plan", mode: "auto", note: "Read-only proposal; manager approves." },
+  { action: "send_work_order", mode: "confirm", note: "Always requires manager click." },
+  { action: "run_model", mode: "confirm", note: "Avoids accidental compute spend." },
+  { action: "recalibrate_model", mode: "confirm", note: "Affects all subsequent runs; explicit signoff." },
+  { action: "issue_alerts", mode: "auto", note: "Read-only; no system changes." },
+  { action: "chat", mode: "auto", note: "Read-only by default; write actions gated per action above." },
+];
+
+/** mrv.audit_log — actor, action, target, timestamp. Append-only. */
+export const DEMO_AUDIT: Array<{
+  ts: string;
+  actor: string;
+  actorRole: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+}> = [
+  { ts: "2026-08-12T06:41:02Z", actor: "sampling@cropnut.example", actorRole: "sampler", action: "submit_point", targetType: "sampling_event", targetId: "OFM0000000003" },
+  { ts: "2026-08-12T06:38:44Z", actor: "sampling@cropnut.example", actorRole: "sampler", action: "capture_photo", targetType: "sampling_event", targetId: "OFM0000000003" },
+  { ts: "2026-08-03T09:12:00Z", actor: "nitzan@carbonature.io", actorRole: "super_admin", action: "issue_mcp_token", targetType: "work_order", targetId: "WO-2026-0042" },
+  { ts: "2026-08-03T09:11:31Z", actor: "nitzan@carbonature.io", actorRole: "super_admin", action: "send_work_order", targetType: "work_order", targetId: "WO-2026-0042" },
+  { ts: "2026-08-01T14:22:09Z", actor: "dave@carbonature.io", actorRole: "ai_agent", action: "propose_sampling_plan", targetType: "sampling_cycle", targetId: "ELD-DEMO-C1" },
+  { ts: "2026-08-01T14:20:55Z", actor: "nitzan@carbonature.io", actorRole: "super_admin", action: "approve_sampling_plan", targetType: "sampling_cycle", targetId: "NVT-DEMO-C1" },
+  { ts: "2026-07-29T15:39:27Z", actor: "nitzan@carbonature.io", actorRole: "super_admin", action: "apply_migration", targetType: "schema", targetId: "0019_compliance_full_hard_checks" },
+];
