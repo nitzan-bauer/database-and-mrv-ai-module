@@ -4,7 +4,10 @@
   "private": true,
   "description": "CarboNature AI Soil MRV Module — Tier 1 web client (runs on the mrv database).",
   "scripts": {
+    "clean:conflicts": "node scripts/clean-sync-conflicts.mjs",
+    "predev": "npm run clean:conflicts",
     "dev": "next dev",
+    "prebuild": "npm run clean:conflicts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
