@@ -496,3 +496,49 @@ export const DEMO_ACTIVITY_DATA: ActivityData[] = [
     fertilizers: [UREA(24.1304), COMPOST(70)],
   },
 ];
+
+/* ═══════════ QA1 model run (spec §6.7) ═══════════
+   One completed DNDC run over Elad Farm, with per-stratum deltas and the
+   variance components Equation 74 is computed from. Variances are chosen so
+   the project total lands on the deduction recorded in docs/STAGE-6.md.  */
+
+export interface ModelInputStatus {
+  label: string;
+  detail: string;
+  state: "ready" | "partial" | "missing";
+}
+
+export interface ModelStratumResult {
+  stratumCode: string;
+  plotId: string;
+  areaHa: number;
+  deltaSocWpTHa: number;
+  deltaSocBslTHa: number;
+  varModel: number;
+  varSampling: number;
+}
+
+export const DEMO_MODEL_INPUTS: ModelInputStatus[] = [
+  { label: "Initial SOC (t = 0)", detail: "10 points × 2 increments, ESM basis", state: "ready" },
+  { label: "Bulk density", detail: "ISO 11272, fine earth < 2 mm", state: "ready" },
+  { label: "Soil texture", detail: "cycle-1 test at every point", state: "ready" },
+  { label: "Climate (PRISM daily)", detail: "6 years × 4 strata", state: "ready" },
+  { label: "ALM schedule", detail: "per plot, from Project Activities", state: "ready" },
+  { label: "True-up SOC", detail: "23 of 37 points returned", state: "partial" },
+];
+
+export const DEMO_MODEL_STRATA: ModelStratumResult[] = [
+  { stratumCode: "A", plotId: "ELD-WP-01", areaHa: 2.36, deltaSocWpTHa: 1.48, deltaSocBslTHa: 0.22, varModel: 0.118, varSampling: 0.31 },
+  { stratumCode: "B", plotId: "ELD-WP-02", areaHa: 42.59, deltaSocWpTHa: 1.38, deltaSocBslTHa: 0.19, varModel: 0.124, varSampling: 0.28 },
+];
+
+export const DEMO_MODEL_LOG: Array<{ t: string; line: string; kind: "info" | "step" | "done" }> = [
+  { t: "14:02:11", line: "load PRISM daily climate, 6 yr × 4 strata … ok", kind: "info" },
+  { t: "14:02:48", line: "validate inputs against VMD0053 §5.1 … ok", kind: "info" },
+  { t: "14:05:02", line: "baseline scenario … done", kind: "step" },
+  { t: "14:09:17", line: "project scenario … done", kind: "step" },
+  { t: "14:11:03", line: "Monte Carlo, L = 1000 draws … started", kind: "info" },
+  { t: "14:18:44", line: "Monte Carlo … 1000/1000 complete", kind: "step" },
+  { t: "14:19:02", line: "Eq. 74 deduction computed from stored variances", kind: "done" },
+  { t: "14:19:05", line: "results → mrv.model_results · logs → S3", kind: "done" },
+];
