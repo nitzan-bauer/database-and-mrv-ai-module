@@ -31,3 +31,6 @@ yarn-error.log*
 # editor
 .vscode/*
 !.vscode/extensions.json
+
+# local scratch: ad-hoc tsc output used when unit-checking modules
+/.tsbuild
