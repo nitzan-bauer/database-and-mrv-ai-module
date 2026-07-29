@@ -11,7 +11,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check:sql": "node scripts/check-db-queries.mjs"
+    "check:sql": "node scripts/check-db-queries.mjs",
+    "db:doctor": "node scripts/db-doctor.mjs"
   },
   "dependencies": {
     "@turf/area": "^7.3.5",
