@@ -1,11 +1,15 @@
+import { generatePlan } from "@/lib/planner/generate";
 import type {
   AlmActivity,
+  CycleStatus,
+  CycleType,
   Farm,
   ModelRunSummary,
   Plot,
   Product,
   Project,
   SampleRow,
+  SamplingPlan,
   SamplingPoint,
   SocMeasurement,
   TextureMeasurement,
@@ -280,3 +284,69 @@ export const DEMO_MODEL_RUNS: ModelRunSummary[] = [
     periodEnd: "2026-06-30",
   },
 ];
+
+/* ══════════════ Sampling plans — the 3-year view (spec §6.4) ══════════════
+   No cycles exist in the database yet, so fixtures lay out a realistic
+   three-year programme per farm. Cycle intervals follow the crop, not the
+   calendar: the spec allows up to 10 months, and a short-cycle crop can
+   trigger a further round in under a year (Nitzan-Veg-Tech, below).      */
+
+const PLAN_ROWS: Array<{
+  farmId: string;
+  n: number;
+  type: CycleType;
+  start: string;
+  end: string;
+  status: CycleStatus;
+  trigger: string;
+}> = [
+  // Elad Farm (Kenya) — annual-ish cadence
+  { farmId: ELD, n: 1, type: "initial", start: "2026-08-10", end: "2026-08-24", status: "in_field", trigger: "end of growth cycle" },
+  { farmId: ELD, n: 2, type: "true_up", start: "2027-06-14", end: "2027-06-28", status: "draft", trigger: "10-month cap from cycle 1" },
+  { farmId: ELD, n: 3, type: "verification", start: "2028-05-08", end: "2028-05-22", status: "draft", trigger: "verification window" },
+  // Nitzan-Veg-Tech (Israel) — short-growth crops, sub-annual second round
+  { farmId: NVT, n: 1, type: "initial", start: "2026-09-07", end: "2026-09-21", status: "approved", trigger: "end of growth cycle" },
+  { farmId: NVT, n: 2, type: "true_up", start: "2027-05-17", end: "2027-05-31", status: "draft", trigger: "short crop cycle — < 1 yr gap" },
+  { farmId: NVT, n: 3, type: "verification", start: "2028-04-10", end: "2028-04-24", status: "draft", trigger: "verification window" },
+];
+
+export const DEMO_PLANS: SamplingPlan[] = PLAN_ROWS.map((r) => {
+  const farm = DEMO_FARMS.find((f) => f.farmId === r.farmId)!;
+  const plots = DEMO_PLOTS.filter((p) => p.farmId === r.farmId);
+  const plan = generatePlan({
+    plots,
+    cycleNumber: r.n,
+    approach: "QA2",
+    // cycle 2 knows cycle 1's variability; cycle 3 inherits the improved figure
+    cvByStratum:
+      r.n === 1
+        ? {}
+        : Object.fromEntries(
+            plots.map((p, i) => [`${p.plotId}:A`, r.n === 2 ? (i === 0 ? 0.38 : 0.22) : 0.24]),
+          ),
+  });
+  return {
+    cycleId: `${farm.installationCode}-C${r.n}`,
+    farmId: r.farmId,
+    farmName: farm.name,
+    projectId: farm.projectId,
+    cycleNumber: r.n,
+    cycleType: r.type,
+    approach: "QA2" as const,
+    collectTexture: plan.collectTexture,
+    textureDepthCm: plan.textureDepthCm,
+    triggerType: r.trigger,
+    depthScheme: plan.depthScheme,
+    plannedStart: r.start,
+    plannedEnd: r.end,
+    confidenceAlpha: plan.confidenceAlpha,
+    power: plan.power,
+    mddTarget: plan.mddTarget,
+    sameSeason: true,
+    revisitPoints: r.n > 1,
+    status: r.status,
+    generatedBy: "manual",
+    approvedAt: r.status === "draft" ? null : `${r.start}T09:00:00Z`,
+    plannedPoints: plan.totalPoints,
+  };
+});

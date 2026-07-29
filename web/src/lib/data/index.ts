@@ -7,12 +7,14 @@ import type {
   PlotDetail,
   Project,
   SampleRow,
+  SamplingPlan,
   SamplingPoint,
 } from "./types";
 import {
   DEMO_ACTIVITIES,
   DEMO_FARMS,
   DEMO_MODEL_RUNS,
+  DEMO_PLANS,
   DEMO_PLOTS,
   DEMO_PROJECT,
   DEMO_SAMPLES,
@@ -130,6 +132,57 @@ export async function listSamplingPoints(projectId: string): Promise<SamplingPoi
     compositeCores: r.composite_cores == null ? null : Number(r.composite_cores),
     isRevisit: Boolean(r.is_revisit),
     status: (r.status as SamplingPoint["status"]) ?? "planned",
+  }));
+}
+
+/**
+ * All sampling plans for a project (spec §6.4). The screen shows the coming
+ * three years grouped by project and filterable by farm, so this returns the
+ * whole set ordered by farm then cycle.
+ */
+export async function listPlans(projectId: string): Promise<SamplingPlan[]> {
+  if (DATA_MODE === "fixtures") {
+    return DEMO_PLANS.filter((p) => p.projectId === projectId);
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT c.cycle_id, c.farm_id, f.name AS farm_name, f.project_id,
+            c.cycle_number, c.cycle_type, c.approach, c.collect_texture,
+            c.texture_depth_cm, c.trigger_type, c.depth_scheme,
+            c.planned_start, c.planned_end, c.confidence_alpha,
+            c.power_1_minus_beta, c.mdd_target, c.same_season,
+            c.revisit_points, c.status, c.generated_by, c.approved_at,
+            ( SELECT count(*) FROM mrv.sampling_events ev
+               WHERE ev.cycle_id = c.cycle_id )::int AS planned_points
+       FROM mrv.sampling_cycles c
+       JOIN mrv.farms f ON f.farm_id = c.farm_id
+      WHERE f.project_id = $1
+      ORDER BY f.name, c.cycle_number`,
+    [projectId],
+  );
+  return rows.map((r) => ({
+    cycleId: String(r.cycle_id),
+    farmId: String(r.farm_id),
+    farmName: String(r.farm_name),
+    projectId: String(r.project_id),
+    cycleNumber: Number(r.cycle_number),
+    cycleType: (r.cycle_type as SamplingPlan["cycleType"]) ?? "initial",
+    approach: (r.approach as SamplingPlan["approach"]) ?? "QA2",
+    collectTexture: Boolean(r.collect_texture),
+    textureDepthCm: r.texture_depth_cm == null ? null : Number(r.texture_depth_cm),
+    triggerType: (r.trigger_type as string | null) ?? null,
+    depthScheme: String(r.depth_scheme ?? "0-15/15-30"),
+    plannedStart: fmtDate(r.planned_start),
+    plannedEnd: fmtDate(r.planned_end),
+    confidenceAlpha: num(r.confidence_alpha),
+    power: num(r.power_1_minus_beta),
+    mddTarget: num(r.mdd_target),
+    sameSeason: Boolean(r.same_season),
+    revisitPoints: Boolean(r.revisit_points),
+    status: (r.status as SamplingPlan["status"]) ?? "draft",
+    generatedBy: String(r.generated_by ?? "manual"),
+    approvedAt: fmtDate(r.approved_at),
+    plannedPoints: Number(r.planned_points ?? 0),
   }));
 }
 

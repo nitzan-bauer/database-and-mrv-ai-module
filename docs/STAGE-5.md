@@ -52,12 +52,15 @@ The hard checks:
 |---|---|
 | `STRATIFIED_RANDOM` | §8.2.1.2 |
 | `MIN_3_COMPOSITES` — ≥3 points per stratum | §8.2.1.2 |
+| ↳ *raised to* `MIN_5_COMPOSITES` *—* ≥5 *points per stratum by migration 0018* | §8.2.1.2 |
 | `ESM_TWO_INCREMENTS` — 2 depth increments per sample | §8.2.1.6 |
 | `QA2_3_CONTROL_SITES` — ≥3 BSL, each ≤250 km (QA2 only) | §8.3 |
 
 Plus a soft `HIGH_CV` warning where a stratum's CV exceeds 30% (§8.2.1.3) — the flag the sampling-optimisation argument turns on.
 
 Scoring: 100 when every hard check passes, else the fraction that passed scaled to 0-100, minus 5 per warning. **A hard failure caps the score below 100 no matter what** — the dashboard reads red, which is the point. The acceptance test confirmed it: a compliant QA2 farm-cycle scored 100; dropping a stratum to 2 points dropped it to 75 as `MIN_3_COMPOSITES` flipped to fail.
+
+**Update (migration 0018).** §8.2.1.2 sets a floor of "at least 3–5 composite samples within each stratum". Functional Specification v2.0 takes the conservative end of that range: the floor is now **5**, enforced identically by the compliance engine (`MIN_5_COMPOSITES`) and by the sampling-plan generator, so the planner cannot propose a cycle the engine would later fail.
 
 `stratum_statistics` holds n, mean, SD, CV and achieved MDD per stratum per cycle — computed from `soc_measurements`, append-only. It feeds both the CV warning and, later, the sampling-plan generator.
 

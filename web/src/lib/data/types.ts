@@ -164,6 +164,46 @@ export interface ModelRunSummary {
   periodEnd: string | null;
 }
 
+/* ─────────── Sampling plans / cycles (spec §6.4) ─────────── */
+
+/** mrv.cycle_type */
+export type CycleType = "initial" | "true_up" | "verification";
+/** mrv.cycle_status */
+export type CycleStatus =
+  | "draft"
+  | "approved"
+  | "in_field"
+  | "lab_pending"
+  | "complete"
+  | "cancelled";
+
+/** mrv.sampling_cycles — one planned sampling round for a farm. */
+export interface SamplingPlan {
+  cycleId: string;
+  farmId: string;
+  farmName: string;
+  projectId: string;
+  cycleNumber: number;
+  cycleType: CycleType;
+  approach: QuantApproach;
+  collectTexture: boolean;
+  textureDepthCm: number | null;
+  triggerType: string | null;
+  depthScheme: string;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  confidenceAlpha: number | null;
+  power: number | null;
+  mddTarget: number | null;
+  sameSeason: boolean;
+  revisitPoints: boolean;
+  status: CycleStatus;
+  generatedBy: string;
+  approvedAt: string | null;
+  /** points planned for this cycle */
+  plannedPoints: number;
+}
+
 /** Everything the Plot Details screen needs, in one payload. */
 export interface PlotDetail {
   plot: Plot;
