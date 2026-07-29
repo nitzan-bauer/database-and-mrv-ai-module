@@ -175,7 +175,10 @@ export function MapView({
                  <tr><td style="color:#5b6b66;padding:3px 4px">Area</td><td style="padding:3px 4px">${Number(pr.areaHa).toFixed(2)} ha</td></tr>
                  <tr><td style="color:#5b6b66;padding:3px 4px">Approach</td><td style="padding:3px 4px;font-weight:700;color:#2b6161">${pr.qa}</td></tr>
                </table>
-               <div style="margin-top:6px;text-align:center;font-size:11px;color:#7d8f87">Plot Details — Slice 2</div>
+               <a href="/plots/${encodeURIComponent(pr.plotId)}"
+                  style="display:block;margin-top:8px;padding:7px 10px;border-radius:8px;background:#2b6161;color:#fff;font-size:12px;font-weight:600;text-align:center;text-decoration:none">
+                 Open Plot Details
+               </a>
              </div>`,
           )
           .addTo(map);

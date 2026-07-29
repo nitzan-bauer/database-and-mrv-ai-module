@@ -1,4 +1,15 @@
-import type { Farm, Plot, Project, SamplingPoint } from "./types";
+import type {
+  AlmActivity,
+  Farm,
+  ModelRunSummary,
+  Plot,
+  Product,
+  Project,
+  SampleRow,
+  SamplingPoint,
+  SocMeasurement,
+  TextureMeasurement,
+} from "./types";
 
 /**
  * DEV-FIXTURES — the demonstration project and its two demo farms, mirroring
@@ -129,3 +140,143 @@ function demoPointsForPlot(plot: Plot): SamplingPoint[] {
 }
 
 export const DEMO_SAMPLING_POINTS: SamplingPoint[] = DEMO_PLOTS.flatMap(demoPointsForPlot);
+
+/* ══════════════════ Plot Details fixtures (spec §6.3) ══════════════════
+   Products are the REAL marketplace catalogue (seeds/0003_products.sql).
+   Activities, samples, lab rows and model runs are demo values — no such
+   rows exist in the database yet (lab ingestion is Slice 6, planning is
+   Slice 3). They exercise every Plot-Details tab so the screen can be
+   reviewed before real data lands.                                      */
+
+export const DEMO_PRODUCTS: Record<string, Product> = {
+  rootella: { name: "Rootella products", activityType: "biofertilizer", activityLabel: "Apply Mycorrhiza", costPerHaUsd: 84.96, creditPerHa: 3 },
+  rootellaF: { name: "Rootella-F", activityType: "biofertilizer", activityLabel: "Apply Rootella-F", costPerHaUsd: 1298.52, creditPerHa: 38 },
+  coten: { name: "CoteN", activityType: "crf", activityLabel: "Improve fertilizer management", costPerHaUsd: 13968, creditPerHa: 400 },
+  multicote: { name: "Multicote Products", activityType: "crf", activityLabel: "Control Release Fertilizers", costPerHaUsd: 53237.5, creditPerHa: 1522 },
+};
+
+/** Two Project Activities per plot: a biofertilizer (removal) + a CRF (avoidance). */
+export const DEMO_ACTIVITIES: AlmActivity[] = DEMO_PLOTS.flatMap((p, i) => {
+  const bio = i % 2 === 0 ? DEMO_PRODUCTS.rootella : DEMO_PRODUCTS.rootellaF;
+  const crf = i % 2 === 0 ? DEMO_PRODUCTS.multicote : DEMO_PRODUCTS.coten;
+  return [
+    {
+      activityId: `${p.plotId}-ACT-1`, plotId: p.plotId, product: bio,
+      activityType: "biofertilizer", rate: 2.5, rateUnit: "kg/ha",
+      applicationAreaHa: p.applicationAreaHa, applicationDate: "2026-04-12",
+      season: "2026 spring", scenario: "PR" as const,
+      notes: "Removal pathway — soil carbon build-up",
+    },
+    {
+      activityId: `${p.plotId}-ACT-2`, plotId: p.plotId, product: crf,
+      activityType: "crf", rate: 180, rateUnit: "kg N/ha",
+      applicationAreaHa: p.applicationAreaHa, applicationDate: "2026-04-20",
+      season: "2026 spring", scenario: "PR" as const,
+      notes: "Avoidance pathway — enters the GHG Calculator",
+    },
+  ];
+});
+
+/** SOC + texture samples for the completed points, two depth increments each. */
+const DEPTHS: Array<[number, number]> = [[0, 15], [15, 30]];
+
+export const DEMO_SAMPLES: SampleRow[] = DEMO_SAMPLING_POINTS.filter(
+  (sp) => sp.status === "complete" || sp.status === "lab_pending",
+).flatMap((sp, idx) => {
+  const seq = idx * 3;
+  const rows: SampleRow[] = DEPTHS.map(([top, base], d) => ({
+    sampleId: `OFM${String(seq + d + 1).padStart(10, "0")}`,
+    pointId: sp.pointId,
+    sampleType: "soc" as const,
+    stratumCode: "A",
+    scenario: sp.scenario,
+    depthTopCm: top,
+    depthBaseCm: base,
+    compositeCores: sp.compositeCores,
+    barcode: `OFM${String(seq + d + 1).padStart(10, "0")}`,
+    samplingDate: "2026-05-18",
+    distanceFromTargetM: 2.1 + d,
+    photoUrl: null,
+    fieldNotes: null,
+  }));
+  // VM0042: every first-round point also gets a texture spot sample at 15 cm
+  rows.push({
+    sampleId: `OFM${String(seq + 3).padStart(10, "0")}`,
+    pointId: sp.pointId,
+    sampleType: "texture" as const,
+    stratumCode: "A",
+    scenario: sp.scenario,
+    depthTopCm: 15,
+    depthBaseCm: 15,
+    compositeCores: null,
+    barcode: `OFM${String(seq + 3).padStart(10, "0")}`,
+    samplingDate: "2026-05-18",
+    distanceFromTargetM: 2.1,
+    photoUrl: null,
+    fieldNotes: "surface cleared, sieved <2 mm",
+  });
+  return rows;
+});
+
+/** Lab results — only for samples whose point is 'complete'. */
+const COMPLETE_POINTS = new Set(
+  DEMO_SAMPLING_POINTS.filter((sp) => sp.status === "complete").map((sp) => sp.pointId),
+);
+
+export const DEMO_SOC: SocMeasurement[] = DEMO_SAMPLES.filter(
+  (s) => s.sampleType === "soc" && COMPLETE_POINTS.has(s.pointId),
+).map((s, i) => {
+  // Topsoil carbon declines with depth; values chosen so a 0–30 cm profile
+  // lands near 35 t C/ha, the range the DB's own worked example implies
+  // (TOC 1% x BD 1.3 x 15 cm = 19.5 t C/ha, scripts/verify.sql).
+  const shallow = s.depthTopCm === 0;
+  const toc400 = shallow ? 0.95 + (i % 3) * 0.05 : 0.55 + (i % 3) * 0.03;
+  const roc600 = shallow ? 0.15 : 0.1;
+  const bd = shallow ? 1.28 : 1.41;
+  const thickness = (s.depthBaseCm ?? 0) - (s.depthTopCm ?? 0);
+  return {
+    sampleId: s.sampleId,
+    method: "dry_combustion",
+    analysisDate: "2026-06-02",
+    depthTopCm: s.depthTopCm ?? 0,
+    depthBaseCm: s.depthBaseCm ?? 0,
+    bulkDensity: bd,
+    toc400Pct: Number(toc400.toFixed(4)),
+    roc600Pct: roc600,
+    tic900Pct: 0.05,
+    tocPct: Number((toc400 + roc600).toFixed(4)),
+    // mirrors the generated column: TOC% x BD x thickness x (1 - largeCF)
+    socTPerHa: Number(((toc400 + roc600) * bd * thickness).toFixed(4)),
+    soilMassTHa: Number((bd * thickness * 100).toFixed(4)),
+  };
+});
+
+export const DEMO_TEXTURE: TextureMeasurement[] = DEMO_SAMPLES.filter(
+  (s) => s.sampleType === "texture" && COMPLETE_POINTS.has(s.pointId),
+).map((s, i) => {
+  const sand = 30 + (i % 3) * 5;
+  const clay = 35 - (i % 3) * 3;
+  return {
+    sampleId: s.sampleId,
+    sandPct: sand,
+    siltPct: 100 - sand - clay,
+    clayPct: clay,
+    usdaClass: clay >= 33 ? "Clay loam" : "Loam",
+    depthCm: 15,
+  };
+});
+
+export const DEMO_MODEL_RUNS: ModelRunSummary[] = [
+  {
+    runId: "run-2026-c1-dndc",
+    model: "DNDC",
+    modelVersion: "v9.5",
+    runType: "baseline_init",
+    scenario: "paired",
+    status: "complete",
+    uncertaintyMethod: "monte_carlo",
+    monteCarloIters: 1000,
+    periodStart: "2023-01-01",
+    periodEnd: "2026-06-30",
+  },
+];

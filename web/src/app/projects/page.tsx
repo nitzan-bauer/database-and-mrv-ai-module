@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, Section } from "@/components/ui/Card";
 import { getFarmsWithPlots, listProjects } from "@/lib/data";
 import type { FarmWithPlots, Plot, Project } from "@/lib/data/types";
@@ -124,17 +125,20 @@ function PlotRow({ plot }: { plot: Plot }) {
   return (
     <tr className="border-t border-line first:border-t-0">
       <td className="px-3 py-2">
-        <div className="flex items-center gap-2">
+        <Link
+          href={`/plots/${encodeURIComponent(plot.plotId)}`}
+          className="flex items-center gap-2 rounded-md transition-colors hover:text-pine-600"
+        >
           <span
             className="h-3 w-3 shrink-0 rounded-[3px]"
             style={{ backgroundColor: plot.strokeColor }}
             aria-hidden
           />
           <div className="leading-tight">
-            <div className="font-medium text-ink">{plot.name}</div>
+            <div className="font-medium text-ink group-hover:text-pine-600">{plot.name}</div>
             <div className="font-mono text-[11px] text-faint">{plot.plotId}</div>
           </div>
-        </div>
+        </Link>
       </td>
       <td className="px-3 py-2 capitalize text-muted">{plot.crop ?? "—"}</td>
       <td className="px-3 py-2 text-right tabular-nums text-ink">{plot.areaHa.toFixed(2)} ha</td>
