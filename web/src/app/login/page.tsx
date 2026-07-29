@@ -25,7 +25,7 @@ async function devSignIn() {
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-[70vh] items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center bg-cream px-4">
       <Card imprint className="w-full max-w-sm p-8">
         <div className="flex flex-col items-center text-center">
           <IconMark size={52} />
