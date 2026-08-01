@@ -11,6 +11,9 @@ const NAV = [
   { href: "/ghg", label: "GHG" },
   { href: "/model-runs", label: "Models" },
   { href: "/compliance", label: "Compliance" },
+  // Tier 2. Sits after the MRV screens because the department is what
+  // operates them, not another one of them.
+  { href: "/agents", label: "Factory" },
   { href: "/admin", label: "Admin" },
 ];
 

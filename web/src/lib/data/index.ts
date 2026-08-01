@@ -838,3 +838,125 @@ export async function countModelRuns(): Promise<number> {
   const rows = await query<{ n: string }>(`SELECT count(*)::text n FROM mrv.model_runs`);
   return Number(rows[0].n);
 }
+
+/* ──────────────── the Verified Credits Factory (Tier-2) ──────────────── */
+
+export interface AgentRecord {
+  agentId: string;
+  displayName: string;
+  title: string;
+  reportsTo: string | null;
+  mission: string;
+  owns: string;
+  rolePrompt: string;
+  tools: string[];
+  skills: string[];
+  plannedSkills: string[];
+  actorId: string;
+  avatarHue: number;
+  isActive: boolean;
+  /** Actions this agent has taken, from mrv.audit_log. */
+  actionCount: number;
+  lastActedAt: string | null;
+}
+
+/**
+ * The department, in reporting order.
+ *
+ * The action count and last-acted time come from the audit log rather than
+ * from a status column, so an agent cannot appear busy without having done
+ * something. Nothing here is a claim about a plan — it is what the agent has
+ * actually written.
+ */
+export async function listAgents(): Promise<AgentRecord[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT a.agent_id, a.display_name, a.title, a.reports_to, a.mission, a.owns,
+            a.role_prompt, a.tools, a.skills, a.planned_skills, a.actor_id,
+            a.avatar_hue, a.is_active,
+            ( SELECT count(*) FROM mrv.audit_log l WHERE l.actor = a.actor_id )::int AS action_count,
+            ( SELECT max(l.ts)  FROM mrv.audit_log l WHERE l.actor = a.actor_id )     AS last_acted_at
+       FROM mrv.agents a
+      ORDER BY a.sort_order`,
+  );
+  return rows.map((r) => ({
+    agentId: String(r.agent_id),
+    displayName: String(r.display_name),
+    title: String(r.title),
+    reportsTo: (r.reports_to as string | null) ?? null,
+    mission: String(r.mission),
+    owns: String(r.owns),
+    rolePrompt: String(r.role_prompt),
+    tools: (r.tools as string[]) ?? [],
+    skills: (r.skills as string[]) ?? [],
+    plannedSkills: (r.planned_skills as string[]) ?? [],
+    actorId: String(r.actor_id),
+    avatarHue: Number(r.avatar_hue ?? 160),
+    isActive: Boolean(r.is_active),
+    actionCount: Number(r.action_count ?? 0),
+    lastActedAt: r.last_acted_at ? new Date(String(r.last_acted_at)).toISOString() : null,
+  }));
+}
+
+export interface PipelineStage {
+  key: string;
+  label: string;
+  count: number;
+  unit: string;
+  /** What has to happen for this stage to advance. */
+  blocker: string | null;
+}
+
+/**
+ * The credit pipeline, counted from the tables rather than tracked.
+ *
+ * A stage's number is a COUNT over the rows that stage produces, so it
+ * cannot drift from reality the way a status field does — there is no
+ * separate record to forget to update. Where a stage is at zero, the reason
+ * is stated, because "0" on a control tower is only useful with the reason
+ * beside it.
+ */
+export async function creditPipeline(): Promise<PipelineStage[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const n = async (sql: string) => Number((await query<{ n: string }>(sql))[0].n);
+
+  const farms = await n(`SELECT count(*)::text n FROM mrv.farms`);
+  const plots = await n(`SELECT count(*)::text n FROM mrv.plots`);
+  const points = await n(`SELECT count(*)::text n FROM mrv.sampling_points`);
+  const captured = await n(`SELECT count(*)::text n FROM mrv.sampling_events WHERE submitted_at IS NOT NULL`);
+  const measured = await n(`SELECT count(*)::text n FROM mrv.soc_measurements`);
+  const scored = await n(`SELECT count(*)::text n FROM mrv.compliance_scores`);
+  const modelled = await n(`SELECT count(*)::text n FROM mrv.model_results`);
+  const issued = await n(`SELECT count(*)::text n FROM mrv.vcu_issuances`);
+
+  return [
+    { key: "farms", label: "Farms enrolled", count: farms, unit: "farms", blocker: null },
+    { key: "plots", label: "Plots mapped", count: plots, unit: "plots", blocker: null },
+    { key: "planned", label: "Points planned", count: points, unit: "points", blocker: null },
+    { key: "captured", label: "Points captured", count: captured, unit: "events", blocker: null },
+    { key: "measured", label: "SOC measured", count: measured, unit: "measurements", blocker: null },
+    {
+      key: "scored",
+      label: "Cycles scored",
+      count: scored,
+      unit: "cycles",
+      blocker: null,
+    },
+    {
+      key: "modelled",
+      label: "Modelled (QA1)",
+      count: modelled,
+      unit: "runs",
+      blocker: modelled === 0 ? "needs a second measured cycle before a model can be calibrated" : null,
+    },
+    {
+      key: "issued",
+      label: "VCUs issued",
+      count: issued,
+      unit: "issuances",
+      blocker: issued === 0 ? "needs validation, then verification by a VVB" : null,
+    },
+  ];
+}
