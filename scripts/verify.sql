@@ -22,20 +22,21 @@ DO $$
 DECLARE
   n int;
 BEGIN
-  -- 9 core hierarchy + 3 reference + 2 audit + agent_memory + 5 stage-3.
+  -- 9 core hierarchy + 3 reference + 2 audit + agent_memory + 5 stage-3,
+  -- plus mrv.agents from the Tier-2 registry (0024).
   -- BASE TABLE only: information_schema.tables counts views too, and
   -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 41 THEN
-    RAISE EXCEPTION 'FAIL  | expected 41 base tables in mrv, found %', n;
+  IF n <> 42 THEN
+    RAISE EXCEPTION 'FAIL  | expected 42 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 41 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 42 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
