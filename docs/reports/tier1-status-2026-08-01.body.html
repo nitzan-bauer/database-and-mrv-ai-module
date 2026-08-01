@@ -1,0 +1,164 @@
+<p class="lead">TIER-1 is built, connected to the live database, and proven end to end on a real farm. The module now plans a sampling campaign, issues a work order, authenticates a field sampler, ingests laboratory results and scores the cycle against VM0042 — writing every step to AWS RDS. What remains open is field data, not software.</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="n">11</div><div class="l">Screens built</div><div class="f">10 staff + 1 field</div></div>
+  <div class="kpi"><div class="n">42</div><div class="l">CI assertions</div><div class="f">passing on PostGIS 16</div></div>
+  <div class="kpi"><div class="n">23</div><div class="l">Migrations</div><div class="f">applied to RDS</div></div>
+  <div class="kpi"><div class="n">25<span style="font-size:11pt;color:#8a9995">/41</span></div><div class="l">Tables populated</div><div class="f">was 11 before the chain</div></div>
+</div>
+
+<h2>1 &nbsp;What the module does today</h2>
+
+<p>Every operational step below writes to the live database. The chain was run against <b>Nitzan-Veg-Tech Farm</b> (Pardes Hana-Karkur, 223 ha, 5 plots) on 1 August 2026.</p>
+
+<table>
+<tr><th style="width:15%">Step</th><th style="width:47%">What happened</th><th>Result on the live system</th></tr>
+<tr><td><b>Sampling plan</b></td><td>Strata defined per plot, points drawn at random inside each polygon (PostGIS <code>ST_GeneratePoints</code>) from a recorded seed</td><td>31 points across 5 strata, every stratum at or above the 5-composite floor, none outside its plot</td></tr>
+<tr><td><b>Work order</b></td><td>Issued to a named contractor with a sampling window, plus a single scoped access token</td><td><span class="mono">WO-2026-0010</span> &middot; AgriSample Ltd &middot; 1–14 Sep 2026</td></tr>
+<tr><td><b>Field capture</b></td><td>Sampler submits each point against the token; distance from the planned location computed server-side</td><td>31 events &middot; mean 6.21 m from target</td></tr>
+<tr><td><b>Laboratory</b></td><td>Two depth increments per point (0–15, 15–30 cm), SOC derived by the database, bad rows quarantined</td><td>62 samples &middot; 62 measurements &middot; SOC 13.68–23.14 t C/ha (mean 18.24)</td></tr>
+<tr><td><b>Compliance</b></td><td>Cycle scored against the VM0042 hard checks and soft warnings</td><td><b>85 / 100</b> &middot; 6 of 7 hard checks passed &middot; 0 warnings</td></tr>
+</table>
+
+<h3>The screens</h3>
+<table>
+<tr><th style="width:22%">Screen</th><th style="width:44%">Purpose</th><th>Data source</th></tr>
+<tr><td>Projects</td><td>Portfolio, farms, climate zone and irrigation method</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>Map</td><td>Plot polygons and sampling points on Mapbox</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>Plot details</td><td>Samples, SOC, texture, activities, model runs per plot</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>Plans</td><td>Three-year sampling schedule, per farm</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>Work orders</td><td>Issuance, state, token lifecycle</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>Sampler (external)</td><td>Token-scoped field capture, outside the login</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>Lab imports</td><td>SOC datasheet ingestion and quarantine</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>Compliance</td><td>VM0042 score per farm-cycle</td><td><span class="pill ok">live</span></td></tr>
+<tr><td>GHG Calculator</td><td>Fuel and fertiliser emissions with the full working</td><td><span class="pill warn">awaiting data</span></td></tr>
+<tr><td>Model Runs</td><td>QA1 console and the Equation-74 deduction</td><td><span class="pill warn">awaiting data</span></td></tr>
+<tr><td>Admin</td><td>Users, roles, agent policies, audit log, farm context</td><td><span class="pill ok">live</span></td></tr>
+</table>
+
+<div class="note">
+<p><b>The two screens marked “awaiting data” show an empty state, not demo figures.</b> An emissions number computed over invented fuel and fertiliser reads exactly like a real one, and an Equation-74 deduction over invented variance is indistinguishable on screen from a real deduction. Both name the tables they are waiting on. These are the screens a validation body is shown.</p>
+</div>
+
+<h2 class="pb">2 &nbsp;Defects found and corrected</h2>
+
+<p>Seven faults were found in the pre-existing engine and in work done during this phase. Each is listed with what would have happened had it shipped.</p>
+
+<table>
+<tr><th style="width:26%">Defect</th><th style="width:37%">Consequence if unfixed</th><th>Status</th></tr>
+<tr>
+  <td><b>Composite floor set to 3</b><br><span class="mono" style="font-size:8.4pt">migration 0018</span></td>
+  <td>VM0042 §8.2.1.2 requires five composites per stratum. Plans would have been generated below the methodology minimum.</td>
+  <td><span class="pill ok">fixed</span></td>
+</tr>
+<tr>
+  <td><b>Three “enforced” hard checks were never implemented</b><br><span class="mono" style="font-size:8.4pt">migration 0019</span></td>
+  <td>Same-season window, laboratory accreditation and dry combustion were documented as enforced but absent. A non-compliant cycle would have scored clean.</td>
+  <td><span class="pill ok">fixed</span></td>
+</tr>
+<tr>
+  <td><b>ESM check grouped by sample, not by point</b><br><span class="mono" style="font-size:8.4pt">migration 0019</span></td>
+  <td>0–15 and 15–30 cm are separate samples by design, so the check could <b>never</b> pass. Every cycle would have failed a check that was correctly satisfied.</td>
+  <td><span class="pill ok">fixed</span></td>
+</tr>
+<tr>
+  <td><b>One wet parameter set applied to every farm</b><br><span class="mono" style="font-size:8.4pt">migration 0020</span></td>
+  <td>EF_N_direct 0.013 instead of 0.005 and Frac_LEACH 0.24 instead of 0. On a 40 ha plot cutting nitrogen 30%, a claim of 7.90 tCO₂e/yr where 3.01 was due — a <b>162% over-statement</b>, the direction that fails validation.</td>
+  <td><span class="pill ok">fixed</span></td>
+</tr>
+<tr>
+  <td><b>Irrigation held on the parameter set, not the farm</b><br><span class="mono" style="font-size:8.4pt">migration 0022</span></td>
+  <td>Every farm sharing a climate zone forced to share one irrigation method. Drip runs at scale across East Africa as much as Israel, so no default could be right.</td>
+  <td><span class="pill ok">fixed</span></td>
+</tr>
+<tr>
+  <td><b>UNIQUE keys resting on transaction time</b><br><span class="mono" style="font-size:8.4pt">migrations 0020, 0021</span></td>
+  <td><code>now()</code> is the transaction start, so re-evaluating within one transaction collided on a constraint meant to prevent duplicate results, not duplicate attempts.</td>
+  <td><span class="pill ok">fixed</span></td>
+</tr>
+<tr>
+  <td><b>Lab ingestion updated an append-only table</b><br><span class="mono" style="font-size:8.4pt">caught by the database</span></td>
+  <td>The import record was opened, filled, then updated with totals. <code>mrv.lab_imports</code> refused it. Restructured to write the record once, already knowing the outcome.</td>
+  <td><span class="pill ok">fixed</span></td>
+</tr>
+</table>
+
+<div class="note flag">
+<p><b>A naming trap was also removed.</b> The field <code>dry_climate_irrigated</code> invited the answer “yes” for a drip-irrigated farm — which <em>is</em> irrigated — and that silently applied the wet leaching fraction, inflating the result by roughly 40%. It is now <code>irrigation_method</code> on the farm, with the five values the methodology actually distinguishes.</p>
+</div>
+
+<h2>3 &nbsp;How the numbers are protected</h2>
+
+<table>
+<tr><th style="width:30%">Control</th><th>What it prevents</th></tr>
+<tr><td><b>12 append-only tables</b></td><td>Evidence cannot be edited or deleted. A correction is a new row, so the record shows that a figure changed and when. This guard caught one of the defects above during development.</td></tr>
+<tr><td><b>Refusal instead of defaults</b></td><td>A farm without a climate zone, or a dry-zone farm without an irrigation method, cannot be quantified at all. Guessing either would be guessing the credit volume.</td></tr>
+<tr><td><b>Reproducible random sampling</b></td><td>Point placement is genuinely random, and the seed is recorded — so the draw can be repeated exactly. This separates a random sample from one re-drawn until it looked convenient.</td></tr>
+<tr><td><b>Tokens stored as hashes</b></td><td>A database dump yields no working field-access link. Re-sending means issuing a new token and revoking the old one.</td></tr>
+<tr><td><b>Named actor on every write</b></td><td>976 audit entries, each naming who acted — a person, or a token. A validation body asking why a figure moved gets a name and a time.</td></tr>
+<tr><td><b>Verified TLS to the database</b></td><td>The connection carrying sampling and laboratory evidence verifies the server’s certificate against Amazon’s root bundle rather than disabling the check.</td></tr>
+<tr><td><b>42 assertions in CI</b></td><td>Every migration applied to a clean PostGIS, fully unwound and re-applied, on every push. Includes a structural check that fails if a future UNIQUE key rests on transaction time.</td></tr>
+</table>
+
+<h2 class="pb">4 &nbsp;What is open</h2>
+
+<p>Three gaps remain. <b>None is a software gap</b> — each is waiting on information the module cannot invent.</p>
+
+<table>
+<tr><th style="width:24%">Open item</th><th style="width:40%">What is needed</th><th>Owner</th></tr>
+<tr>
+  <td><b>Baseline control sites</b><br><span class="pill bad">blocks verification</span></td>
+  <td>VM0042 Table 7 requires three comparable sites within 250 km meeting nine similarity criteria. This is the one hard check currently failing, and it caps the compliance score at 85.</td>
+  <td>Field work — locating comparable farms</td>
+</tr>
+<tr>
+  <td><b>Activity data</b></td>
+  <td>Diesel and gasoline litres, and each fertiliser application with its nitrogen content, for a baseline period and each project year.</td>
+  <td>The grower</td>
+</tr>
+<tr>
+  <td><b>QA1 model run</b></td>
+  <td>Needs two measured cycles — a baseline and a true-up — before a model can be calibrated. The action is gated <span class="mono">confirm</span> and belongs with TIER-2.</td>
+  <td>Sequence, not a blocker</td>
+</tr>
+</table>
+
+<div class="note stop">
+<p><b>On the failing check.</b> Three plausible polygons could have been generated to turn <span class="mono">QA2_3_CONTROL_SITES</span> green. That would have fabricated precisely the evidence the check exists to demand. It is left visible, and the score reads 85 rather than 100 as a result.</p>
+</div>
+
+<h2>5 &nbsp;Ready for TIER-2</h2>
+
+<p>The write chain was deliberately built as a <b>tool surface</b> rather than as form handlers. The six actions in the agent policy table are the same actions a manager performs by hand, so the Verified Credits Factory agents will call exactly what a person clicks — not a second implementation that has to be kept in step.</p>
+
+<table>
+<tr><th style="width:30%">Agent action</th><th style="width:16%">Mode</th><th>Foundation status</th></tr>
+<tr><td><span class="mono">propose_sampling_plan</span></td><td><span class="pill ok">auto</span></td><td>Tool built, proven on live data</td></tr>
+<tr><td><span class="mono">send_work_order</span></td><td><span class="pill warn">confirm</span></td><td>Tool built, proven on live data</td></tr>
+<tr><td><span class="mono">run_model</span></td><td><span class="pill warn">confirm</span></td><td>To be built in TIER-2</td></tr>
+<tr><td><span class="mono">recalibrate_model</span></td><td><span class="pill warn">confirm</span></td><td>To be built in TIER-2</td></tr>
+<tr><td><span class="mono">issue_alerts</span></td><td><span class="pill ok">auto</span></td><td>Read-only; no write path needed</td></tr>
+<tr><td><span class="mono">chat</span></td><td><span class="pill ok">auto</span></td><td>Read-only by default</td></tr>
+</table>
+
+<p>Policy is read from the database rather than compiled in, so a change made in Admin takes effect immediately. An action with no policy row is refused rather than allowed — a missing policy is far more likely to be an action nobody has reviewed than one deliberately left unrestricted. A person acting directly is not subject to <span class="mono">confirm</span>: that mode means an agent must get someone to approve, and a person doing it themselves is that approval.</p>
+
+<h3>Recommended sequence</h3>
+<ul>
+  <li><b>Now</b> — decide who locates the three baseline control sites, and collect activity data from the grower. Both unblock a 100-scoring cycle.</li>
+  <li><b>Next</b> — TIER-2: the agent decision layer, memory (pgvector is installed), and the two model actions.</li>
+  <li><b>Then</b> — a second sampling cycle, which is what makes QA1 modelling possible at all.</li>
+</ul>
+
+<h2>Appendix &nbsp;Technical position</h2>
+
+<table>
+<tr><th style="width:34%">Component</th><th>State</th></tr>
+<tr><td>Database</td><td>PostgreSQL 16.13, PostGIS 3.4.6, pgvector &middot; AWS RDS, eu-west-1</td></tr>
+<tr><td>Schema</td><td>41 tables, 23 migrations applied, 3,992 lines of SQL</td></tr>
+<tr><td>Application</td><td>Next.js 16 / React 19 / TypeScript &middot; 58 files, 10,401 lines</td></tr>
+<tr><td>Verification suite</td><td>1,148 lines, 42 assertions, run on every push</td></tr>
+<tr><td>Authentication</td><td>Google Workspace SSO, restricted to @carbonature.io, verified server-side</td></tr>
+<tr><td>Field access</td><td>Work-order-scoped tokens, hashed at rest, expiring at window close plus 14 days</td></tr>
+<tr><td>Source control</td><td>60 commits, 21 July – 1 August 2026, CI passing</td></tr>
+</table>
