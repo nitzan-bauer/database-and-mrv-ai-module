@@ -1144,5 +1144,64 @@ BEGIN
   RAISE NOTICE 'PASS  | no UNIQUE key rests on a transaction-scoped timestamp';
 END $$;
 
+-- =====================================================================
+-- Migration 0024 — the Verified Credits Factory agent registry.
+-- =====================================================================
+
+DO $$
+DECLARE
+  n   int;
+  bad text;
+BEGIN
+  SELECT count(*) INTO n FROM mrv.agents WHERE is_active;
+  IF n <> 5 THEN
+    RAISE EXCEPTION 'FAIL  | expected 5 active agents, found %', n;
+  END IF;
+
+  -- One head reporting outside the department, four reporting to them.
+  SELECT count(*) INTO n FROM mrv.agents WHERE reports_to IS NULL;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'FAIL  | expected exactly one department head, found %', n;
+  END IF;
+  SELECT count(*) INTO n FROM mrv.agents WHERE reports_to = 'john';
+  IF n <> 4 THEN
+    RAISE EXCEPTION 'FAIL  | expected 4 agents reporting to john, found %', n;
+  END IF;
+  RAISE NOTICE 'PASS  | the department is one head and four reports';
+
+  -- An agent must never be mistakable for a person in the audit trail.
+  SELECT string_agg(agent_id, ', ') INTO bad FROM mrv.agents WHERE actor_id NOT LIKE 'agent:%';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | actor_id is not agent-prefixed for: %', bad;
+  END IF;
+  RAISE NOTICE 'PASS  | every agent actor_id is prefixed, so no agent reads as a person';
+
+  -- The role prompt is the agent; an empty one is a misconfigured agent.
+  SELECT string_agg(agent_id, ', ') INTO bad FROM mrv.agents WHERE length(role_prompt) < 200;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | role_prompt is missing or too short for: %', bad;
+  END IF;
+  RAISE NOTICE 'PASS  | every agent carries a role prompt';
+
+  -- Dave operates the Tier-1 module, so he must hold its tools.
+  SELECT string_agg(t, ', ') INTO bad
+  FROM unnest(ARRAY['propose_sampling_plan','send_work_order','run_model']) t
+  WHERE NOT (t = ANY (SELECT unnest(tools) FROM mrv.agents WHERE agent_id = 'dave'));
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing tools he is defined to operate: %', bad;
+  END IF;
+  RAISE NOTICE 'PASS  | dave holds the Tier-1 tools he is defined to operate';
+
+  -- Every tool an agent may call needs a policy row, or checkPolicy refuses
+  -- it at runtime and the agent silently does nothing.
+  SELECT string_agg(DISTINCT t, ', ') INTO bad
+  FROM mrv.agents a, unnest(a.tools) t
+  WHERE NOT EXISTS (SELECT 1 FROM mrv.agent_action_policies p WHERE p.action_name = t);
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | agents hold tools with no policy governing them: %', bad;
+  END IF;
+  RAISE NOTICE 'PASS  | every tool held by an agent has a policy governing it';
+END $$;
+
 \echo ''
 \echo 'All checks passed.'
