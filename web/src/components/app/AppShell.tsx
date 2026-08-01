@@ -15,7 +15,18 @@ const NAV = [
 ];
 
 /** The MRV module chrome: sticky brand header + centered content column. */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  userName = "Nitzan Bauer",
+  userEmail = null,
+  authenticated = false,
+}: {
+  children: React.ReactNode;
+  userName?: string;
+  userEmail?: string | null;
+  /** true once real SSO is in front of these routes */
+  authenticated?: boolean;
+}) {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur">
@@ -37,12 +48,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <DataModeBadge />
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-pine-700">Nitzan Bauer</p>
-              <p className="text-xs text-muted">Super Admin</p>
+              <p className="text-sm font-semibold text-pine-700">{userName}</p>
+              <p className="text-xs text-muted">{userEmail ?? "Super Admin"}</p>
             </div>
             <span className="rounded-full bg-sage-100 px-2.5 py-1 text-xs font-medium text-sage-700">
               Active
             </span>
+            {authenticated && <SignOutButton />}
           </div>
         </div>
       </header>
@@ -54,6 +66,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </footer>
     </div>
+  );
+}
+
+/** Signing out is a state change, so it is a POST, not a link. */
+function SignOutButton() {
+  return (
+    <form
+      action={async () => {
+        "use server";
+        const { signOut } = await import("@/auth");
+        await signOut({ redirectTo: "/login" });
+      }}
+    >
+      <button
+        type="submit"
+        className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-cream hover:text-pine-700"
+      >
+        Sign out
+      </button>
+    </form>
   );
 }
 

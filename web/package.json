@@ -12,13 +12,16 @@
     "start": "next start",
     "lint": "eslint",
     "check:sql": "node scripts/check-db-queries.mjs",
-    "db:doctor": "node scripts/db-doctor.mjs"
+    "db:doctor": "node scripts/db-doctor.mjs",
+    "db:link": "node scripts/link-db.mjs",
+    "db:migrate": "node scripts/db-migrate.mjs"
   },
   "dependencies": {
     "@turf/area": "^7.3.5",
     "docx": "^9.7.1",
     "mapbox-gl": "^3.24.1",
     "next": "16.2.9",
+    "next-auth": "^5.0.0-beta.32",
     "pdf-lib": "^1.17.1",
     "pg": "^8.13.1",
     "react": "19.2.4",
