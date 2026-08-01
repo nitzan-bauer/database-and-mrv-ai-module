@@ -1,75 +1,132 @@
 /**
  * Put a rotated Google OAuth client secret into .env.local.
  *
- *   npm run auth:google
+ *   npm run auth:google      (or the desktop shortcut)
  *
- * Editing .env.local by hand is where this goes wrong: Notepad appends .txt to
- * dotfiles, and a secret pasted into a chat or a commit cannot be un-pasted.
- * This prompts on the local terminal, echoes nothing, writes only the one line,
- * and prints a fingerprint rather than the value so the terminal scrollback
- * never holds it either.
+ * Editing .env.local by hand is where this goes wrong: Notepad appends .txt
+ * to dotfiles, and a value pasted anywhere other than after
+ * AUTH_GOOGLE_SECRET= is simply not read, because the file only parses
+ * KEY=value lines. A secret pasted into a chat cannot be un-pasted either.
+ *
+ * It reads the clipboard first. Pasting into a console window is the step
+ * that keeps failing — cmd.exe launched from a shortcut has right-click
+ * paste off by default, so the paste silently does nothing, Enter submits an
+ * empty line, and the run ends with no change and no obvious reason. Copying
+ * the secret in the browser is a step the user is already taking, so reading
+ * it from there removes the failure entirely. Typing it in stays available
+ * for anything without a clipboard.
+ *
+ * The value is never printed. Confirmation shows its length and last four
+ * characters, which is enough to tell two secrets apart and not enough to be
+ * one.
  */
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 const ENV = path.join(path.resolve(import.meta.dirname, ".."), ".env.local");
+const PREFIX = "GOCSPX-";
 
 if (!fs.existsSync(ENV)) {
   console.error(`No ${ENV}.\nCreate it first, or run:  npm run db:link`);
   process.exit(1);
 }
 
-/** Prompt without echoing, so the secret never lands in scrollback. */
-function askHidden(question) {
+const mask = (v) => `${PREFIX}${"•".repeat(Math.max(0, v.length - PREFIX.length - 4))}${v.slice(-4)}`;
+const fp = (v) => crypto.createHash("sha256").update(v).digest("hex").slice(0, 12);
+
+/** Whatever is on the Windows clipboard, or null. */
+function fromClipboard() {
+  if (process.platform !== "win32") return null;
+  try {
+    return execFileSync(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Raw"],
+      { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+  } catch {
+    return null;
+  }
+}
+
+function ask(question, { hidden = false } = {}) {
   return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    // Swallow the echo of everything typed after the prompt itself.
-    let prompted = false;
-    rl._writeToOutput = (s) => {
-      if (!prompted) { process.stdout.write(s); prompted = true; }
-    };
-    rl.question(question, (answer) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+    });
+    if (hidden) {
+      let shown = false;
+      rl._writeToOutput = (s) => {
+        if (!shown) {
+          process.stdout.write(s);
+          shown = true;
+        }
+      };
+    }
+    rl.question(question, (a) => {
       rl.close();
-      process.stdout.write("\n");
-      resolve(answer.trim());
+      if (hidden) process.stdout.write("\n");
+      resolve(a.trim());
     });
   });
 }
 
-const secret = await askHidden("Paste the NEW client secret (input hidden), then Enter: ");
+/* ---- find the secret ------------------------------------------------- */
+let secret = null;
+
+const clip = fromClipboard();
+if (clip && clip.startsWith(PREFIX) && !/\s/.test(clip)) {
+  console.log(`Found a client secret on the clipboard:  ${mask(clip)}   (${clip.length} characters)`);
+  const yes = (await ask("Use it? [Y/n]: ")).toLowerCase();
+  if (yes === "" || yes === "y" || yes === "yes") secret = clip;
+  else console.log("Not using the clipboard.\n");
+} else if (clip) {
+  console.log(`The clipboard does not hold a client secret (they begin "${PREFIX}").\n`);
+} else {
+  console.log("Could not read the clipboard.\n");
+}
 
 if (!secret) {
-  console.error("Nothing entered — .env.local left untouched.");
+  console.log(`Type or paste it instead. Nothing appears as you type.`);
+  console.log(`In this window paste with Ctrl+V — right-click paste is often off.\n`);
+  secret = await ask("Client secret: ", { hidden: true });
+}
+
+/* ---- check it -------------------------------------------------------- */
+if (!secret) {
+  console.error("\nNothing was entered, so .env.local is unchanged.");
+  console.error("Copy the secret in Google Cloud Console and run this again — it will");
+  console.error("pick it up from the clipboard without you having to paste here.");
   process.exit(1);
 }
-if (!secret.startsWith("GOCSPX-")) {
-  console.error(
-    `That does not look like a Google client secret (they begin "GOCSPX-").\n` +
-      "Nothing was written. Check you copied the secret and not the client ID.",
-  );
+if (!secret.startsWith(PREFIX)) {
+  console.error(`\nThat does not look like a Google client secret — they begin "${PREFIX}".`);
+  console.error("Nothing was written. Check you copied the secret and not the client ID.");
   process.exit(1);
 }
 
 const before = fs.readFileSync(ENV, "utf8");
 if (!/^AUTH_GOOGLE_SECRET=/m.test(before)) {
-  console.error("AUTH_GOOGLE_SECRET is not in .env.local — refusing to guess where it belongs.");
+  console.error("\nAUTH_GOOGLE_SECRET is not in .env.local — refusing to guess where it belongs.");
   process.exit(1);
 }
 
 const old = before.match(/^AUTH_GOOGLE_SECRET=(.*)$/m)[1].trim();
 if (old === secret) {
-  console.error("That is the secret already in the file. Nothing changed.");
+  console.error("\nThat is already the secret in the file. Nothing changed.");
+  console.error("If sign-in is still failing, the new secret was probably not the one copied.");
   process.exit(1);
 }
 
-// Keep a backup beside it, in case a paste went wrong.
+/* ---- write it -------------------------------------------------------- */
 fs.writeFileSync(`${ENV}.bak`, before);
 fs.writeFileSync(ENV, before.replace(/^AUTH_GOOGLE_SECRET=.*$/m, `AUTH_GOOGLE_SECRET=${secret}`));
 
-const fp = (v) => crypto.createHash("sha256").update(v).digest("hex").slice(0, 12);
-console.log(`updated ${path.basename(ENV)}`);
+console.log(`\nupdated ${path.basename(ENV)}`);
 console.log(`  was  sha256 ${fp(old)}`);
-console.log(`  now  sha256 ${fp(secret)}  (length ${secret.length})`);
-console.log("\nRestart the dev server, then sign in at http://localhost:3007/login");
+console.log(`  now  sha256 ${fp(secret)}   ${mask(secret)}   (${secret.length} characters)`);
+console.log("\nRestart the server, then sign in at http://localhost:3007/login");

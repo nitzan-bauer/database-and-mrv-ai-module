@@ -22,12 +22,10 @@ where node >nul 2>&1 || (echo Node.js is not on PATH — install it first. & pau
 echo.
 echo   CarboNature MRV — update the Google client secret
 echo.
-echo   Create the new secret first:
-echo     Google Cloud Console  -^>  APIs ^& Services  -^>  Credentials
-echo     -^>  CarboNature MRV  -^>  + ADD SECRET,  then delete the old one.
+echo   In Google Cloud Console: APIs ^& Services -^> Credentials
+echo   -^> CarboNature MRV -^> + ADD SECRET, then COPY it and delete the old.
 echo.
-echo   Then paste it below. Nothing appears as you paste — that is
-echo   deliberate, so the secret never lands in this window's history.
+echo   Copying is all you need to do — this reads the clipboard.
 echo.
 
 node scripts\set-oauth-secret.mjs
@@ -35,9 +33,11 @@ set "RC=%ERRORLEVEL%"
 
 echo.
 if not "%RC%"=="0" (
-  echo   Nothing was changed.
+  echo   ============================================
+  echo     NOTHING WAS CHANGED - see the reason above
+  echo   ============================================
 ) else (
-  echo   Now close the CarboNature MRV window and open it again,
+  echo   Done. Now close the CarboNature MRV window and open it again,
   echo   so the server picks up the new secret.
 )
 echo.
