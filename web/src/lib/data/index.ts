@@ -960,3 +960,129 @@ export async function creditPipeline(): Promise<PipelineStage[]> {
     },
   ];
 }
+
+/* ─────────────────────── PDD readiness (Rebeka) ───────────────────────── */
+
+export interface PddTemplateInfo {
+  name: string;
+  version: string;
+  sectionCount: number;
+  registeredAt: string;
+}
+
+export interface ReadinessItem {
+  key: string;
+  label: string;
+  ready: number;
+  total: number;
+  detail: string;
+}
+
+export interface PddReadiness {
+  template: PddTemplateInfo | null;
+  items: ReadinessItem[];
+}
+
+/**
+ * How close a project is to having the evidence a PDD needs behind it —
+ * not against the literal wording of whichever template is loaded (that
+ * would mean guessing what an arbitrary section title requires, and the
+ * whole point of storing the template as data is that its wording is not
+ * assumed), but against the small set of things Rebeka's own role makes
+ * her responsible for regardless of template version: described farms,
+ * clean boundaries, a defined baseline, and an evaluated cycle.
+ *
+ * Every figure is an X/Y count over real rows, the same discipline as
+ * creditPipeline: a status field would need to be kept in sync by hand and
+ * would eventually disagree with the database; a count cannot.
+ */
+export async function pddReadiness(projectId: string): Promise<PddReadiness> {
+  if (DATA_MODE === "fixtures") return { template: null, items: [] };
+  const { query } = await import("../db");
+
+  const tpl = await query<Record<string, unknown>>(
+    `SELECT name, version, section_count, registered_at
+       FROM mrv.pdd_templates ORDER BY registered_at DESC LIMIT 1`,
+  );
+  const template: PddTemplateInfo | null = tpl.length
+    ? {
+        name: String(tpl[0].name),
+        version: String(tpl[0].version),
+        sectionCount: Number(tpl[0].section_count),
+        registeredAt: new Date(String(tpl[0].registered_at)).toISOString(),
+      }
+    : null;
+
+  const farms = await query<{ n: string }>(
+    `SELECT count(*)::text n FROM mrv.farms WHERE project_id = $1`,
+    [projectId],
+  );
+  const totalFarms = Number(farms[0].n);
+  if (totalFarms === 0) {
+    return { template, items: [] };
+  }
+
+  const described = await query<{ n: string }>(
+    `SELECT count(*)::text n FROM mrv.farms
+      WHERE project_id = $1
+        AND climate_zone IS NOT NULL
+        AND (climate_zone = 'wet' OR irrigation_method IS NOT NULL)`,
+    [projectId],
+  );
+
+  const plots = await query<{ total: string; valid: string }>(
+    `SELECT count(*)::text total, count(*) FILTER (WHERE ST_IsValid(p.geom))::text valid
+       FROM mrv.plots p JOIN mrv.farms f ON f.farm_id = p.farm_id
+      WHERE f.project_id = $1`,
+    [projectId],
+  );
+
+  const baseline = await query<{ n: string }>(
+    `SELECT count(*)::text n FROM mrv.farms f
+      WHERE f.project_id = $1
+        AND (
+          (SELECT count(*) FROM mrv.baseline_control_sites b WHERE b.farm_id = f.farm_id) >= 3
+          OR EXISTS (SELECT 1 FROM mrv.model_runs r WHERE r.farm_id = f.farm_id)
+        )`,
+    [projectId],
+  );
+
+  const scored = await query<{ n: string }>(
+    `SELECT count(DISTINCT s.farm_id)::text n FROM mrv.compliance_scores s
+       JOIN mrv.farms f ON f.farm_id = s.farm_id WHERE f.project_id = $1`,
+    [projectId],
+  );
+
+  const items: ReadinessItem[] = [
+    {
+      key: "described",
+      label: "Farms fully described",
+      ready: Number(described[0].n),
+      total: totalFarms,
+      detail: "climate zone set, and irrigation method set for every dry-zone farm",
+    },
+    {
+      key: "boundaries",
+      label: "Plot boundaries valid",
+      ready: Number(plots[0].valid),
+      total: Number(plots[0].total),
+      detail: "geometrically valid — run Rebeka's QA/QC to find which ones are not",
+    },
+    {
+      key: "baseline",
+      label: "Baseline defined",
+      ready: Number(baseline[0].n),
+      total: totalFarms,
+      detail: "≥3 baseline control sites (QA2) or a model run exists (QA1)",
+    },
+    {
+      key: "evaluated",
+      label: "Compliance evaluated",
+      ready: Number(scored[0].n),
+      total: totalFarms,
+      detail: "at least one VM0042 compliance run recorded",
+    },
+  ];
+
+  return { template, items };
+}

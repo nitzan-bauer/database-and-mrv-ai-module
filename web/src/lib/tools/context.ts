@@ -59,7 +59,9 @@ export type ActionName =
   | "recalibrate_model"
   | "issue_alerts"
   | "chat"
-  | "register_pdd_template";
+  | "register_pdd_template"
+  | "run_plot_qa_qc"
+  | "export_plots_kml";
 
 /**
  * Check the policy for an action and record the attempt.

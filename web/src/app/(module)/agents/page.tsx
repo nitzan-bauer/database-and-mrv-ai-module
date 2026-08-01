@@ -1,4 +1,4 @@
-import { creditPipeline, listAgents, listAuditLog } from "@/lib/data";
+import { creditPipeline, listAgents, listAuditLog, listProjects, pddReadiness } from "@/lib/data";
 import { DATA_MODE } from "@/lib/env";
 import { AgentOrgChart } from "@/components/agents/AgentOrgChart";
 
@@ -35,10 +35,12 @@ export default async function AgentsPage() {
     );
   }
 
-  const [agents, pipeline, audit] = await Promise.all([
+  const [project] = await listProjects();
+  const [agents, pipeline, audit, readiness] = await Promise.all([
     listAgents(),
     creditPipeline(),
     listAuditLog(200),
+    pddReadiness(project.projectId),
   ]);
 
   const actorIds = new Set(agents.map((a) => a.actorId));
@@ -120,6 +122,58 @@ export default async function AgentsPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-base font-bold text-pine-700">PDD readiness — Rebeka</h2>
+        <p className="mb-3 max-w-3xl text-[13px] text-muted">
+          Not a check against the wording of any one template — that would mean assuming what an
+          arbitrary section title requires, which is exactly what storing the template as data was
+          meant to avoid. This is the small set of things Rebeka is responsible for regardless of
+          template version: described farms, clean boundaries, a defined baseline, an evaluated
+          cycle.
+        </p>
+        {readiness.template && (
+          <p className="mb-3 font-mono text-[11px] text-faint">
+            template on file: {readiness.template.name} {readiness.template.version} ·{" "}
+            {readiness.template.sectionCount} sections · registered{" "}
+            {new Date(readiness.template.registeredAt).toLocaleDateString("en-GB", {
+              dateStyle: "medium",
+            })}
+          </p>
+        )}
+        {readiness.items.length === 0 ? (
+          <div className="rounded-xl border border-line bg-white p-5">
+            <p className="text-[13px] font-semibold text-pine-700">No farms in this project yet.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-line bg-white">
+            {readiness.items.map((it, i) => {
+              const complete = it.total > 0 && it.ready === it.total;
+              return (
+                <div
+                  key={it.key}
+                  className={"px-4 py-2.5 " + (i > 0 ? "border-t border-line" : "")}
+                >
+                  <div className="flex items-baseline gap-3">
+                    <span className="w-44 shrink-0 text-[13px] font-semibold text-pine-700">
+                      {it.label}
+                    </span>
+                    <span
+                      className={
+                        "w-16 shrink-0 text-right font-mono text-[15px] font-bold " +
+                        (complete ? "text-sage-700" : it.ready > 0 ? "text-earth-600" : "text-faint")
+                      }
+                    >
+                      {it.ready}/{it.total}
+                    </span>
+                    <span className="text-[11.5px] text-faint">{it.detail}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section>

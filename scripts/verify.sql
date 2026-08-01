@@ -89,13 +89,14 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | expected 3 machinery defaults, found %', n;
   END IF;
 
-  -- 6 from the original seed, plus register_pdd_template (0027) for Rebeka.
+  -- 6 from the original seed, plus register_pdd_template (0027) and
+  -- run_plot_qa_qc / export_plots_kml (0028), all for Rebeka.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 7 THEN
-    RAISE EXCEPTION 'FAIL  | expected 7 agent policies, found %', n;
+  IF n <> 9 THEN
+    RAISE EXCEPTION 'FAIL  | expected 9 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 7 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 9 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1285,6 +1286,31 @@ EXCEPTION WHEN others THEN
   ELSE
     RAISE;
   END IF;
+END $$;
+
+-- =====================================================================
+-- Migration 0028 — Rebeka's second and third tools: plot QA/QC and KML.
+-- =====================================================================
+
+DO $$
+DECLARE
+  bad text;
+BEGIN
+  SELECT string_agg(t, ', ') INTO bad
+  FROM unnest(ARRAY['run_plot_qa_qc', 'export_plots_kml']) t
+  WHERE NOT (t = ANY (SELECT unnest(tools) FROM mrv.agents WHERE agent_id = 'rebeka'));
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | rebeka is missing tools: %', bad;
+  END IF;
+
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('run_plot_qa_qc', 'export_plots_kml') AND mode <> 'auto';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | expected auto mode, found: %', bad;
+  END IF;
+
+  RAISE NOTICE 'PASS  | rebeka holds run_plot_qa_qc and export_plots_kml, both auto';
 END $$;
 
 \echo ''
