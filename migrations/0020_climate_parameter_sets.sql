@@ -143,7 +143,13 @@ ALTER TABLE mrv.compliance_scores   ALTER COLUMN evaluated_at SET DEFAULT now();
 
 DROP FUNCTION IF EXISTS mrv.resolve_parameter_set(uuid, date);
 DROP INDEX IF EXISTS mrv.uq_ghg_params_global_active_zone;
-DELETE FROM mrv.ghg_parameters WHERE project_id IS NULL AND version = 'dry-v1.0';
+
+-- The dry-v1.0 row is deliberately NOT deleted. ghg_parameters is
+-- append-only (migration 0008) because a parameter set is evidence: a
+-- result row points at the set that produced it, and removing the set
+-- would orphan an already-issued figure. 0004's down drops the table
+-- outright, so a full unwind still clears it, and the up-migration's
+-- INSERT is guarded by NOT EXISTS so re-applying is a no-op.
 
 ALTER TABLE mrv.ghg_parameters
   RENAME COLUMN dry_climate_flood_irrigated TO dry_climate_irrigated;
