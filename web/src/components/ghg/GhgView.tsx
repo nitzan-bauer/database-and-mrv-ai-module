@@ -24,7 +24,12 @@ export function GhgView({
   workingPr,
   tools,
 }: {
-  farms: Array<{ farmId: string; name: string; climateZone: string }>;
+  farms: Array<{
+    farmId: string;
+    name: string;
+    climateZone: string | null;
+    irrigationMethod: string | null;
+  }>;
   activeFarmId: string;
   parameters: GhgParameters;
   parameterExplanations: ParameterExplanation[];
@@ -57,7 +62,9 @@ export function GhgView({
             }
           >
             {f.name}
-            <span className="ml-1.5 opacity-70">{f.climateZone}</span>
+            <span className="ml-1.5 opacity-70">
+              {f.climateZone ?? "zone?"} · {f.irrigationMethod ?? "irrigation?"}
+            </span>
           </Link>
         ))}
         <button
@@ -92,16 +99,26 @@ export function GhgView({
           );
         }
 
+        const leaches =
+          farm.climateZone === "wet" ||
+          ["flood", "furrow", "sprinkler"].includes(farm.irrigationMethod ?? "");
+
         return (
           <div className="rounded-xl border border-line bg-white px-4 py-3">
             <p className="text-[13px] text-pine-700">
               Costed against <b className="font-mono text-[12px]">{parameters.version}</b>, resolved
-              from {farm.name}&apos;s <b>{farm.climateZone}</b> climate zone.
+              from {farm.name}&apos;s <b>{farm.climateZone}</b> climate zone, irrigated by{" "}
+              <b>{farm.irrigationMethod ?? "an unrecorded method"}</b>.
             </p>
             <p className="mt-1 text-[12px] text-muted">
               {parameters.climateZone === "dry"
-                ? "Dry zone: EF_N_direct takes the flat dry factor, and Frac_LEACH is zero unless the farm is flood-irrigated — drip and sprinkler do not leach."
-                : "Wet zone: EF_N_direct takes the low end while nitrogen is decreasing, and the full leaching fraction applies."}
+                ? "Dry zone: EF_N_direct takes the flat dry factor. "
+                : "Wet zone: EF_N_direct takes the low end while nitrogen is decreasing. "}
+              {farm.climateZone === "wet"
+                ? "Rainfall exceeds evapotranspiration, so the leaching fraction applies whatever the irrigation method is — drip does not remove a surplus that comes from the sky."
+                : leaches
+                  ? `A dry zone leaches only where irrigation puts water past the root zone, and ${farm.irrigationMethod} does.`
+                  : `A dry zone under ${farm.irrigationMethod === "rainfed" ? "rain-fed management" : farm.irrigationMethod} has no water surplus, so Frac_LEACH is zero — the same answer anywhere in the world.`}
             </p>
           </div>
         );

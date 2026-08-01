@@ -68,7 +68,7 @@ export async function listFarms(projectId: string): Promise<Farm[]> {
   const { query } = await import("../db");
   const rows = await query<Record<string, unknown>>(
     `SELECT f.farm_id, f.project_id, f.name, f.installation_code, f.operator,
-            f.country, f.region, f.climate_zone, f.status, f.is_demo,
+            f.country, f.region, f.climate_zone, f.irrigation_method, f.status, f.is_demo,
             count(p.plot_id)::int          AS plot_count,
             coalesce(sum(p.area_ha), 0)::float AS total_area_ha
        FROM mrv.farms f
@@ -366,7 +366,7 @@ export async function getPlotDetail(plotId: string): Promise<PlotDetail | null> 
 
   const farmRows = await query<Record<string, unknown>>(
     `SELECT f.farm_id, f.project_id, f.name, f.installation_code, f.operator,
-            f.country, f.region, f.climate_zone, f.status, f.is_demo,
+            f.country, f.region, f.climate_zone, f.irrigation_method, f.status, f.is_demo,
             count(p.plot_id)::int              AS plot_count,
             coalesce(sum(p.area_ha), 0)::float AS total_area_ha
        FROM mrv.farms f LEFT JOIN mrv.plots p ON p.farm_id = f.farm_id
@@ -564,7 +564,11 @@ function rowToFarm(r: Record<string, unknown>): Farm {
     operator: (r.operator as string | null) ?? null,
     country: String(r.country ?? ""),
     region: (r.region as string | null) ?? null,
-    climateZone: (r.climate_zone as Farm["climateZone"]) ?? "dry",
+    // Deliberately not defaulted. A missing zone used to become "dry",
+    // which quietly picked a parameter set and so quietly picked a credit
+    // volume. It now stays null and resolveParameters() refuses it.
+    climateZone: (r.climate_zone as Farm["climateZone"]) ?? null,
+    irrigationMethod: (r.irrigation_method as Farm["irrigationMethod"]) ?? null,
     status: String(r.status ?? ""),
     isDemo: Boolean(r.is_demo),
     plotCount: Number(r.plot_count ?? 0),

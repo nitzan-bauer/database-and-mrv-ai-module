@@ -7,6 +7,7 @@ import {
   type ActivityData,
   type EmissionResult,
   type GhgParameters,
+  type IrrigationMethod,
 } from "./engine";
 
 /**
@@ -63,6 +64,7 @@ export const GHG_TOOLS: ToolSpec[] = [
 export function computeFarmYear(
   activity: ActivityData[],
   p: GhgParameters,
+  method: IrrigationMethod | null | undefined,
   farmId: string,
   scenario: "BSL" | "PR",
   year?: number,
@@ -70,12 +72,13 @@ export function computeFarmYear(
   const ad = activity.find(
     (a) => a.farmId === farmId && a.scenario === scenario && (year == null || a.year === year),
   );
-  return ad ? { activity: ad, result: computeEmissions(ad, p) } : null;
+  return ad ? { activity: ad, result: computeEmissions(ad, p, method) } : null;
 }
 
 export function explainFarmYear(
   activity: ActivityData[],
   p: GhgParameters,
+  method: IrrigationMethod | null | undefined,
   farmId: string,
   scenario: "BSL" | "PR",
   year?: number,
@@ -83,19 +86,20 @@ export function explainFarmYear(
   const ad = activity.find(
     (a) => a.farmId === farmId && a.scenario === scenario && (year == null || a.year === year),
   );
-  return ad ? showWorking(ad, p) : null;
+  return ad ? showWorking(ad, p, method) : null;
 }
 
 export function computeReduction(
   activity: ActivityData[],
   p: GhgParameters,
+  method: IrrigationMethod | null | undefined,
   farmId: string,
 ) {
   const bsl = activity.find((a) => a.farmId === farmId && a.scenario === "BSL");
   const pr = activity.find((a) => a.farmId === farmId && a.scenario === "PR");
   if (!bsl || !pr) return null;
-  const b = computeEmissions(bsl, p);
-  const j = computeEmissions(pr, p);
+  const b = computeEmissions(bsl, p, method);
+  const j = computeEmissions(pr, p, method);
   return {
     baseline: b,
     project: j,
@@ -111,9 +115,12 @@ export interface ParameterExplanation {
   ref: string;
 }
 
-export function explainParameters(p: GhgParameters): ParameterExplanation[] {
+export function explainParameters(
+  p: GhgParameters,
+  method: IrrigationMethod | null | undefined,
+): ParameterExplanation[] {
   const ef = efNDirect(p);
-  const fl = fracLeach(p);
+  const fl = fracLeach(p, method);
 
   const efWhy =
     p.climateZone === "dry"
@@ -126,10 +133,10 @@ export function explainParameters(p: GhgParameters): ParameterExplanation[] {
 
   const flWhy =
     p.climateZone === "wet"
-      ? "Wet climates leach."
-      : p.dryClimateFloodIrrigated
-        ? "Dry climate under non-drip irrigation still leaches."
-        : "A dry, rain-fed system has no leaching pathway to account for.";
+      ? `Rainfall exceeds evapotranspiration, so the surplus comes from the sky and leaches whatever the irrigation method is — here ${method ?? "unrecorded"}.`
+      : method && ["flood", "furrow", "sprinkler"].includes(method)
+        ? `A dry zone leaches only where irrigation puts water past the root zone, and ${method} does.`
+        : `A dry zone under ${method === "rainfed" ? "rain-fed management" : method} has no water surplus to carry nitrate down.`;
 
   const qa3 = p.soilN2OApproach === "QA3";
 

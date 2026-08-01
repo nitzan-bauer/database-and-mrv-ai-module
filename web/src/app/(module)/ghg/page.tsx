@@ -25,9 +25,14 @@ export default async function GhgPage({
   // mrv.resolve_parameter_set() does in the database. Switching farms
   // switches the set, so a dry farm is never costed on wet factors.
   const p = resolveParameters(active.climateZone);
-  const reduction = computeReduction(DEMO_ACTIVITY_DATA, p, active.farmId);
-  const workingBsl = explainFarmYear(DEMO_ACTIVITY_DATA, p, active.farmId, "BSL");
-  const workingPr = explainFarmYear(DEMO_ACTIVITY_DATA, p, active.farmId, "PR");
+
+  // Frac_LEACH needs the farm's own irrigation method — it is not a
+  // property of the parameter set, because two farms in one climate zone
+  // can and do irrigate differently.
+  const irrigation = active.irrigationMethod;
+  const reduction = computeReduction(DEMO_ACTIVITY_DATA, p, irrigation, active.farmId);
+  const workingBsl = explainFarmYear(DEMO_ACTIVITY_DATA, p, irrigation, active.farmId, "BSL");
+  const workingPr = explainFarmYear(DEMO_ACTIVITY_DATA, p, irrigation, active.farmId, "PR");
   const activity = DEMO_ACTIVITY_DATA.filter((a) => a.farmId === active.farmId);
 
   return (
@@ -40,10 +45,15 @@ export default async function GhgPage({
         </p>
       </div>
       <GhgView
-        farms={farms.map((f) => ({ farmId: f.farmId, name: f.name, climateZone: f.climateZone }))}
+        farms={farms.map((f) => ({
+          farmId: f.farmId,
+          name: f.name,
+          climateZone: f.climateZone,
+          irrigationMethod: f.irrigationMethod,
+        }))}
         activeFarmId={active.farmId}
         parameters={p}
-        parameterExplanations={explainParameters(p)}
+        parameterExplanations={explainParameters(p, irrigation)}
         activity={activity}
         reduction={reduction}
         workingBsl={workingBsl}

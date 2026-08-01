@@ -143,7 +143,9 @@ The first is inapplicable to division; the second is *exact* for uncorrelated va
 
 **Emission factors** — the 2019 values in `migrations/0004` are confirmed correct: EF1 wet synthetic **0.016**, dry **0.005**, Frac_GASF **0.11**, Frac_GASM **0.21**, EF4 **0.014** wet, Frac_LEACH **0.24**, EF5 **0.011**.
 
-Two things worth knowing about them. **Frac_LEACH is zero in dry climates** unless non-drip irrigation is used, and the Tier 2 threshold is stricter than "precipitation exceeds evapotranspiration" — it is (rain − ET₀) > soil water holding capacity. And **EF5 rose ~47%** from 2006 (0.0075 → 0.011), while **EF1 for dry climates has no organic/synthetic split** — 0.005 covers both.
+Two things worth knowing about them. **Frac_LEACH is zero in dry climates** unless irrigation puts water past the root zone — flood, furrow or sprinkler, but not drip — and the Tier 2 threshold is stricter than "precipitation exceeds evapotranspiration": it is (rain − ET₀) > soil water holding capacity. And **EF5 rose ~47%** from 2006 (0.0075 → 0.011), while **EF1 for dry climates has no organic/synthetic split** — 0.005 covers both.
+
+The irrigation method sits on the farm (`mrv.farms.irrigation_method`), not on the parameter set, because a grouped project spans farms that irrigate differently and nothing about it follows from the country. In a wet zone the method does not change Frac_LEACH at all — the surplus is rainfall — but it is still recorded, since VM0042 counts a move to improved irrigation as an eligible project activity.
 
 **A trap for the SOC side:** the 2019 Refinement roughly **halves** the credited SOC benefit of no-till (F_MG tropical moist 1.22 → 1.10) and sharply raises tropical long-term-cultivation F_LU (0.48 → 0.83). The 2006 and 2019 climate strata were re-cut and are **not one-to-one comparable**. Which vintage a project invokes materially changes crediting, and the mapping of VM0042's cross-references to 2006 versus 2019 was not verified in this research.
 

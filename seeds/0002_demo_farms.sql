@@ -30,9 +30,10 @@ WHERE NOT EXISTS (SELECT 1 FROM mrv.projects WHERE project_id = 'CARBO-3988-DEMO
 -- Nitzan-Veg-Tech Farm (DEMO) — Israel, 5 plots, 223.12 ha
 -- ---------------------------------------------------------------------
 INSERT INTO mrv.farms (farm_id, project_id, name, installation_code, operator,
-                       country, region, climate_zone, status, is_demo, saas_farm_id)
+                       country, region, climate_zone, irrigation_method, status, is_demo, saas_farm_id)
 SELECT '617f7cfb-701e-4760-b13b-7663904be8bf', 'CARBO-3988-DEMO', 'Nitzan-Veg-Tech Farm', 'NVT-DEMO', 'Veg-Tech Ltd',
-       'Israel', 'Pardes Hana-Karkur', 'dry'::mrv.climate_zone, 'active', true, '617f7cfb-701e-4760-b13b-7663904be8bf'
+       'Israel', 'Pardes Hana-Karkur', 'dry'::mrv.climate_zone,
+       'drip'::mrv.irrigation_method, 'active', true, '617f7cfb-701e-4760-b13b-7663904be8bf'
 WHERE NOT EXISTS (SELECT 1 FROM mrv.farms WHERE farm_id = '617f7cfb-701e-4760-b13b-7663904be8bf');
 
 INSERT INTO mrv.plots (plot_id, farm_id, name, geom, area_ha, application_area_ha,
@@ -74,9 +75,10 @@ WHERE NOT EXISTS (SELECT 1 FROM mrv.plots WHERE plot_id = 'NVT-WP-05');
 -- Elad Farm (DEMO) — Kenya, 2 plots, 44.95 ha
 -- ---------------------------------------------------------------------
 INSERT INTO mrv.farms (farm_id, project_id, name, installation_code, operator,
-                       country, region, climate_zone, status, is_demo, saas_farm_id)
+                       country, region, climate_zone, irrigation_method, status, is_demo, saas_farm_id)
 SELECT '8a42abd0-125c-49ad-9077-36b5cd76d86f', 'CARBO-3988-DEMO', 'Elad Farm', 'ELD-DEMO', 'Bouton',
-       'Kenya', NULL, 'wet'::mrv.climate_zone, 'active', true, '8a42abd0-125c-49ad-9077-36b5cd76d86f'
+       'Kenya', NULL, 'wet'::mrv.climate_zone,
+       'drip'::mrv.irrigation_method, 'active', true, '8a42abd0-125c-49ad-9077-36b5cd76d86f'
 WHERE NOT EXISTS (SELECT 1 FROM mrv.farms WHERE farm_id = '8a42abd0-125c-49ad-9077-36b5cd76d86f');
 
 INSERT INTO mrv.plots (plot_id, farm_id, name, geom, area_ha, application_area_ha,

@@ -70,13 +70,23 @@ Two details that are easy to get wrong: the **volatilisation and leaching terms 
 
 The workbook's `Fixed Parameters` sheet has four context cells that silently reshape the whole calculation. Stage A moved all four into `mrv.ghg_parameters` columns, and the two derived values into functions so the logic exists in exactly one place.
 
+One of the four has since moved again. The workbook holds a single irrigation cell for the whole calculation, which is only workable when a workbook covers one farm. Across a grouped project it forces every farm sharing a parameter set to share an irrigation method, so migration 0022 moved it to `mrv.farms.irrigation_method` — one value per farm, no default. **Where the module and the workbook disagree on this, the module is right.**
+
 **Climate zone → EF_N_direct** (`mrv.ef_n_direct()`)
 
 Dry climate takes 0.005 outright. Wet climate then applies the VM0042 §8.3 conservativeness rule based on the project's nitrogen trend: decreasing N takes the low end (0.013), increasing N the high end (0.019), flat the midpoint (0.016). Using a lower factor when you apply less nitrogen is what makes the claim conservative.
 
-**Climate zone + irrigation → Frac_LEACH** (`mrv.frac_leach()`)
+**Climate zone + the farm's irrigation method → Frac_LEACH** (`mrv.frac_leach(parameters, method)`)
 
-0.24 for wet climates, or dry climates under non-drip irrigation. Zero otherwise — a dry rain-fed system has no leaching pathway to account for.
+Frac_LEACH is about a water surplus draining below the root zone, and there are two separate ways to get one.
+
+In a **wet zone**, precipitation exceeds evapotranspiration, so the surplus comes from the sky. The full 0.24 applies whatever the irrigation method is, and drip does not remove it — the water is not coming from the pipe.
+
+In a **dry zone**, rain alone leaves no surplus, so only irrigation can create one: flood and furrow do, sprinkler wets the whole profile and is treated as doing so, drip delivers to the root zone and does not, rain-fed has no irrigation at all.
+
+The consequence worth stating plainly: **a dry-zone farm on drip gets Frac_LEACH = 0 wherever it is in the world.** Drip is not an Israeli speciality — large schemes run across Kenya and East Africa, and water scarcity moves more farms onto it every season. Nothing here is keyed off the country, and no default is applied: an unset `irrigation_method` on a dry-zone farm makes `compute_emissions` raise rather than guess, because assuming flood overstates leaching and assuming drip understates it, and either way the credit volume moves.
+
+The method is recorded for wet-zone farms too, even though it does not change Frac_LEACH there. Under VM0042 a move to improved irrigation is an eligible project activity in its own right, so the module has to be able to hold that fact rather than infer it.
 
 **Soil N₂O approach → what gets counted where**
 

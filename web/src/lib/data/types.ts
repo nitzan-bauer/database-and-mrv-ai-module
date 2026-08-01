@@ -2,6 +2,8 @@
 
 export type QuantApproach = "QA1" | "QA2" | "QA3";
 export type ClimateZone = "wet" | "dry";
+/** mrv.irrigation_method — kept in step with IrrigationMethod in ghg/engine. */
+export type IrrigationMethod = "flood" | "furrow" | "sprinkler" | "drip" | "rainfed";
 export type ProjectStatus =
   | "under_development"
   | "registered"
@@ -26,7 +28,10 @@ export interface Farm {
   operator: string | null;
   country: string;
   region: string | null;
-  climateZone: ClimateZone;
+  /** Null where it was never recorded. Never defaulted — see rowToFarm. */
+  climateZone: ClimateZone | null;
+  /** How the farm irrigates. Per farm, never inferred from country or zone. */
+  irrigationMethod: IrrigationMethod | null;
   status: string;
   isDemo: boolean;
   /** derived */

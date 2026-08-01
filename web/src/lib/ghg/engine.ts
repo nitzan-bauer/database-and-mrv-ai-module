@@ -13,6 +13,24 @@
  */
 
 export type ClimateZone = "wet" | "dry";
+
+/**
+ * How water reaches the crop — mrv.irrigation_method.
+ *
+ * Recorded per farm, never inferred from the country or the climate zone.
+ * Drip runs at scale across Kenya and East Africa as much as it does in
+ * Israel, and water scarcity moves more farms onto it every season; under
+ * VM0042 that switch is an eligible project activity in its own right, so
+ * the module has to be able to record it rather than assume it away.
+ */
+export type IrrigationMethod = "flood" | "furrow" | "sprinkler" | "drip" | "rainfed";
+
+/** The dry-zone methods that put water below the root zone. */
+const LEACHING_METHODS: ReadonlySet<IrrigationMethod> = new Set<IrrigationMethod>([
+  "flood",
+  "furrow",
+  "sprinkler",
+]);
 export type NTrend = "increase" | "decrease" | "flat";
 export type SoilN2OApproach = "QA1_DNDC" | "QA1_DAYCENT" | "QA2" | "QA3";
 export type FertilizerClass = "synthetic" | "organic";
@@ -21,15 +39,6 @@ export type FertilizerClass = "synthetic" | "organic";
 export interface GhgParameters {
   version: string;
   climateZone: ClimateZone;
-  /**
-   * Dry climate only: true for flood/furrow irrigation, which opens the
-   * leaching pathway. Drip and sprinkler are false — the IPCC 2019
-   * Refinement treats them as non-leaching. The name says "flood" because
-   * an Israeli orchard on drip *is* irrigated, and the previous name
-   * (`dryClimateIrrigated`) invited setting it true and silently applying
-   * the wet leaching fraction.
-   */
-  dryClimateFloodIrrigated: boolean;
   nTrend: NTrend;
   soilN2OApproach: SoilN2OApproach;
   efCo2Diesel: number;
@@ -52,7 +61,6 @@ export interface GhgParameters {
 export const DEFAULT_PARAMETERS: GhgParameters = {
   version: "default-v1.0",
   climateZone: "wet",
-  dryClimateFloodIrrigated: false,
   nTrend: "decrease",
   soilN2OApproach: "QA3",
   efCo2Diesel: 0.002886,
@@ -73,15 +81,15 @@ export const DEFAULT_PARAMETERS: GhgParameters = {
 
 /**
  * The seeded dry-v1.0 set (migration 0020). Identical to default-v1.0 apart
- * from the two climate switches — which is the whole point: only
- * EF_N_direct and Frac_LEACH depend on climate, and between them they move
- * the claimed reduction by more than a factor of two.
+ * from the climate zone, which is the whole point: EF_N_direct is picked
+ * from it, and on its own that moves the claimed reduction by a factor of
+ * 2.6. Frac_LEACH also depends on the zone, but the other half of that
+ * decision — the irrigation method — lives on the farm, not here.
  */
 export const DRY_PARAMETERS: GhgParameters = {
   ...DEFAULT_PARAMETERS,
   version: "dry-v1.0",
   climateZone: "dry",
-  dryClimateFloodIrrigated: false,
 };
 
 /**
@@ -160,13 +168,33 @@ export function efNDirect(p: GhgParameters): number {
 }
 
 /**
- * Leaching fraction. Wet climates leach; dry climates leach only under
- * flood or furrow irrigation. A dry system on drip, sprinkler, or rain has
- * no leaching pathway at all.
+ * Leaching fraction — mrv.frac_leach(parameters, irrigation_method).
+ *
+ * Frac_LEACH is about water draining below the root zone, and there are two
+ * separate ways to get it:
+ *
+ *   wet zone — rainfall exceeds evapotranspiration, so the surplus comes
+ *              from the sky. The irrigation method cannot take that away,
+ *              and drip does not zero it. This attaches to where the water
+ *              is, not to which country the farm is in.
+ *
+ *   dry zone — rain alone leaves no surplus, so only irrigation can create
+ *              one. Flood and furrow do; sprinkler wets the whole profile
+ *              and is treated as doing so; drip delivers to the root zone
+ *              and does not; rain-fed has no irrigation at all.
+ *
+ * So a dry-zone farm on drip gets zero whether it sits in Israel or in
+ * Kenya — the answer comes from the farm's own zone and method.
  */
-export function fracLeach(p: GhgParameters): number {
+export function fracLeach(p: GhgParameters, method: IrrigationMethod | null | undefined): number {
   if (p.climateZone === "wet") return p.fracLeachWet;
-  return p.dryClimateFloodIrrigated ? p.fracLeachWet : 0;
+  if (!method) {
+    throw new Error(
+      "fracLeach: the farm has no irrigation_method. In a dry zone it decides Frac_LEACH " +
+        "(0 on drip or rain-fed, the full fraction under flood), so it cannot be assumed.",
+    );
+  }
+  return LEACHING_METHODS.has(method) ? p.fracLeachWet : 0;
 }
 
 /** Annualised N applied for one application, t N (eq 19/20). */
@@ -175,7 +203,11 @@ export function nApplied(f: FertilizerApplication): number {
 }
 
 /** One farm-year against one parameter set. */
-export function computeEmissions(ad: ActivityData, p: GhgParameters): EmissionResult {
+export function computeEmissions(
+  ad: ActivityData,
+  p: GhgParameters,
+  method: IrrigationMethod | null | undefined,
+): EmissionResult {
   const conv = N2O_N_TO_N2O * p.gwpN2O;
 
   let fsn = 0;
@@ -199,7 +231,7 @@ export function computeEmissions(ad: ActivityData, p: GhgParameters): EmissionRe
   // eq 21 = eq 22 volatilisation + eq 23 leaching, per ha.
   // Both terms are absolute tonnes and divided by area only once, here.
   const n2oIndirect = round4(
-    ((gasf + gasm) * p.efNVolat * conv + (fsn + fon) * fracLeach(p) * p.efNLeach * conv) /
+    ((gasf + gasm) * p.efNVolat * conv + (fsn + fon) * fracLeach(p, method) * p.efNLeach * conv) /
       ad.areaHa,
   );
 
@@ -262,11 +294,15 @@ export interface WorkingLine {
   unit: string;
 }
 
-export function showWorking(ad: ActivityData, p: GhgParameters): WorkingLine[] {
+export function showWorking(
+  ad: ActivityData,
+  p: GhgParameters,
+  method: IrrigationMethod | null | undefined,
+): WorkingLine[] {
   const conv = N2O_N_TO_N2O * p.gwpN2O;
-  const r = computeEmissions(ad, p);
+  const r = computeEmissions(ad, p, method);
   const ef = efNDirect(p);
-  const fl = fracLeach(p);
+  const fl = fracLeach(p, method);
   const gasf = ad.fertilizers
     .filter((f) => f.class !== "organic")
     .reduce((s, f) => s + nApplied(f) * p.fracGasf, 0);

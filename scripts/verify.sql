@@ -112,7 +112,7 @@ BEGIN
   END IF;
   RAISE NOTICE 'PASS  | SOC stock formula returns 19.5 t C/ha';
 
-  SELECT mrv.ef_n_direct(p.*), mrv.frac_leach(p.*) INTO ef, fl
+  SELECT mrv.ef_n_direct(p.*), mrv.frac_leach(p.*, 'drip') INTO ef, fl
   FROM mrv.ghg_parameters p
   WHERE p.project_id IS NULL AND p.version = 'default-v1.0';
 
@@ -965,9 +965,9 @@ DECLARE
   wet_ef numeric; wet_fl numeric;
   dry_ef numeric; dry_fl numeric;
 BEGIN
-  SELECT mrv.ef_n_direct(g.*), mrv.frac_leach(g.*) INTO wet_ef, wet_fl
+  SELECT mrv.ef_n_direct(g.*), mrv.frac_leach(g.*, 'drip') INTO wet_ef, wet_fl
   FROM mrv.ghg_parameters g WHERE g.project_id IS NULL AND g.version = 'default-v1.0';
-  SELECT mrv.ef_n_direct(g.*), mrv.frac_leach(g.*) INTO dry_ef, dry_fl
+  SELECT mrv.ef_n_direct(g.*), mrv.frac_leach(g.*, 'drip') INTO dry_ef, dry_fl
   FROM mrv.ghg_parameters g WHERE g.project_id IS NULL AND g.version = 'dry-v1.0';
 
   IF dry_ef IS NULL THEN
@@ -982,26 +982,79 @@ BEGIN
   RAISE NOTICE 'PASS  | wet/dry parameter sets carry the right EF_N_direct and Frac_LEACH';
 END $$;
 
--- Flood irrigation, and only flood irrigation, re-opens the leaching
--- pathway in a dry zone. This is what the rename was for: drip is
--- irrigation but does not leach, so the old dry_climate_irrigated name
--- invited a setting that silently inflated the result by ~40%.
+-- Irrigation method now decides Frac_LEACH in a dry zone, and it belongs
+-- to the farm rather than to the parameter set. Every method is pinned,
+-- because getting one wrong silently moves a claimed reduction.
 DO $$
 DECLARE
-  g mrv.ghg_parameters%ROWTYPE;
-  fl numeric;
+  wet  mrv.ghg_parameters%ROWTYPE;
+  dry  mrv.ghg_parameters%ROWTYPE;
+  m    mrv.irrigation_method;
+  got  numeric;
+  want numeric;
 BEGIN
-  SELECT * INTO g FROM mrv.ghg_parameters WHERE project_id IS NULL AND version = 'dry-v1.0';
-  g.dry_climate_flood_irrigated := true;
-  fl := mrv.frac_leach(g);
-  IF fl <> g.frac_leach_wet THEN
-    RAISE EXCEPTION 'FAIL  | dry + flood irrigation should leach at %, got %', g.frac_leach_wet, fl;
+  SELECT * INTO wet FROM mrv.ghg_parameters WHERE project_id IS NULL AND version = 'default-v1.0';
+  SELECT * INTO dry FROM mrv.ghg_parameters WHERE project_id IS NULL AND version = 'dry-v1.0';
+
+  -- Wet zone: the surplus is rainfall, so no irrigation method removes it.
+  -- Drip in Kenya leaches for the same reason drip anywhere wet does.
+  FOREACH m IN ARRAY enum_range(NULL::mrv.irrigation_method) LOOP
+    got := mrv.frac_leach(wet, m);
+    IF got <> wet.frac_leach_wet THEN
+      RAISE EXCEPTION 'FAIL  | wet zone under % should leach at %, got %', m, wet.frac_leach_wet, got;
+    END IF;
+  END LOOP;
+  RAISE NOTICE 'PASS  | a wet zone leaches under every irrigation method, drip included';
+
+  -- Dry zone: only water applied past the root zone leaches.
+  FOREACH m IN ARRAY enum_range(NULL::mrv.irrigation_method) LOOP
+    want := CASE WHEN m IN ('flood','furrow','sprinkler') THEN dry.frac_leach_wet ELSE 0 END;
+    got  := mrv.frac_leach(dry, m);
+    IF got <> want THEN
+      RAISE EXCEPTION 'FAIL  | dry zone under %: expected %, got %', m, want, got;
+    END IF;
+  END LOOP;
+  RAISE NOTICE 'PASS  | a dry zone leaches under flood/furrow/sprinkler, not under drip/rain-fed';
+
+  -- The point of the change: the answer follows the farm, not the country.
+  IF mrv.frac_leach(dry, 'drip') <> 0 THEN
+    RAISE EXCEPTION 'FAIL  | a dry-zone drip farm must not leach';
   END IF;
-  g.dry_climate_flood_irrigated := false;
-  IF mrv.frac_leach(g) <> 0 THEN
-    RAISE EXCEPTION 'FAIL  | dry without flood irrigation must not leach, got %', mrv.frac_leach(g);
+  RAISE NOTICE 'PASS  | a dry-zone drip farm gets Frac_LEACH 0 wherever it is';
+END $$;
+
+-- An unknown method must stop a dry-zone calculation rather than be assumed
+-- either way: assuming flood overstates leaching, assuming drip understates
+-- it, and both silently change the credit volume.
+DO $$
+DECLARE
+  v_farm uuid;
+  v_ad   uuid;
+  v_set  uuid;
+BEGIN
+  SELECT f.farm_id INTO v_farm FROM mrv.farms f WHERE f.climate_zone = 'dry' LIMIT 1;
+  IF v_farm IS NULL THEN
+    RAISE NOTICE 'PASS  | (no dry farm seeded; unknown-method guard not exercised)';
+    RETURN;
   END IF;
-  RAISE NOTICE 'PASS  | Frac_LEACH responds to flood irrigation only, not to drip';
+  UPDATE mrv.farms SET irrigation_method = NULL WHERE farm_id = v_farm;
+
+  INSERT INTO mrv.activity_data (farm_id, scenario, year, area_ha, diesel_l, gasoline_l,
+                                 residue_burnt_kg, nfix_dry_matter_t, nfix_n_content)
+    VALUES (v_farm, 'PR', 2026, 10, 100, 0, 0, 0, 0) RETURNING activity_data_id INTO v_ad;
+  SELECT mrv.resolve_parameter_set(v_farm) INTO v_set;
+
+  BEGIN
+    PERFORM mrv.compute_emissions(v_ad, v_set);
+    RAISE EXCEPTION 'FAIL  | a dry farm with no irrigation_method must not compute';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM NOT LIKE '%no irrigation_method%' THEN RAISE; END IF;
+    RAISE NOTICE 'PASS  | a dry farm with no irrigation_method refuses to compute';
+  END;
+
+  RAISE EXCEPTION 'rollback-marker';
+EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM <> 'rollback-marker' THEN RAISE; END IF;
 END $$;
 
 -- Resolution binds a farm to the set matching its own climate zone, and

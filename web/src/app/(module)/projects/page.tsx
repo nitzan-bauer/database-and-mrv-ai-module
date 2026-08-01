@@ -79,15 +79,30 @@ function FarmCard({ farm }: { farm: FarmWithPlots }) {
       title={farm.name}
       subtitle={[farm.region, farm.country].filter(Boolean).join(", ")}
       right={
-        <span
-          className={
-            "rounded-full px-2.5 py-1 text-xs font-medium " +
-            (farm.climateZone === "wet"
-              ? "bg-sage-100 text-sage-700"
-              : "bg-gold-200 text-earth-600")
-          }
-        >
-          {farm.climateZone} climate
+        // Both drive the emission factors, so both are shown here rather
+        // than buried in the calculator. A missing value reads as missing:
+        // it is not defaulted anywhere, and the calculation refuses it.
+        <span className="flex items-center gap-1.5">
+          <span
+            className={
+              "rounded-full px-2.5 py-1 text-xs font-medium " +
+              (farm.climateZone === "wet"
+                ? "bg-sage-100 text-sage-700"
+                : farm.climateZone === "dry"
+                  ? "bg-gold-200 text-earth-600"
+                  : "bg-danger/10 text-danger")
+            }
+          >
+            {farm.climateZone ? `${farm.climateZone} climate` : "climate zone not set"}
+          </span>
+          <span
+            className={
+              "rounded-full px-2.5 py-1 text-xs font-medium " +
+              (farm.irrigationMethod ? "bg-line/60 text-pine-700" : "bg-danger/10 text-danger")
+            }
+          >
+            {farm.irrigationMethod ?? "irrigation not set"}
+          </span>
         </span>
       }
     >
