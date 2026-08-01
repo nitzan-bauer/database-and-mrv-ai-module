@@ -89,12 +89,13 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | expected 3 machinery defaults, found %', n;
   END IF;
 
+  -- 6 from the original seed, plus register_pdd_template (0027) for Rebeka.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 6 THEN
-    RAISE EXCEPTION 'FAIL  | expected 6 agent policies, found %', n;
+  IF n <> 7 THEN
+    RAISE EXCEPTION 'FAIL  | expected 7 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 6 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 7 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
