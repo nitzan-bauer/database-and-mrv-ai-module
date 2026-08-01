@@ -1,8 +1,10 @@
 import "server-only";
 import { DATA_MODE } from "../env";
 import type {
+  ClimateZone,
   Farm,
   FarmWithPlots,
+  IrrigationMethod,
   Plot,
   PlotDetail,
   Project,
@@ -589,4 +591,44 @@ function rowToPlot(r: Record<string, unknown>): Plot {
     strokeColor: String(r.stroke_color ?? "#2b6161"),
     isDemo: Boolean(r.is_demo),
   };
+}
+
+/* ─────────────────────── writes (admin only) ───────────────────────── */
+
+/**
+ * Record a farm's climate zone and irrigation method.
+ *
+ * These two fields decide EF_N_direct and Frac_LEACH, so between them they
+ * move the claimed reduction by more than a factor of two. They are the only
+ * farm fields the module writes, and they are written one farm at a time and
+ * never in bulk: irrigation varies farm by farm — drip runs at scale across
+ * East Africa as much as in Israel — so there is no rule that could set them
+ * from the country, the region, or a neighbouring farm.
+ *
+ * mrv.farms carries an audit trigger (migration 0008), so the before/after
+ * lands in mrv.audit_log without anything extra here. `actor` is recorded for
+ * the same reason: a VVB asking why a figure changed gets a name and a time.
+ */
+export async function setFarmContext(
+  farmId: string,
+  climateZone: ClimateZone | null,
+  irrigationMethod: IrrigationMethod | null,
+  actor: string,
+): Promise<void> {
+  if (DATA_MODE === "fixtures") {
+    throw new Error("setFarmContext: not available in fixtures mode — fixtures are read-only.");
+  }
+  const { query } = await import("../db");
+  await query(
+    `UPDATE mrv.farms
+        SET climate_zone      = $2::mrv.climate_zone,
+            irrigation_method = $3::mrv.irrigation_method
+      WHERE farm_id = $1`,
+    [farmId, climateZone, irrigationMethod],
+  );
+  await query(
+    `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
+     VALUES ($1, 'set_farm_context', 'farm', $2, $3::jsonb)`,
+    [actor, farmId, JSON.stringify({ climateZone, irrigationMethod })],
+  );
 }
