@@ -52,10 +52,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
      * The domain check. `hd` above is a UI hint to Google, not a guarantee —
      * it can be bypassed — so the address is verified here, where it counts.
      */
-    signIn({ profile }) {
+    async signIn({ profile }) {
       const email = profile?.email?.toLowerCase() ?? "";
       const verified = profile?.email_verified !== false;
-      return verified && email.endsWith(`@${ALLOWED_DOMAIN}`);
+      if (!verified || !email.endsWith(`@${ALLOWED_DOMAIN}`)) return false;
+
+      // Give the person a row in mrv.users while we know who they are.
+      // mrv.work_orders.issued_by is a foreign key into it, under a CHECK
+      // that a work order which has left 'draft' records who issued it — so
+      // without this the chain cannot be written at all.
+      //
+      // A failure here does not block the sign-in. Google has already
+      // established the identity, and refusing entry because the database
+      // was briefly unreachable would turn a transient fault into a lockout;
+      // the tools that need a user_id resolve it themselves and say so if it
+      // is missing.
+      try {
+        const { ensureUser } = await import("./lib/tools/ensureUser");
+        const r = await ensureUser(
+          { actor: email, actorKind: "human" },
+          { email, fullName: profile?.name ?? null },
+        );
+        if (!r.ok) console.warn(`[auth] could not record the user: ${r.error}`);
+      } catch (e) {
+        console.warn(`[auth] could not record the user: ${e instanceof Error ? e.message : e}`);
+      }
+
+      return true;
     },
 
     jwt({ token, profile }) {

@@ -46,3 +46,44 @@ export async function query<T extends Record<string, unknown> = Record<string, u
   const res = await getPool().query(text, params as never[]);
   return res.rows as T[];
 }
+
+/** A client bound to one transaction, so callers cannot stray onto the pool. */
+export interface Tx {
+  query<T extends Record<string, unknown> = Record<string, unknown>>(
+    text: string,
+    params?: unknown[],
+  ): Promise<{ rows: T[]; rowCount: number | null }>;
+}
+
+/**
+ * Run several statements as one unit, on a single connection.
+ *
+ * `query` above takes whichever connection the pool hands out, so a sequence
+ * of calls can land on different ones — which makes BEGIN and COMMIT issued
+ * that way meaningless. Anything writing more than one row needs this
+ * instead.
+ *
+ * It matters most for a sampling plan: strata, a cycle, and the points are
+ * one artefact. Half of it in the database is worse than none, because the
+ * compliance engine would read it as a real plan that fails its checks
+ * rather than as a plan that was never finished.
+ */
+export async function withTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const out = await fn({
+      query: async (text, params) => {
+        const r = await client.query(text, params as never[]);
+        return { rows: r.rows as never[], rowCount: r.rowCount };
+      },
+    });
+    await client.query("COMMIT");
+    return out;
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
