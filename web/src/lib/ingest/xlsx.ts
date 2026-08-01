@@ -1,4 +1,4 @@
-import zlib from "node:zlib";
+import { readZip, unescapeXml } from "./zip";
 
 /**
  * A small .xlsx reader — enough to read the SOC datasheet without pulling in
@@ -9,60 +9,6 @@ import zlib from "node:zlib";
  * Anything richer (styles, formulas, dates as serials) is handled by the
  * caller, which knows what each column means.
  */
-
-interface ZipEntry {
-  name: string;
-  data: Buffer;
-}
-
-function readZip(buf: Buffer): ZipEntry[] {
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= 0; i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) {
-      eocd = i;
-      break;
-    }
-  }
-  if (eocd < 0) throw new Error("Not a valid .xlsx file (no zip directory).");
-
-  const count = buf.readUInt16LE(eocd + 10);
-  let off = buf.readUInt32LE(eocd + 16);
-  const out: ZipEntry[] = [];
-
-  for (let i = 0; i < count; i++) {
-    if (buf.readUInt32LE(off) !== 0x02014b50) break;
-    const method = buf.readUInt16LE(off + 10);
-    const compSize = buf.readUInt32LE(off + 20);
-    const nameLen = buf.readUInt16LE(off + 28);
-    const extraLen = buf.readUInt16LE(off + 30);
-    const commentLen = buf.readUInt16LE(off + 32);
-    const localOff = buf.readUInt32LE(off + 42);
-    const name = buf.subarray(off + 46, off + 46 + nameLen).toString();
-
-    const lnLen = buf.readUInt16LE(localOff + 26);
-    const leLen = buf.readUInt16LE(localOff + 28);
-    const start = localOff + 30 + lnLen + leLen;
-    const raw = buf.subarray(start, start + compSize);
-
-    let data: Buffer;
-    try {
-      data = method === 0 ? raw : zlib.inflateRawSync(raw);
-    } catch {
-      data = Buffer.alloc(0);
-    }
-    out.push({ name, data });
-    off += 46 + nameLen + extraLen + commentLen;
-  }
-  return out;
-}
-
-const unescapeXml = (s: string) =>
-  s
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&");
 
 /** One sheet as rows of {columnLetter: value}, plus its 1-based row numbers. */
 export interface Sheet {

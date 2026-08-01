@@ -58,7 +58,8 @@ export type ActionName =
   | "run_model"
   | "recalibrate_model"
   | "issue_alerts"
-  | "chat";
+  | "chat"
+  | "register_pdd_template";
 
 /**
  * Check the policy for an action and record the attempt.

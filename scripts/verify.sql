@@ -23,20 +23,20 @@ DECLARE
   n int;
 BEGIN
   -- 9 core hierarchy + 3 reference + 2 audit + agent_memory + 5 stage-3,
-  -- plus mrv.agents from the Tier-2 registry (0024).
+  -- plus mrv.agents (0024) and mrv.pdd_templates (0027) from Tier 2.
   -- BASE TABLE only: information_schema.tables counts views too, and
   -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 42 THEN
-    RAISE EXCEPTION 'FAIL  | expected 42 base tables in mrv, found %', n;
+  IF n <> 43 THEN
+    RAISE EXCEPTION 'FAIL  | expected 43 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 42 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 43 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -1202,6 +1202,88 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | agents hold tools with no policy governing them: %', bad;
   END IF;
   RAISE NOTICE 'PASS  | every tool held by an agent has a policy governing it';
+END $$;
+
+-- =====================================================================
+-- Migration 0026 — Rebeka, not Reveka.
+-- =====================================================================
+
+DO $$
+DECLARE
+  n int;
+BEGIN
+  IF to_regclass('mrv.agents') IS NULL THEN
+    RAISE NOTICE 'PASS  | (mrv.agents not present — skipping the spelling check)';
+  ELSE
+    SELECT count(*) INTO n FROM mrv.agents
+     WHERE agent_id = 'reveka' OR actor_id = 'agent:reveka' OR role_prompt LIKE '%Reveka%';
+    IF n <> 0 THEN
+      RAISE EXCEPTION 'FAIL  | the misspelling "Reveka" is back in % place(s) — her name is Rebeka', n;
+    END IF;
+
+    PERFORM 1 FROM mrv.agents WHERE agent_id = 'rebeka' AND display_name = 'Rebeka'
+      AND actor_id = 'agent:rebeka';
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'FAIL  | agent_id ''rebeka'' is missing or inconsistent';
+    END IF;
+    RAISE NOTICE 'PASS  | the Validation Manager is spelled Rebeka everywhere, including in John''s prompt';
+  END IF;
+END $$;
+
+-- =====================================================================
+-- Migration 0027 — versioned PDD templates, and Rebeka's first tool.
+-- =====================================================================
+
+DO $$
+DECLARE
+  blocked boolean := false;
+  tid     uuid;
+BEGIN
+  IF to_regclass('mrv.pdd_templates') IS NULL THEN
+    RAISE NOTICE 'PASS  | (mrv.pdd_templates not present — skipping)';
+    RETURN;
+  END IF;
+
+  -- register_pdd_template must be a governed action, or checkPolicy refuses
+  -- every call Rebeka makes to it.
+  PERFORM 1 FROM mrv.agent_action_policies WHERE action_name = 'register_pdd_template';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'FAIL  | register_pdd_template has no policy row';
+  END IF;
+
+  PERFORM 1 FROM mrv.agents WHERE agent_id = 'rebeka' AND 'register_pdd_template' = ANY (tools);
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'FAIL  | rebeka does not hold register_pdd_template';
+  END IF;
+  RAISE NOTICE 'PASS  | register_pdd_template is held by rebeka and governed by a policy';
+
+  -- A template is evidence a submission points back to: once registered it
+  -- must not change, the same guarantee ghg_parameters carries. Proving
+  -- that needs a real row, and an append-only table cannot un-insert one —
+  -- so, like the audit_log probe above, this leaves a small '__verify__'
+  -- row behind on purpose rather than pretending the check has no cost.
+  INSERT INTO mrv.pdd_templates
+    (name, version, source_path, source_sha256, section_count, structure, registered_by)
+  VALUES ('__verify__', 'v0', 'x', 'deadbeef', 1, '[{"level":1,"title":"x","body":""}]'::jsonb, 'verify')
+  RETURNING template_id INTO tid;
+
+  BEGIN
+    UPDATE mrv.pdd_templates SET version = 'tampered' WHERE template_id = tid;
+  EXCEPTION WHEN others THEN blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'FAIL  | mrv.pdd_templates accepted an UPDATE — it must be append-only';
+  END IF;
+  RAISE NOTICE 'PASS  | mrv.pdd_templates rejects UPDATE';
+
+  DELETE FROM mrv.pdd_templates WHERE template_id = tid;
+  RAISE EXCEPTION 'FAIL  | mrv.pdd_templates accepted a DELETE — it must be append-only';
+EXCEPTION WHEN others THEN
+  IF SQLERRM NOT LIKE '%FAIL%' THEN
+    RAISE NOTICE 'PASS  | mrv.pdd_templates rejects DELETE';
+  ELSE
+    RAISE;
+  END IF;
 END $$;
 
 \echo ''
