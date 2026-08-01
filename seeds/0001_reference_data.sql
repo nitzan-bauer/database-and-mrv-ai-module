@@ -37,7 +37,7 @@ ON CONFLICT (equipment) DO NOTHING;
 -- of its own. Values are the workbook defaults (IPCC 2019 + AR5).
 INSERT INTO mrv.ghg_parameters (
   project_id, version, effective_from, is_active,
-  climate_zone, dry_climate_irrigated, n_trend, soil_n2o_approach,
+  climate_zone, dry_climate_flood_irrigated, n_trend, soil_n2o_approach,
   source_note
 )
 SELECT

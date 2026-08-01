@@ -1,6 +1,6 @@
 import { listFarms, listProjects } from "@/lib/data";
 import { DEMO_ACTIVITY_DATA } from "@/lib/data/fixtures";
-import { DEFAULT_PARAMETERS } from "@/lib/ghg/engine";
+import { resolveParameters } from "@/lib/ghg/engine";
 import { computeReduction, explainFarmYear, explainParameters, GHG_TOOLS } from "@/lib/ghg/skill";
 import { GhgView } from "@/components/ghg/GhgView";
 
@@ -21,7 +21,10 @@ export default async function GhgPage({
   const farms = await listFarms(project.projectId);
   const active = farms.find((f) => f.farmId === farm) ?? farms[0];
 
-  const p = DEFAULT_PARAMETERS;
+  // The parameter set follows the farm's climate zone, exactly as
+  // mrv.resolve_parameter_set() does in the database. Switching farms
+  // switches the set, so a dry farm is never costed on wet factors.
+  const p = resolveParameters(active.climateZone);
   const reduction = computeReduction(DEMO_ACTIVITY_DATA, p, active.farmId);
   const workingBsl = explainFarmYear(DEMO_ACTIVITY_DATA, p, active.farmId, "BSL");
   const workingPr = explainFarmYear(DEMO_ACTIVITY_DATA, p, active.farmId, "PR");

@@ -21,7 +21,15 @@ export type FertilizerClass = "synthetic" | "organic";
 export interface GhgParameters {
   version: string;
   climateZone: ClimateZone;
-  dryClimateIrrigated: boolean;
+  /**
+   * Dry climate only: true for flood/furrow irrigation, which opens the
+   * leaching pathway. Drip and sprinkler are false — the IPCC 2019
+   * Refinement treats them as non-leaching. The name says "flood" because
+   * an Israeli orchard on drip *is* irrigated, and the previous name
+   * (`dryClimateIrrigated`) invited setting it true and silently applying
+   * the wet leaching fraction.
+   */
+  dryClimateFloodIrrigated: boolean;
   nTrend: NTrend;
   soilN2OApproach: SoilN2OApproach;
   efCo2Diesel: number;
@@ -44,7 +52,7 @@ export interface GhgParameters {
 export const DEFAULT_PARAMETERS: GhgParameters = {
   version: "default-v1.0",
   climateZone: "wet",
-  dryClimateIrrigated: false,
+  dryClimateFloodIrrigated: false,
   nTrend: "decrease",
   soilN2OApproach: "QA3",
   efCo2Diesel: 0.002886,
@@ -62,6 +70,37 @@ export const DEFAULT_PARAMETERS: GhgParameters = {
   cfCombustion: 0.5,
   efCN2O: 0.07,
 };
+
+/**
+ * The seeded dry-v1.0 set (migration 0020). Identical to default-v1.0 apart
+ * from the two climate switches — which is the whole point: only
+ * EF_N_direct and Frac_LEACH depend on climate, and between them they move
+ * the claimed reduction by more than a factor of two.
+ */
+export const DRY_PARAMETERS: GhgParameters = {
+  ...DEFAULT_PARAMETERS,
+  version: "dry-v1.0",
+  climateZone: "dry",
+  dryClimateFloodIrrigated: false,
+};
+
+/**
+ * The parameter set a farm must be costed against — the mirror of
+ * `mrv.resolve_parameter_set()`.
+ *
+ * It throws on an unknown zone rather than falling back to the wet set.
+ * Defaulting here would mean guessing the credit volume: applying wet
+ * factors to a dry farm overstates the claimed reduction by ~160%, and
+ * over-crediting is the direction a VVB rejects.
+ */
+export function resolveParameters(climateZone: ClimateZone | null | undefined): GhgParameters {
+  if (climateZone === "wet") return DEFAULT_PARAMETERS;
+  if (climateZone === "dry") return DRY_PARAMETERS;
+  throw new Error(
+    "resolveParameters: the farm has no climate_zone. Set it before computing emissions — " +
+      "wet and dry differ by 2.6x on EF_N_direct.",
+  );
+}
 
 export interface FertilizerApplication {
   fertilizerName: string;
@@ -122,11 +161,12 @@ export function efNDirect(p: GhgParameters): number {
 
 /**
  * Leaching fraction. Wet climates leach; dry climates leach only under
- * non-drip irrigation. A dry, rain-fed system has no leaching pathway at all.
+ * flood or furrow irrigation. A dry system on drip, sprinkler, or rain has
+ * no leaching pathway at all.
  */
 export function fracLeach(p: GhgParameters): number {
   if (p.climateZone === "wet") return p.fracLeachWet;
-  return p.dryClimateIrrigated ? p.fracLeachWet : 0;
+  return p.dryClimateFloodIrrigated ? p.fracLeachWet : 0;
 }
 
 /** Annualised N applied for one application, t N (eq 19/20). */

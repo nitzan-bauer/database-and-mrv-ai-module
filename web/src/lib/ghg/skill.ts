@@ -127,7 +127,7 @@ export function explainParameters(p: GhgParameters): ParameterExplanation[] {
   const flWhy =
     p.climateZone === "wet"
       ? "Wet climates leach."
-      : p.dryClimateIrrigated
+      : p.dryClimateFloodIrrigated
         ? "Dry climate under non-drip irrigation still leaches."
         : "A dry, rain-fed system has no leaching pathway to account for.";
 

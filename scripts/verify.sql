@@ -953,5 +953,143 @@ BEGIN
   RAISE NOTICE 'PASS  | point-in-plot within NFR (% ms)', round(ms);
 END $$;
 
+-- =====================================================================
+-- Migration 0020/0021 — per-climate parameter sets and honest timestamps.
+-- =====================================================================
+
+-- The two climate switches are the entire reason a dry farm needs its own
+-- set. Pin their values: applying the wet pair to a dry farm overstates the
+-- claimed reduction by roughly 160%, which is the direction a VVB rejects.
+DO $$
+DECLARE
+  wet_ef numeric; wet_fl numeric;
+  dry_ef numeric; dry_fl numeric;
+BEGIN
+  SELECT mrv.ef_n_direct(g.*), mrv.frac_leach(g.*) INTO wet_ef, wet_fl
+  FROM mrv.ghg_parameters g WHERE g.project_id IS NULL AND g.version = 'default-v1.0';
+  SELECT mrv.ef_n_direct(g.*), mrv.frac_leach(g.*) INTO dry_ef, dry_fl
+  FROM mrv.ghg_parameters g WHERE g.project_id IS NULL AND g.version = 'dry-v1.0';
+
+  IF dry_ef IS NULL THEN
+    RAISE EXCEPTION 'FAIL  | the dry-v1.0 global parameter set is missing';
+  END IF;
+  IF wet_ef <> 0.013 OR wet_fl <> 0.24 THEN
+    RAISE EXCEPTION 'FAIL  | wet set should be EF 0.013 / Frac_LEACH 0.24, got % / %', wet_ef, wet_fl;
+  END IF;
+  IF dry_ef <> 0.005 OR dry_fl <> 0 THEN
+    RAISE EXCEPTION 'FAIL  | dry set should be EF 0.005 / Frac_LEACH 0, got % / %', dry_ef, dry_fl;
+  END IF;
+  RAISE NOTICE 'PASS  | wet/dry parameter sets carry the right EF_N_direct and Frac_LEACH';
+END $$;
+
+-- Flood irrigation, and only flood irrigation, re-opens the leaching
+-- pathway in a dry zone. This is what the rename was for: drip is
+-- irrigation but does not leach, so the old dry_climate_irrigated name
+-- invited a setting that silently inflated the result by ~40%.
+DO $$
+DECLARE
+  g mrv.ghg_parameters%ROWTYPE;
+  fl numeric;
+BEGIN
+  SELECT * INTO g FROM mrv.ghg_parameters WHERE project_id IS NULL AND version = 'dry-v1.0';
+  g.dry_climate_flood_irrigated := true;
+  fl := mrv.frac_leach(g);
+  IF fl <> g.frac_leach_wet THEN
+    RAISE EXCEPTION 'FAIL  | dry + flood irrigation should leach at %, got %', g.frac_leach_wet, fl;
+  END IF;
+  g.dry_climate_flood_irrigated := false;
+  IF mrv.frac_leach(g) <> 0 THEN
+    RAISE EXCEPTION 'FAIL  | dry without flood irrigation must not leach, got %', mrv.frac_leach(g);
+  END IF;
+  RAISE NOTICE 'PASS  | Frac_LEACH responds to flood irrigation only, not to drip';
+END $$;
+
+-- Resolution binds a farm to the set matching its own climate zone, and
+-- refuses to guess when the zone is unknown.
+DO $$
+DECLARE
+  v_farm uuid;
+  v_ver  text;
+  v_zone mrv.climate_zone;
+BEGIN
+  FOREACH v_zone IN ARRAY ARRAY['wet','dry']::mrv.climate_zone[] LOOP
+    SELECT f.farm_id INTO v_farm FROM mrv.farms f WHERE f.climate_zone = v_zone LIMIT 1;
+    CONTINUE WHEN v_farm IS NULL;   -- seed data may not carry both zones
+    SELECT g.version INTO v_ver FROM mrv.ghg_parameters g
+      WHERE g.parameter_set_id = mrv.resolve_parameter_set(v_farm);
+    IF v_ver IS DISTINCT FROM (CASE v_zone WHEN 'dry' THEN 'dry-v1.0' ELSE 'default-v1.0' END) THEN
+      RAISE EXCEPTION 'FAIL  | a % farm resolved to %', v_zone, v_ver;
+    END IF;
+    RAISE NOTICE 'PASS  | a % farm resolves to %', v_zone, v_ver;
+  END LOOP;
+END $$;
+
+DO $$
+DECLARE
+  v_farm uuid;
+BEGIN
+  SELECT farm_id INTO v_farm FROM mrv.farms LIMIT 1;
+  UPDATE mrv.farms SET climate_zone = NULL WHERE farm_id = v_farm;
+  BEGIN
+    PERFORM mrv.resolve_parameter_set(v_farm);
+    RAISE EXCEPTION 'FAIL  | a farm with no climate_zone must not resolve to a default set';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM NOT LIKE '%no climate_zone%' THEN RAISE; END IF;
+    RAISE NOTICE 'PASS  | a farm with no climate_zone raises instead of defaulting';
+  END;
+  RAISE EXCEPTION 'rollback-marker';   -- undo the UPDATE
+EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM <> 'rollback-marker' THEN RAISE; END IF;
+END $$;
+
+-- The now() collision that migrations 0020/0021 removed. Before them, a
+-- second write in the same transaction reused the transaction start time
+-- and tripped the UNIQUE key — so this block failed, and the limitation
+-- had to be documented rather than fixed.
+DO $$
+DECLARE
+  v_farm uuid;
+  n int; d int;
+BEGIN
+  SELECT farm_id INTO v_farm FROM mrv.farms LIMIT 1;
+  INSERT INTO mrv.compliance_scores (farm_id, cycle_id, score, hard_passed, hard_total, warnings)
+    VALUES (v_farm, NULL, 80, 4, 5, 1), (v_farm, NULL, 80, 4, 5, 1);
+  SELECT count(*), count(DISTINCT evaluated_at) INTO n, d
+    FROM mrv.compliance_scores WHERE farm_id = v_farm AND cycle_id IS NULL;
+  IF n <> 2 OR d <> 2 THEN
+    RAISE EXCEPTION 'FAIL  | two scores in one transaction gave % rows / % distinct times', n, d;
+  END IF;
+  RAISE NOTICE 'PASS  | two evaluations in one transaction get distinct timestamps';
+  RAISE EXCEPTION 'rollback-marker';
+EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM <> 'rollback-marker' THEN RAISE; END IF;
+END $$;
+
+-- Every UNIQUE key that includes a computed/evaluated timestamp must be
+-- defaulted to clock_timestamp(), or it carries the same latent collision.
+DO $$
+DECLARE
+  bad text;
+BEGIN
+  SELECT string_agg(format('%s.%s', c.table_name, c.column_name), ', ')
+  INTO bad
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'mrv'
+    AND c.column_name IN ('evaluated_at', 'computed_at')
+    AND coalesce(c.column_default, '') NOT LIKE '%clock_timestamp%'
+    AND EXISTS (
+      SELECT 1
+      FROM information_schema.constraint_column_usage u
+      JOIN information_schema.table_constraints t
+        ON t.constraint_name = u.constraint_name AND t.constraint_schema = u.constraint_schema
+      WHERE u.table_schema = c.table_schema AND u.table_name = c.table_name
+        AND u.column_name = c.column_name AND t.constraint_type = 'UNIQUE'
+    );
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | UNIQUE over a now()-defaulted timestamp: %', bad;
+  END IF;
+  RAISE NOTICE 'PASS  | no UNIQUE key rests on a transaction-scoped timestamp';
+END $$;
+
 \echo ''
 \echo 'All checks passed.'

@@ -68,25 +68,40 @@ export function GhgView({
         </button>
       </div>
 
-      {/* The parameter set carries its own climate zone and is what the
-          engine uses. Where the farm's recorded zone differs, say so —
-          silently applying a wet-climate factor to a dry farm is exactly the
-          kind of thing a VVB asks about. */}
+      {/* Which parameter set this farm is costed against, and why. The set
+          is resolved from the farm's climate zone (mrv.resolve_parameter_set),
+          so a mismatch should now be impossible — but it is still checked,
+          because silently applying a wet EF to a dry farm overstates the
+          claimed reduction by ~160% and is precisely what a VVB looks for. */}
       {(() => {
         const farm = farms.find((f) => f.farmId === activeFarmId);
-        if (!farm || farm.climateZone === parameters.climateZone) return null;
+        if (!farm) return null;
+
+        if (farm.climateZone !== parameters.climateZone) {
+          return (
+            <div className="rounded-xl border-l-4 border-danger bg-danger/5 px-4 py-3">
+              <p className="text-[13px] font-semibold text-danger">
+                Climate zone mismatch — {farm.name} is recorded as <b>{farm.climateZone}</b>, but
+                parameter set {parameters.version} is <b>{parameters.climateZone}</b>.
+              </p>
+              <p className="mt-1 text-[12px] text-muted">
+                Resolution should have prevented this. Do not rely on the figures below; the farm is
+                being quantified on the wrong EF_N_direct and Frac_LEACH.
+              </p>
+            </div>
+          );
+        }
+
         return (
-          <div className="rounded-xl border-l-4 border-gold-500 bg-gold-200/30 px-4 py-3">
-            <p className="text-[13px] font-semibold text-earth-600">
-              Climate zone mismatch — {farm.name} is recorded as{" "}
-              <b>{farm.climateZone}</b>, but parameter set {parameters.version} is{" "}
-              <b>{parameters.climateZone}</b>.
+          <div className="rounded-xl border border-line bg-white px-4 py-3">
+            <p className="text-[13px] text-pine-700">
+              Costed against <b className="font-mono text-[12px]">{parameters.version}</b>, resolved
+              from {farm.name}&apos;s <b>{farm.climateZone}</b> climate zone.
             </p>
             <p className="mt-1 text-[12px] text-muted">
-              The engine uses the parameter set, as the database does, so the factors below are{" "}
-              {parameters.climateZone}-climate values. A grouped project spanning both zones needs a
-              parameter set per farm, or one farm is quantified on the wrong EF_N_direct and
-              Frac_LEACH.
+              {parameters.climateZone === "dry"
+                ? "Dry zone: EF_N_direct takes the flat dry factor, and Frac_LEACH is zero unless the farm is flood-irrigated — drip and sprinkler do not leach."
+                : "Wet zone: EF_N_direct takes the low end while nitrogen is decreasing, and the full leaching fraction applies."}
             </p>
           </div>
         );

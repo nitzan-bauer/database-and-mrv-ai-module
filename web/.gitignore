@@ -24,6 +24,11 @@ yarn-error.log*
 .env
 .env*.local
 .env.local
+# ...and any backup or editor copy of one. `.env*.local` only matches names
+# ending in .local, so .env.local.bak (written by scripts/set-oauth-secret.mjs)
+# would otherwise be committable with the secret inside it.
+.env.local.*
+.env*.bak
 
 # typescript
 *.tsbuildinfo
