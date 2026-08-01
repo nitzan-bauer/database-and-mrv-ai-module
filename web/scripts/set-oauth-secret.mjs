@@ -37,6 +37,23 @@ if (!fs.existsSync(ENV)) {
 const mask = (v) => `${PREFIX}${"•".repeat(Math.max(0, v.length - PREFIX.length - 4))}${v.slice(-4)}`;
 const fp = (v) => crypto.createHash("sha256").update(v).digest("hex").slice(0, 12);
 
+/**
+ * Strip a secret that arrived more than once in a row.
+ *
+ * A clipboard holding "GOCSPX-…GOCSPX-…" passes a prefix check and is
+ * written whole, and Google answers invalid_client — which reads as "wrong
+ * secret" rather than "right secret, twice". It has already happened once
+ * here, and the halves were byte-identical, so the case is worth handling
+ * rather than merely rejecting.
+ */
+function deduplicate(v) {
+  const second = v.indexOf(PREFIX, 1);
+  if (second === -1) return { value: v, repeated: 0 };
+  const parts = v.split(PREFIX).filter(Boolean).map((p) => PREFIX + p);
+  const allSame = parts.every((p) => p === parts[0]);
+  return allSame ? { value: parts[0], repeated: parts.length } : { value: v, repeated: -1 };
+}
+
 /** Whatever is on the Windows clipboard, or null. */
 function fromClipboard() {
   if (process.platform !== "win32") return null;
@@ -107,6 +124,17 @@ if (!secret.startsWith(PREFIX)) {
   console.error(`\nThat does not look like a Google client secret — they begin "${PREFIX}".`);
   console.error("Nothing was written. Check you copied the secret and not the client ID.");
   process.exit(1);
+}
+
+const dedup = deduplicate(secret);
+if (dedup.repeated === -1) {
+  console.error("\nThat looks like two different secrets joined together.");
+  console.error("Nothing was written. Copy just one and run this again.");
+  process.exit(1);
+}
+if (dedup.repeated > 1) {
+  console.log(`\nThe value arrived ${dedup.repeated} times over; using a single copy.`);
+  secret = dedup.value;
 }
 
 const before = fs.readFileSync(ENV, "utf8");
