@@ -1,0 +1,9 @@
+# Windows batch files must keep CRLF. cmd.exe parses an LF-only .cmd
+# inconsistently — a caret line-continuation in particular splits into
+# separate commands — so the launcher behind the desktop shortcut fails in
+# ways that look like anything but a line-ending problem.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Shell scripts must keep LF for the same reason in reverse.
+*.sh  text eol=lf

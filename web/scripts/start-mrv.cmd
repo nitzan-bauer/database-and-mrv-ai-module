@@ -25,6 +25,31 @@ if not exist "node_modules\" (
   call npm install --no-audit --no-fund || (echo Install failed. & pause & exit /b 1)
 )
 
+rem ---------------------------------------------------------------------
+rem  The port is not negotiable, so refuse rather than drift off it.
+rem
+rem  Next picks the next free port when 3007 is taken, and says so in a line
+rem  that scrolls past. Google then rejects the sign-in with
+rem  redirect_uri_mismatch, because the OAuth client registers exactly
+rem  http://localhost:3007/api/auth/callback/google — leaving a broken login
+rem  and no obvious cause. Better to stop here and name the reason.
+rem ---------------------------------------------------------------------
+netstat -ano -p tcp | findstr /r /c:"LISTENING" | findstr /c:":%PORT% " >nul 2>&1
+if not errorlevel 1 (
+  echo.
+  echo   Port %PORT% is already in use.
+  echo.
+  echo   The MRV module has to run on %PORT%: that is the address registered
+  echo   with Google, and sign-in fails on any other. Close the other window
+  echo   running the server ^(or whatever is holding the port^), then start
+  echo   this again.
+  echo.
+  echo   To see what is holding it:   netstat -ano ^| findstr :%PORT%
+  echo.
+  pause
+  exit /b 1
+)
+
 echo.
 echo   CarboNature MRV
 echo   starting on %URL%
