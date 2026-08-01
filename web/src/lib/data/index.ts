@@ -632,3 +632,209 @@ export async function setFarmContext(
     [actor, farmId, JSON.stringify({ climateZone, irrigationMethod })],
   );
 }
+
+/* ───────────────────── compliance (db mode reads) ───────────────────── */
+
+export interface DbComplianceCheck {
+  ruleCode: string;
+  isHard: boolean;
+  result: "pass" | "warn" | "fail";
+  detail: string | null;
+  vm0042Ref: string | null;
+  evaluatedAt: string;
+}
+
+export interface DbComplianceScore {
+  score: number;
+  hardPassed: number;
+  hardTotal: number;
+  warnings: number;
+  evaluatedAt: string;
+  cycleId: string;
+  cycleNumber: number;
+  checks: DbComplianceCheck[];
+}
+
+/**
+ * The latest compliance evaluation for a farm, straight from the engine's
+ * own tables.
+ *
+ * In db mode the module deliberately does NOT re-run its TypeScript mirror
+ * of the rules and show that instead: mrv.evaluate_compliance() is the
+ * authority, its rows are what a VVB is shown, and a screen that recomputed
+ * them client-side would drift the day one rule changes in only one place.
+ * The mirror stays for fixtures mode, where there is no database to ask.
+ *
+ * Returns null when the farm has never been evaluated — which the screen
+ * should say plainly rather than showing a fixture score that looks real.
+ */
+export async function getLatestCompliance(farmId: string): Promise<DbComplianceScore | null> {
+  if (DATA_MODE === "fixtures") return null;
+  const { query } = await import("../db");
+
+  const scores = await query<Record<string, unknown>>(
+    `SELECT s.score, s.hard_passed, s.hard_total, s.warnings, s.evaluated_at,
+            s.cycle_id, c.cycle_number
+       FROM mrv.compliance_scores s
+       JOIN mrv.sampling_cycles c ON c.cycle_id = s.cycle_id
+      WHERE s.farm_id = $1
+      ORDER BY s.evaluated_at DESC
+      LIMIT 1`,
+    [farmId],
+  );
+  if (!scores.length) return null;
+  const s = scores[0];
+
+  // The checks from the same evaluation run. evaluate_compliance() clears
+  // and rewrites the farm-cycle's checks each run, so the latest set for
+  // this cycle is the set that produced this score.
+  const checks = await query<Record<string, unknown>>(
+    `SELECT rule_code, is_hard, result::text AS result, detail, vm0042_ref, evaluated_at
+       FROM mrv.compliance_checks
+      WHERE farm_id = $1 AND cycle_id = $2
+      ORDER BY is_hard DESC, rule_code`,
+    [farmId, String(s.cycle_id)],
+  );
+
+  return {
+    score: Number(s.score),
+    hardPassed: Number(s.hard_passed),
+    hardTotal: Number(s.hard_total),
+    warnings: Number(s.warnings),
+    evaluatedAt: String(s.evaluated_at),
+    cycleId: String(s.cycle_id),
+    cycleNumber: Number(s.cycle_number),
+    checks: checks.map((r) => ({
+      ruleCode: String(r.rule_code),
+      isHard: Boolean(r.is_hard),
+      result: String(r.result) as DbComplianceCheck["result"],
+      detail: (r.detail as string | null) ?? null,
+      vm0042Ref: (r.vm0042_ref as string | null) ?? null,
+      evaluatedAt: String(r.evaluated_at),
+    })),
+  };
+}
+
+/* ─────────────────────── admin (db mode reads) ─────────────────────── */
+
+/**
+ * The people and identities the module actually knows about, for Admin.
+ *
+ * Shaped to the same AdminUser the fixtures use, so the screen renders both
+ * without caring which mode it is in. Roles come from project_memberships;
+ * live sampler tokens appear as identities too, because they are — a token
+ * is something that can act, and an access review that misses it reviews
+ * the wrong list.
+ */
+export async function listAdminUsers(): Promise<import("./fixtures").AdminUser[]> {
+  if (DATA_MODE === "fixtures") {
+    const { DEMO_ADMIN_USERS } = await import("./fixtures");
+    return DEMO_ADMIN_USERS;
+  }
+  const { query } = await import("../db");
+
+  const users = await query<Record<string, unknown>>(
+    `SELECT u.full_name, u.email, u.auth_method::text AS auth_method, u.is_active,
+            u.last_active_at,
+            coalesce(string_agg(DISTINCT m.role::text, ', '), 'no role yet') AS role,
+            coalesce(string_agg(DISTINCT m.project_id, ', '), '—')           AS scope
+       FROM mrv.users u
+       LEFT JOIN mrv.project_memberships m ON m.user_id = u.user_id
+      GROUP BY u.user_id
+      ORDER BY u.full_name`,
+  );
+
+  const tokens = await query<Record<string, unknown>>(
+    `SELECT t.contractor_email, t.work_order_id, t.last_used_at, w.contractor_name
+       FROM mrv.mcp_tokens t
+       JOIN mrv.work_orders w ON w.wo_id = t.work_order_id
+      WHERE t.revoked_at IS NULL AND t.expires_at > clock_timestamp()
+      ORDER BY t.issued_at DESC`,
+  );
+
+  return [
+    ...users.map((u) => ({
+      name: String(u.full_name),
+      email: String(u.email),
+      role: String(u.role),
+      scope: String(u.scope),
+      system: "MRV" as const,
+      authMethod: (u.auth_method as "sso" | "password" | "mcp_token") ?? "sso",
+      isActive: Boolean(u.is_active),
+      lastActiveAt: u.last_active_at ? String(u.last_active_at).slice(0, 10) : null,
+    })),
+    ...tokens.map((t) => ({
+      name: String(t.contractor_name ?? "Sampling contractor"),
+      email: String(t.contractor_email ?? "—"),
+      role: "Sampler · work-order scoped",
+      scope: String(t.work_order_id),
+      system: "MRV" as const,
+      authMethod: "mcp_token" as const,
+      isActive: true,
+      lastActiveAt: t.last_used_at ? String(t.last_used_at).slice(0, 10) : null,
+    })),
+  ];
+}
+
+/** The live agent action policies — the same rows checkPolicy() enforces. */
+export async function listAgentPolicies(): Promise<
+  Array<{ action: string; mode: "auto" | "confirm" | "off"; note: string }>
+> {
+  if (DATA_MODE === "fixtures") {
+    const { DEMO_AGENT_POLICIES } = await import("./fixtures");
+    return DEMO_AGENT_POLICIES;
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT action_name, mode::text AS mode, note FROM mrv.agent_action_policies ORDER BY action_name`,
+  );
+  return rows.map((r) => ({
+    action: String(r.action_name),
+    mode: (r.mode as "auto" | "confirm" | "off") ?? "confirm",
+    note: String(r.note ?? ""),
+  }));
+}
+
+/** The most recent audit entries, newest first. */
+export async function listAuditLog(limit = 40): Promise<
+  Array<{ ts: string; actor: string; actorRole: string; action: string; targetType: string; targetId: string }>
+> {
+  if (DATA_MODE === "fixtures") {
+    const { DEMO_AUDIT } = await import("./fixtures");
+    return DEMO_AUDIT;
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ts, actor, coalesce(actor_role::text, '') AS actor_role, action,
+            coalesce(target_type, '') AS target_type, coalesce(target_id, '') AS target_id
+       FROM mrv.audit_log ORDER BY ts DESC LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({
+    ts: new Date(String(r.ts)).toISOString(),
+    actor: String(r.actor),
+    actorRole: String(r.actor_role),
+    action: String(r.action),
+    targetType: String(r.target_type),
+    targetId: String(r.target_id),
+  }));
+}
+
+/** Whether any GHG activity data exists for a farm — drives the GHG screen's honesty. */
+export async function countActivityData(farmId: string): Promise<number> {
+  if (DATA_MODE === "fixtures") return -1; // fixtures always have their demo set
+  const { query } = await import("../db");
+  const rows = await query<{ n: string }>(
+    `SELECT count(*)::text n FROM mrv.activity_data WHERE farm_id = $1`,
+    [farmId],
+  );
+  return Number(rows[0].n);
+}
+
+/** Whether any QA1 model run exists — drives the Model Run Console's honesty. */
+export async function countModelRuns(): Promise<number> {
+  if (DATA_MODE === "fixtures") return -1; // fixtures carry their demo run
+  const { query } = await import("../db");
+  const rows = await query<{ n: string }>(`SELECT count(*)::text n FROM mrv.model_runs`);
+  return Number(rows[0].n);
+}

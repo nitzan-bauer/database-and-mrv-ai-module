@@ -1,10 +1,12 @@
 import { auth } from "@/auth";
-import { listFarms, listProjects, setFarmContext } from "@/lib/data";
 import {
-  DEMO_ADMIN_USERS,
-  DEMO_AGENT_POLICIES,
-  DEMO_AUDIT,
-} from "@/lib/data/fixtures";
+  listAdminUsers,
+  listAgentPolicies,
+  listAuditLog,
+  listFarms,
+  listProjects,
+  setFarmContext,
+} from "@/lib/data";
 import type { ClimateZone, IrrigationMethod } from "@/lib/data/types";
 import { DATA_MODE } from "@/lib/env";
 import { AdminView } from "@/components/admin/AdminView";
@@ -23,7 +25,15 @@ const METHODS = ["flood", "furrow", "sprinkler", "drip", "rainfed"] as const;
  */
 export default async function AdminPage() {
   const [project] = await listProjects();
-  const farms = await listFarms(project.projectId);
+  // In db mode these are the real rows — the same users the sign-in upserts,
+  // the same policies checkPolicy() enforces, the same audit trail the tools
+  // write. In fixtures mode the reads fall back to the demo set themselves.
+  const [farms, users, policies, audit] = await Promise.all([
+    listFarms(project.projectId),
+    listAdminUsers(),
+    listAgentPolicies(),
+    listAuditLog(40),
+  ]);
 
   /**
    * Record one farm's climate zone and irrigation method.
@@ -103,7 +113,7 @@ export default async function AdminPage() {
         )}
       </section>
 
-      <AdminView users={DEMO_ADMIN_USERS} policies={DEMO_AGENT_POLICIES} audit={DEMO_AUDIT} />
+      <AdminView users={users} policies={policies} audit={audit} />
     </div>
   );
 }

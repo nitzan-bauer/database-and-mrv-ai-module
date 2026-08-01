@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listFarms, listProjects } from "@/lib/data";
+import { countActivityData, listFarms, listProjects } from "@/lib/data";
 import type { Farm } from "@/lib/data/types";
 import { Card } from "@/components/ui/Card";
 import { DEMO_ACTIVITY_DATA } from "@/lib/data/fixtures";
@@ -42,6 +42,15 @@ export default async function GhgPage({
         needsMethod={missing.includes("irrigation method")}
       />
     );
+  }
+
+  // In db mode the demo activity data must not stand in for the farm's
+  // real fuel and fertiliser records — an emissions figure over invented
+  // inputs looks exactly like a real one. countActivityData returns -1 in
+  // fixtures mode, where the demo set is the point.
+  const activityCount = await countActivityData(active.farmId);
+  if (activityCount === 0) {
+    return <NoActivityData farms={farms} active={active} />;
   }
 
   const p = resolveParameters(active.climateZone);
@@ -164,6 +173,61 @@ function MissingContext({
         >
           Record it in Admin
         </Link>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * Shown in db mode when the farm has no activity data. The demo figures are
+ * deliberately not substituted: an emissions number computed over invented
+ * fuel and fertiliser reads exactly like a real one, and this screen is the
+ * kind a VVB gets shown.
+ */
+function NoActivityData({ farms, active }: { farms: Farm[]; active: Farm }) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold text-pine-700">GHG Calculator</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
+          Emissions from fuel combustion and nitrogen-fertiliser use, per farm-year, under VM0042
+          v2.2 Quantification Approach 3.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {farms.map((f) => (
+          <Link
+            key={f.farmId}
+            href={`/ghg?farm=${f.farmId}`}
+            className={
+              "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors " +
+              (f.farmId === active.farmId
+                ? "bg-pine-600 text-white"
+                : "border border-line bg-white text-pine-700 hover:bg-pine-50")
+            }
+          >
+            {f.name}
+            <span className="ml-1.5 opacity-70">
+              {f.climateZone ?? "zone?"} · {f.irrigationMethod ?? "irrigation?"}
+            </span>
+          </Link>
+        ))}
+      </div>
+
+      <Card className="p-6">
+        <p className="text-sm font-semibold text-pine-700">
+          {active.name} has no activity data recorded.
+        </p>
+        <p className="mt-1 max-w-2xl text-[13px] text-muted">
+          The calculator needs the farm&apos;s fuel and fertiliser records — diesel and gasoline
+          litres, each fertiliser application with its nitrogen content — for a baseline period and
+          each project year. Nothing is estimated in their place: an emissions figure over invented
+          inputs would read exactly like a real one.
+        </p>
+        <p className="mt-3 font-mono text-[11px] text-faint">
+          waiting on: mrv.activity_data and mrv.fertilizer_applications for this farm
+        </p>
       </Card>
     </div>
   );
