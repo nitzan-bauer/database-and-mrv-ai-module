@@ -14,7 +14,8 @@
     "check:sql": "node scripts/check-db-queries.mjs",
     "db:doctor": "node scripts/db-doctor.mjs",
     "db:link": "node scripts/link-db.mjs",
-    "db:migrate": "node scripts/db-migrate.mjs"
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:certs": "node scripts/fetch-rds-ca.mjs"
   },
   "dependencies": {
     "@turf/area": "^7.3.5",

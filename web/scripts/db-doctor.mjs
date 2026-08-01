@@ -25,6 +25,21 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { Client } = require("pg");
 
+/**
+ * Same TLS rules as the app (src/lib/dbSsl.ts): verify against the Amazon
+ * RDS CA bundle rather than switching verification off, and strip sslmode
+ * from the URL so it cannot override that.
+ */
+const CA = path.join(path.resolve(import.meta.dirname, ".."), "certs", "rds-global-bundle.pem");
+function connOpts(raw) {
+  let connectionString = raw;
+  try { const u = new URL(raw); u.searchParams.delete("sslmode"); connectionString = u.toString(); }
+  catch { connectionString = raw.replace(/[?&]sslmode=[^&]*/i, ""); }
+  if (!fs.existsSync(CA))
+    throw new Error(`Missing ${CA} — fetch it with:  npm run db:certs`);
+  return { connectionString, ssl: { ca: fs.readFileSync(CA, "utf8"), rejectUnauthorized: true } };
+}
+
 const WEB = path.resolve(import.meta.dirname, "..");
 
 /* ── connection string ───────────────────────────────────────────────── */
@@ -82,7 +97,7 @@ const REQUIRED_MIGRATIONS = [
   "0019_compliance_full_hard_checks",
 ];
 
-const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 12_000 });
+const client = new Client({ ...connOpts(url), connectionTimeoutMillis: 12_000 });
 
 let failed = false;
 

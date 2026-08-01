@@ -1,6 +1,7 @@
 import "server-only";
 import { Pool } from "pg";
 import { DATABASE_URL } from "./env";
+import { dbConnection } from "./dbSsl";
 
 /**
  * A single shared pg Pool for the mrv database. Every connection sets
@@ -19,10 +20,10 @@ function makePool(): Pool {
       "DATABASE_URL is not set. Run in fixtures mode, or provide the RDS connection string.",
     );
   }
+  const { connectionString, ssl } = dbConnection(DATABASE_URL);
   const pool = new Pool({
-    connectionString: DATABASE_URL,
-    // RDS enforces TLS; do not reject the AWS-managed cert chain in dev.
-    ssl: { rejectUnauthorized: false },
+    connectionString,
+    ssl,
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
