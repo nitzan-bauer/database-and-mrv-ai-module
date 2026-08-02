@@ -849,9 +849,12 @@ export interface AgentRecord {
   mission: string;
   owns: string;
   rolePrompt: string;
+  /** Callable today — a real handler exists behind every name here. */
   tools: string[];
   skills: string[];
   plannedSkills: string[];
+  /** Named in policy or the specification, but with no implementation yet. */
+  plannedTools: string[];
   actorId: string;
   avatarHue: number;
   isActive: boolean;
@@ -873,7 +876,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
   const { query } = await import("../db");
   const rows = await query<Record<string, unknown>>(
     `SELECT a.agent_id, a.display_name, a.title, a.reports_to, a.mission, a.owns,
-            a.role_prompt, a.tools, a.skills, a.planned_skills, a.actor_id,
+            a.role_prompt, a.tools, a.skills, a.planned_skills, a.planned_tools, a.actor_id,
             a.avatar_hue, a.is_active,
             ( SELECT count(*) FROM mrv.audit_log l WHERE l.actor = a.actor_id )::int AS action_count,
             ( SELECT max(l.ts)  FROM mrv.audit_log l WHERE l.actor = a.actor_id )     AS last_acted_at
@@ -891,12 +894,19 @@ export async function listAgents(): Promise<AgentRecord[]> {
     tools: (r.tools as string[]) ?? [],
     skills: (r.skills as string[]) ?? [],
     plannedSkills: (r.planned_skills as string[]) ?? [],
+    plannedTools: (r.planned_tools as string[]) ?? [],
     actorId: String(r.actor_id),
     avatarHue: Number(r.avatar_hue ?? 160),
     isActive: Boolean(r.is_active),
     actionCount: Number(r.action_count ?? 0),
     lastActedAt: r.last_acted_at ? new Date(String(r.last_acted_at)).toISOString() : null,
   }));
+}
+
+/** One agent, for the runtime — it needs exactly one record, not the roster. */
+export async function getAgent(agentId: string): Promise<AgentRecord | null> {
+  const all = await listAgents();
+  return all.find((a) => a.agentId === agentId) ?? null;
 }
 
 export interface PipelineStage {

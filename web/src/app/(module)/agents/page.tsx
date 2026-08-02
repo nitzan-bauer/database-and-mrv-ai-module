@@ -72,7 +72,10 @@ export default async function AgentsPage() {
     );
 
   const totalBuilt = agents.reduce((n, a) => n + a.skills.length + a.tools.length, 0);
-  const totalPlanned = agents.reduce((n, a) => n + a.plannedSkills.length, 0);
+  const totalPlanned = agents.reduce(
+    (n, a) => n + a.plannedSkills.length + a.plannedTools.length,
+    0,
+  );
 
   return (
     <Frame>

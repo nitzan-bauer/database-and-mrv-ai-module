@@ -127,9 +127,9 @@ function AgentBlock({
         <span className="rounded-full bg-cream px-2 py-0.5 text-pine-700">
           {agent.tools.length} tool{agent.tools.length === 1 ? "" : "s"}
         </span>
-        {agent.plannedSkills.length > 0 && (
+        {agent.plannedSkills.length + agent.plannedTools.length > 0 && (
           <span className="rounded-full bg-gold-200 px-2 py-0.5 text-earth-600">
-            +{agent.plannedSkills.length} planned
+            +{agent.plannedSkills.length + agent.plannedTools.length} planned
           </span>
         )}
       </div>
@@ -241,12 +241,17 @@ function AgentModal({
               </div>
               <div>
                 <p className="text-[11.5px] font-semibold text-earth-600">
-                  Planned ({agent.plannedSkills.length})
+                  Planned ({agent.plannedSkills.length + agent.plannedTools.length})
                 </p>
                 <ul className="mt-1 space-y-1 font-mono text-[10.5px]">
+                  {agent.plannedTools.map((t) => (
+                    <li key={t} className="rounded bg-gold-200/60 px-2 py-1 text-earth-600">
+                      {t} <span className="opacity-60">· tool</span>
+                    </li>
+                  ))}
                   {agent.plannedSkills.map((s) => (
                     <li key={s} className="rounded bg-gold-200/60 px-2 py-1 text-earth-600">
-                      {s}
+                      {s} <span className="opacity-60">· skill</span>
                     </li>
                   ))}
                 </ul>

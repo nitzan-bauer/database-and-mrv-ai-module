@@ -1313,5 +1313,35 @@ BEGIN
   RAISE NOTICE 'PASS  | rebeka holds run_plot_qa_qc and export_plots_kml, both auto';
 END $$;
 
+-- =====================================================================
+-- Migration 0029 — built tools vs planned tools.
+-- =====================================================================
+
+DO $$
+DECLARE
+  bad text;
+BEGIN
+  -- Dave's tools must be exactly what has a real handler behind it —
+  -- run_model, recalibrate_model and issue_alerts moved to planned_tools.
+  PERFORM 1 FROM mrv.agents
+   WHERE agent_id = 'dave'
+     AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat']
+     AND planned_tools = ARRAY['run_model', 'recalibrate_model', 'issue_alerts'];
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'FAIL  | dave''s tools/planned_tools split does not match what is actually implemented';
+  END IF;
+
+  -- No agent may claim the same action as both built and planned — that
+  -- would be claiming it works and admitting it does not, at once.
+  SELECT string_agg(agent_id, ', ') INTO bad
+  FROM mrv.agents
+  WHERE tools && planned_tools;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | tools and planned_tools overlap for: %', bad;
+  END IF;
+
+  RAISE NOTICE 'PASS  | built and planned tools are disjoint, and dave''s split matches reality';
+END $$;
+
 \echo ''
 \echo 'All checks passed.'
