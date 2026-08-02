@@ -1,10 +1,21 @@
 import { auth } from "@/auth";
-import { creditPipeline, listAgents, listAuditLog, listProjects, pddReadiness } from "@/lib/data";
+import { creditPipeline, listAgents, listAuditLog, listPddDrafts, listProjects, pddReadiness } from "@/lib/data";
 import { DATA_MODE } from "@/lib/env";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
+import type { GeneratedPddDraft } from "@/lib/tools/generatePddDraft";
+import type { ToolResult } from "@/lib/tools/context";
 import { AgentOrgChart } from "@/components/agents/AgentOrgChart";
+import { PddDraftPanel } from "@/components/agents/PddDraftPanel";
 
 export const dynamic = "force-dynamic";
+
+/** Generate a PDD draft as the signed-in person. */
+async function generatePddDraftAction(input: { projectId: string }): Promise<ToolResult<GeneratedPddDraft>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { generatePddDraft } = await import("@/lib/tools/generatePddDraft");
+  return generatePddDraft({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
 
 /**
  * Screen A — the Verified Credits Factory control tower (spec §13).
@@ -38,11 +49,12 @@ export default async function AgentsPage() {
   }
 
   const [project] = await listProjects();
-  const [agents, pipeline, audit, readiness] = await Promise.all([
+  const [agents, pipeline, audit, readiness, pddDrafts] = await Promise.all([
     listAgents(),
     creditPipeline(),
     listAuditLog(200),
     pddReadiness(project.projectId),
+    listPddDrafts(project.projectId),
   ]);
 
   const actorIds = new Set(agents.map((a) => a.actorId));
@@ -194,6 +206,9 @@ export default async function AgentsPage() {
             })}
           </div>
         )}
+        <div className="mt-3">
+          <PddDraftPanel projectId={project.projectId} drafts={pddDrafts} action={generatePddDraftAction} />
+        </div>
       </section>
 
       <section>

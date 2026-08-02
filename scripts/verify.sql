@@ -23,20 +23,21 @@ DECLARE
   n int;
 BEGIN
   -- 9 core hierarchy + 3 reference + 2 audit + agent_memory + 5 stage-3,
-  -- plus mrv.agents (0024) and mrv.pdd_templates (0027) from Tier 2.
+  -- plus mrv.agents (0024) and mrv.pdd_templates (0027) from Tier 2, plus
+  -- mrv.additionality_assessments and mrv.pdd_drafts (0031).
   -- BASE TABLE only: information_schema.tables counts views too, and
   -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 43 THEN
-    RAISE EXCEPTION 'FAIL  | expected 43 base tables in mrv, found %', n;
+  IF n <> 45 THEN
+    RAISE EXCEPTION 'FAIL  | expected 45 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 43 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 45 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -90,14 +91,15 @@ BEGIN
   END IF;
 
   -- 6 from the original seed, plus register_pdd_template (0027),
-  -- run_plot_qa_qc / export_plots_kml (0028) for Rebeka, and
-  -- record_baseline_site / record_activity_data (0030) for Dave.
+  -- run_plot_qa_qc / export_plots_kml (0028) for Rebeka, record_baseline_site
+  -- / record_activity_data (0030) for Dave, and record_additionality_assessment
+  -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 11 THEN
-    RAISE EXCEPTION 'FAIL  | expected 11 agent policies, found %', n;
+  IF n <> 14 THEN
+    RAISE EXCEPTION 'FAIL  | expected 14 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 11 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 14 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -129,6 +131,55 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0030: baseline/activity policies auto, dave holds both tools, next_bsl_id() shaped BSL-####';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0031 — the skills that could be built honestly: kmz_preparation,
+-- additionality and pdd_generator for Rebeka; stratification,
+-- baseline_definition and soc_datasheet for Dave. dndc/daycent stay
+-- planned — no real model integration exists to build them on.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  bad text;
+  rebeka_skills text[];
+  rebeka_planned text[];
+  dave_skills text[];
+  dave_planned text[];
+BEGIN
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('record_additionality_assessment', 'export_plots_kmz', 'generate_pdd_draft')
+    AND NOT (
+      (action_name = 'record_additionality_assessment' AND mode = 'auto') OR
+      (action_name IN ('export_plots_kmz', 'generate_pdd_draft') AND mode = 'confirm')
+    );
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | unexpected policy mode(s) for the 0031 tools: %', bad;
+  END IF;
+
+  SELECT skills, planned_skills INTO rebeka_skills, rebeka_planned FROM mrv.agents WHERE agent_id = 'rebeka';
+  IF NOT (rebeka_skills @> ARRAY['kmz_preparation', 'additionality', 'pdd_generator']) THEN
+    RAISE EXCEPTION 'FAIL  | rebeka is missing a built 0031 skill: %', rebeka_skills;
+  END IF;
+  IF rebeka_planned && ARRAY['kmz_preparation', 'additionality', 'pdd_generator']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | rebeka still lists a built skill as planned: %', rebeka_planned;
+  END IF;
+
+  SELECT skills, planned_skills INTO dave_skills, dave_planned FROM mrv.agents WHERE agent_id = 'dave';
+  IF NOT (dave_skills @> ARRAY['stratification', 'baseline_definition', 'soc_datasheet']) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing a built 0031 skill: %', dave_skills;
+  END IF;
+  IF dave_planned && ARRAY['stratification', 'baseline_definition', 'soc_datasheet']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | dave still lists a built skill as planned: %', dave_planned;
+  END IF;
+  -- dndc/daycent must remain planned — no fabricated "built" skill for a
+  -- model this repo never had access to.
+  IF NOT (dave_planned @> ARRAY['dndc', 'daycent']) THEN
+    RAISE EXCEPTION 'FAIL  | dave should still have dndc and daycent as planned (unbuilt): %', dave_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0031: kmz/additionality/pdd_generator built for rebeka, stratification/baseline_definition/soc_datasheet built for dave, dndc/daycent still planned';
 END $$;
 
 -- ---------------------------------------------------------------------

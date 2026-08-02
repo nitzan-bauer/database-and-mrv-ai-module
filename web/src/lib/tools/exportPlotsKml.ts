@@ -1,5 +1,6 @@
 import "server-only";
 import { audit, checkPolicy, fail, ok, requireDbMode, type ToolContext, type ToolResult } from "./context";
+import { buildFarmKml } from "../kml/buildFarmKml";
 
 export interface KmlExport {
   farmId: string;
@@ -8,9 +9,6 @@ export interface KmlExport {
   skipped: Array<{ plotId: string; plotName: string }>;
   kml: string;
 }
-
-const escapeXml = (s: string): string =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
  * KML for every plot on a farm — Rebeka's own line: "prepare the KMZ/KML
@@ -41,49 +39,15 @@ export async function exportPlotsKml(
 
   const { query } = await import("../db");
 
-  const farms = await query<{ name: string }>(`SELECT name FROM mrv.farms WHERE farm_id = $1`, [
-    input.farmId,
-  ]);
-  if (!farms.length) return fail("exportPlotsKml: no such farm.");
-  const farmName = farms[0].name;
-
-  const all = await query<{ plot_id: string; name: string; is_valid: boolean; kml: string | null }>(
-    `SELECT plot_id, name, ST_IsValid(geom) AS is_valid,
-            CASE WHEN ST_IsValid(geom) THEN ST_AsKML(geom) END AS kml
-       FROM mrv.plots WHERE farm_id = $1 ORDER BY plot_id`,
-    [input.farmId],
-  );
-  if (!all.length) return fail("exportPlotsKml: this farm has no plots.");
-
-  const exportable = all.filter((p) => p.is_valid && p.kml);
-  const skipped = all.filter((p) => !p.is_valid).map((p) => ({ plotId: p.plot_id, plotName: p.name }));
-  if (!exportable.length) {
-    return fail(
-      "exportPlotsKml: none of this farm's plots have a valid geometry to export. " +
-        "Run plot QA/QC and fix the boundaries first.",
-    );
-  }
-
-  const placemarks = exportable
-    .map(
-      (p) =>
-        `  <Placemark><name>${escapeXml(p.name)}</name>` +
-        `<ExtendedData><Data name="plot_id"><value>${escapeXml(p.plot_id)}</value></Data></ExtendedData>` +
-        `${p.kml}</Placemark>`,
-    )
-    .join("\n");
-
-  const kml =
-    `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${escapeXml(farmName)}</name>\n` +
-    `${placemarks}\n` +
-    `</Document></kml>\n`;
+  const built = await buildFarmKml(query, input.farmId);
+  if (!built.ok) return fail(`exportPlotsKml: ${built.error}`);
+  const { farmName, plotCount, skipped, kml } = built.data;
 
   await audit(ctx, "export_plots_kml", { type: "farm", id: input.farmId }, {
     farmName,
-    plotCount: exportable.length,
+    plotCount,
     skipped: skipped.map((s) => s.plotId),
   });
 
-  return ok({ farmId: input.farmId, farmName, plotCount: exportable.length, skipped, kml });
+  return ok({ farmId: input.farmId, farmName, plotCount, skipped, kml });
 }

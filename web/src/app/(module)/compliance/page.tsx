@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import {
   getLatestCompliance,
+  listAdditionalityAssessments,
   listBaselineSites,
   listFarms,
   listPlans,
@@ -16,7 +17,11 @@ import {
 } from "@/lib/compliance/evaluate";
 import { ComplianceView } from "@/components/compliance/ComplianceView";
 import { BaselineSiteForm } from "@/components/compliance/BaselineSiteForm";
+import { AdditionalityForm } from "@/components/compliance/AdditionalityForm";
+import { KmzDownloadButton } from "@/components/compliance/KmzDownloadButton";
 import type { RecordedBaselineSite, SimilarityCriterion } from "@/lib/tools/recordBaselineSite";
+import type { Barrier, RecordedAdditionality } from "@/lib/tools/recordAdditionalityAssessment";
+import type { KmzExport } from "@/lib/tools/exportPlotsKmz";
 import type { ToolResult } from "@/lib/tools/context";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +41,31 @@ async function recordBaselineSiteAction(input: {
   const session = await auth().catch(() => null);
   const { recordBaselineSite } = await import("@/lib/tools/recordBaselineSite");
   return recordBaselineSite({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
+
+/** Record a VM0042 §7 additionality assessment as the signed-in person. */
+async function recordAdditionalityAssessmentAction(input: {
+  projectId: string;
+  regulatorySurplusMet: boolean;
+  regulatorySurplusNote: string;
+  barriers: Barrier[];
+  commonPracticeRegion: string;
+  commonPracticeAdoptionPct: number | null;
+  step4cDemonstrated?: boolean;
+  step4cNote?: string;
+}): Promise<ToolResult<RecordedAdditionality>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { recordAdditionalityAssessment } = await import("@/lib/tools/recordAdditionalityAssessment");
+  return recordAdditionalityAssessment({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
+
+/** Export a farm's plot boundaries as a KMZ, confirmed by the signed-in person. */
+async function exportPlotsKmzAction(input: { farmId: string }): Promise<ToolResult<KmzExport>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { exportPlotsKmz } = await import("@/lib/tools/exportPlotsKmz");
+  return exportPlotsKmz({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
 }
 
 /** How each rule is labelled when the row comes from the database. */
@@ -147,6 +177,7 @@ export default async function CompliancePage({
 
   const baselineSites = DATA_MODE === "db" ? await listBaselineSites(active.farmId) : [];
   const plots = DATA_MODE === "db" ? await listPlots(active.farmId) : [];
+  const additionality = DATA_MODE === "db" ? await listAdditionalityAssessments(project.projectId) : [];
 
   return (
     <div className="space-y-5">
@@ -188,9 +219,12 @@ export default async function CompliancePage({
 
       {DATA_MODE === "db" && (
         <section>
-          <h2 className="mb-1 text-base font-bold text-pine-700">
-            Baseline control sites — {active.name}
-          </h2>
+          <div className="mb-1 flex items-center justify-between">
+            <h2 className="text-base font-bold text-pine-700">
+              Baseline control sites — {active.name}
+            </h2>
+            <KmzDownloadButton farmId={active.farmId} action={exportPlotsKmzAction} />
+          </div>
           <p className="mb-3 max-w-3xl text-[13px] text-muted">
             QA2_3_CONTROL_SITES needs at least 3, each within 250 km. Area and distance are computed
             from the boundary you enter, not typed in.
@@ -223,6 +257,48 @@ export default async function CompliancePage({
             plots={plots.map((p) => ({ plotId: p.plotId, name: p.name }))}
             action={recordBaselineSiteAction}
           />
+        </section>
+      )}
+
+      {DATA_MODE === "db" && (
+        <section>
+          <h2 className="mb-1 text-base font-bold text-pine-700">
+            Additionality — {project.name}
+          </h2>
+          <p className="mb-3 max-w-3xl text-[13px] text-muted">
+            VM0042 v2.2 §7&apos;s three steps: regulatory surplus, a barrier analysis, and the common-
+            practice test (below 20% adoption passes on its own; at or above, Step 4c must be shown).
+            This is per-project, not per-farm.
+          </p>
+          {additionality.length > 0 && (
+            <div className="mb-3 overflow-hidden rounded-xl border border-line bg-white">
+              {additionality.map((a, i) => (
+                <div
+                  key={a.assessmentId}
+                  className={"px-4 py-2.5 " + (i > 0 ? "border-t border-line" : "")}
+                >
+                  <div className="flex items-baseline gap-3">
+                    <span
+                      className={
+                        "w-32 shrink-0 text-[12px] font-bold " +
+                        (a.overallMet ? "text-sage-700" : "text-earth-600")
+                      }
+                    >
+                      {a.overallMet ? "demonstrated" : "not demonstrated"}
+                    </span>
+                    <span className="text-[11.5px] text-faint">
+                      regulatory surplus {a.regulatorySurplusMet ? "met" : "not met"} ·{" "}
+                      {a.barriers.length} barrier(s) · common practice{" "}
+                      {a.commonPracticeMet ? "passes" : "does not pass"} ({a.commonPracticeRegion}
+                      {a.commonPracticeAdoptionPct != null ? `, ${a.commonPracticeAdoptionPct}%` : ""}) ·{" "}
+                      {new Date(a.assessedAt).toLocaleDateString("en-GB")}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <AdditionalityForm projectId={project.projectId} action={recordAdditionalityAssessmentAction} />
         </section>
       )}
     </div>

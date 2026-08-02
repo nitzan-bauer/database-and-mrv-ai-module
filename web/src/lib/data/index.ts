@@ -1,6 +1,7 @@
 import "server-only";
 import { DATA_MODE } from "../env";
 import type {
+  AdditionalityAssessment,
   BaselineSite,
   ClimateZone,
   Farm,
@@ -10,6 +11,7 @@ import type {
   PlotDetail,
   Project,
   SampleRow,
+  PddDraft,
   SamplingPlan,
   SamplingPoint,
   WorkOrder,
@@ -843,6 +845,62 @@ export async function listFertilizers(): Promise<
     `SELECT name, n_content, class::text FROM mrv.fertilizers ORDER BY name`,
   );
   return rows.map((r) => ({ name: r.name, nContent: Number(r.n_content), class: r.class }));
+}
+
+/** A project's recorded VM0042 §7 additionality assessments, newest first. */
+export async function listAdditionalityAssessments(projectId: string): Promise<AdditionalityAssessment[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT assessment_id, regulatory_surplus_met, regulatory_surplus_note, barriers,
+            common_practice_region, common_practice_adoption_pct, step4c_demonstrated, step4c_note,
+            assessed_by, assessed_at
+       FROM mrv.additionality_assessments WHERE project_id = $1 ORDER BY assessed_at DESC`,
+    [projectId],
+  );
+  return rows.map((r) => {
+    const adoptionPct = r.common_practice_adoption_pct == null ? null : Number(r.common_practice_adoption_pct);
+    const step4c = Boolean(r.step4c_demonstrated);
+    const commonPracticeMet = adoptionPct != null && adoptionPct < 20 ? true : step4c;
+    const barriers = (r.barriers ?? []) as AdditionalityAssessment["barriers"];
+    return {
+      assessmentId: String(r.assessment_id),
+      regulatorySurplusMet: Boolean(r.regulatory_surplus_met),
+      regulatorySurplusNote: String(r.regulatory_surplus_note),
+      barriers,
+      commonPracticeRegion: String(r.common_practice_region),
+      commonPracticeAdoptionPct: adoptionPct,
+      step4cDemonstrated: step4c,
+      step4cNote: r.step4c_note ? String(r.step4c_note) : null,
+      commonPracticeMet,
+      overallMet: Boolean(r.regulatory_surplus_met) && barriers.length > 0 && commonPracticeMet,
+      assessedBy: String(r.assessed_by),
+      assessedAt: new Date(String(r.assessed_at)).toISOString(),
+    };
+  });
+}
+
+/** A project's generated PDD drafts, newest first. */
+export async function listPddDrafts(projectId: string): Promise<PddDraft[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT d.draft_id, t.name AS template_name, t.version AS template_version,
+            d.sections_total, d.sections_filled, d.content, d.generated_by, d.generated_at
+       FROM mrv.pdd_drafts d JOIN mrv.pdd_templates t ON t.template_id = d.template_id
+      WHERE d.project_id = $1 ORDER BY d.generated_at DESC`,
+    [projectId],
+  );
+  return rows.map((r) => ({
+    draftId: String(r.draft_id),
+    templateName: String(r.template_name),
+    templateVersion: String(r.template_version),
+    sectionsTotal: Number(r.sections_total),
+    sectionsFilled: Number(r.sections_filled),
+    content: String(r.content),
+    generatedBy: String(r.generated_by),
+    generatedAt: new Date(String(r.generated_at)).toISOString(),
+  }));
 }
 
 /** A farm's recorded QA2 baseline control sites. */

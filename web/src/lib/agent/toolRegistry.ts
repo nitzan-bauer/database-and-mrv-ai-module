@@ -8,6 +8,9 @@ import { runPlotQaQc } from "../tools/runPlotQaQc";
 import { exportPlotsKml } from "../tools/exportPlotsKml";
 import { recordBaselineSite } from "../tools/recordBaselineSite";
 import { recordActivityData } from "../tools/recordActivityData";
+import { recordAdditionalityAssessment } from "../tools/recordAdditionalityAssessment";
+import { exportPlotsKmz } from "../tools/exportPlotsKmz";
+import { generatePddDraft } from "../tools/generatePddDraft";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -255,5 +258,77 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         nfixNContent: input.nfixNContent as number | undefined,
         fertilizers: (input.fertilizers ?? []) as never,
       }),
+  },
+
+  record_additionality_assessment: {
+    schema: {
+      name: "record_additionality_assessment",
+      description:
+        "Record a VM0042 v2.2 §7 additionality assessment for a project: regulatory surplus, " +
+        "the barrier analysis, and the common-practice test (adoption below 20% passes on its own; " +
+        "at or above 20%, or unknown, Step 4c must be separately demonstrated).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          regulatorySurplusMet: { type: "boolean" },
+          regulatorySurplusNote: { type: "string" },
+          barriers: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { name: { type: "string" }, description: { type: "string" } },
+              required: ["name", "description"],
+            },
+          },
+          commonPracticeRegion: { type: "string" },
+          commonPracticeAdoptionPct: { type: "number", description: "0-100, or omit if unknown." },
+          step4cDemonstrated: { type: "boolean" },
+          step4cNote: { type: "string" },
+        },
+        required: ["projectId", "regulatorySurplusMet", "regulatorySurplusNote", "barriers", "commonPracticeRegion"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordAdditionalityAssessment(ctx, {
+        projectId: String(input.projectId ?? ""),
+        regulatorySurplusMet: Boolean(input.regulatorySurplusMet),
+        regulatorySurplusNote: String(input.regulatorySurplusNote ?? ""),
+        barriers: (input.barriers ?? []) as never,
+        commonPracticeRegion: String(input.commonPracticeRegion ?? ""),
+        commonPracticeAdoptionPct:
+          input.commonPracticeAdoptionPct == null ? null : Number(input.commonPracticeAdoptionPct),
+        step4cDemonstrated: input.step4cDemonstrated as boolean | undefined,
+        step4cNote: input.step4cNote as string | undefined,
+      }),
+  },
+
+  export_plots_kmz: {
+    schema: {
+      name: "export_plots_kmz",
+      description: "Export a KMZ file for every valid plot boundary on a farm.",
+      inputSchema: {
+        type: "object",
+        properties: { farmId: { type: "string" } },
+        required: ["farmId"],
+      },
+    },
+    handler: (ctx, input) => exportPlotsKmz(ctx, { farmId: String(input.farmId ?? "") }),
+  },
+
+  generate_pdd_draft: {
+    schema: {
+      name: "generate_pdd_draft",
+      description:
+        "Assemble a PDD draft: the registered template's own section outline, plus an annex of " +
+        "real, verified project facts (farms, boundaries, baseline sites, additionality, compliance). " +
+        "No section content is invented — narrative sections are marked as needing a person.",
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) => generatePddDraft(ctx, { projectId: String(input.projectId ?? "") }),
   },
 };

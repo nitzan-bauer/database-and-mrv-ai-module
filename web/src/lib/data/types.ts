@@ -63,6 +63,34 @@ export interface FarmWithPlots extends Farm {
   plots: Plot[];
 }
 
+/** One VM0042 v2.2 §7 additionality assessment — mrv.additionality_assessments. */
+export interface AdditionalityAssessment {
+  assessmentId: string;
+  regulatorySurplusMet: boolean;
+  regulatorySurplusNote: string;
+  barriers: Array<{ name: string; description: string }>;
+  commonPracticeRegion: string;
+  commonPracticeAdoptionPct: number | null;
+  step4cDemonstrated: boolean;
+  step4cNote: string | null;
+  commonPracticeMet: boolean;
+  overallMet: boolean;
+  assessedBy: string;
+  assessedAt: string;
+}
+
+/** One generated PDD draft — mrv.pdd_drafts. */
+export interface PddDraft {
+  draftId: string;
+  templateName: string;
+  templateVersion: string;
+  sectionsTotal: number;
+  sectionsFilled: number;
+  content: string;
+  generatedBy: string;
+  generatedAt: string;
+}
+
 /** One VM0042 QA2 baseline control site — mrv.baseline_control_sites. */
 export interface BaselineSite {
   bslId: string;

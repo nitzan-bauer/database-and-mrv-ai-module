@@ -63,7 +63,10 @@ export type ActionName =
   | "run_plot_qa_qc"
   | "export_plots_kml"
   | "record_baseline_site"
-  | "record_activity_data";
+  | "record_activity_data"
+  | "record_additionality_assessment"
+  | "export_plots_kmz"
+  | "generate_pdd_draft";
 
 /**
  * Check the policy for an action and record the attempt.
