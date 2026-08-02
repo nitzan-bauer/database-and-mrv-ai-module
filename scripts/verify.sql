@@ -1186,9 +1186,13 @@ BEGIN
   END IF;
   RAISE NOTICE 'PASS  | every agent carries a role prompt';
 
-  -- Dave operates the Tier-1 module, so he must hold its tools.
+  -- Dave operates the Tier-1 module, so he must hold the tools that are
+  -- actually implemented. run_model is deliberately not among them — no
+  -- DNDC/DayCent integration exists yet — so it belongs in planned_tools,
+  -- checked separately below (migration 0029), not asserted here as if it
+  -- already worked.
   SELECT string_agg(t, ', ') INTO bad
-  FROM unnest(ARRAY['propose_sampling_plan','send_work_order','run_model']) t
+  FROM unnest(ARRAY['propose_sampling_plan','send_work_order']) t
   WHERE NOT (t = ANY (SELECT unnest(tools) FROM mrv.agents WHERE agent_id = 'dave'));
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'FAIL  | dave is missing tools he is defined to operate: %', bad;
