@@ -1,13 +1,46 @@
 import Link from "next/link";
-import { countActivityData, listFarms, listProjects } from "@/lib/data";
+import { auth } from "@/auth";
+import {
+  countActivityData,
+  listActivityData,
+  listFarms,
+  listFertilizers,
+  listProjects,
+} from "@/lib/data";
 import type { Farm } from "@/lib/data/types";
+import { DATA_MODE } from "@/lib/env";
 import { Card } from "@/components/ui/Card";
-import { DEMO_ACTIVITY_DATA } from "@/lib/data/fixtures";
 import { resolveParameters } from "@/lib/ghg/engine";
 import { computeReduction, explainFarmYear, explainParameters, GHG_TOOLS } from "@/lib/ghg/skill";
 import { GhgView } from "@/components/ghg/GhgView";
+import { ActivityDataForm } from "@/components/ghg/ActivityDataForm";
+import type { RecordedActivityData } from "@/lib/tools/recordActivityData";
+import type { ToolResult } from "@/lib/tools/context";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Record one farm/scenario/year of activity data as the signed-in person —
+ * the same recordActivityData tool an agent would call, run here under a
+ * human actor, which the policy gate always allows.
+ */
+async function recordActivityDataAction(input: {
+  farmId: string;
+  scenario: "BSL" | "PR" | "WP";
+  year: number;
+  areaHa: number;
+  dieselL?: number;
+  gasolineL?: number;
+  residueBurntKg?: number;
+  nfixDryMatterT?: number;
+  nfixNContent?: number;
+  fertilizers: Array<{ fertilizerName: string; massT: number; intervalYears?: number }>;
+}): Promise<ToolResult<RecordedActivityData>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { recordActivityData } = await import("@/lib/tools/recordActivityData");
+  return recordActivityData({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
 
 /**
  * GHG Calculator (spec AC#7) — emissions from fuel and nitrogen fertiliser
@@ -49,8 +82,16 @@ export default async function GhgPage({
   // inputs looks exactly like a real one. countActivityData returns -1 in
   // fixtures mode, where the demo set is the point.
   const activityCount = await countActivityData(active.farmId);
+  const fertilizers = DATA_MODE === "db" ? await listFertilizers() : [];
   if (activityCount === 0) {
-    return <NoActivityData farms={farms} active={active} />;
+    return (
+      <NoActivityData
+        farms={farms}
+        active={active}
+        fertilizers={fertilizers}
+        recordActivityDataAction={DATA_MODE === "db" ? recordActivityDataAction : undefined}
+      />
+    );
   }
 
   const p = resolveParameters(active.climateZone);
@@ -59,10 +100,10 @@ export default async function GhgPage({
   // property of the parameter set, because two farms in one climate zone
   // can and do irrigate differently.
   const irrigation = active.irrigationMethod;
-  const reduction = computeReduction(DEMO_ACTIVITY_DATA, p, irrigation, active.farmId);
-  const workingBsl = explainFarmYear(DEMO_ACTIVITY_DATA, p, irrigation, active.farmId, "BSL");
-  const workingPr = explainFarmYear(DEMO_ACTIVITY_DATA, p, irrigation, active.farmId, "PR");
-  const activity = DEMO_ACTIVITY_DATA.filter((a) => a.farmId === active.farmId);
+  const activity = await listActivityData(active.farmId);
+  const reduction = computeReduction(activity, p, irrigation, active.farmId);
+  const workingBsl = explainFarmYear(activity, p, irrigation, active.farmId, "BSL");
+  const workingPr = explainFarmYear(activity, p, irrigation, active.farmId, "PR");
 
   return (
     <div className="space-y-5">
@@ -89,6 +130,16 @@ export default async function GhgPage({
         workingPr={workingPr}
         tools={GHG_TOOLS}
       />
+      {DATA_MODE === "db" && (
+        <section>
+          <h2 className="mb-2 text-base font-bold text-pine-700">Add another farm-year</h2>
+          <ActivityDataForm
+            farmId={active.farmId}
+            fertilizers={fertilizers}
+            action={recordActivityDataAction}
+          />
+        </section>
+      )}
     </div>
   );
 }
@@ -184,7 +235,28 @@ function MissingContext({
  * fuel and fertiliser reads exactly like a real one, and this screen is the
  * kind a VVB gets shown.
  */
-function NoActivityData({ farms, active }: { farms: Farm[]; active: Farm }) {
+function NoActivityData({
+  farms,
+  active,
+  fertilizers,
+  recordActivityDataAction: action,
+}: {
+  farms: Farm[];
+  active: Farm;
+  fertilizers: Array<{ name: string; nContent: number; class: string }>;
+  recordActivityDataAction?: (input: {
+    farmId: string;
+    scenario: "BSL" | "PR" | "WP";
+    year: number;
+    areaHa: number;
+    dieselL?: number;
+    gasolineL?: number;
+    residueBurntKg?: number;
+    nfixDryMatterT?: number;
+    nfixNContent?: number;
+    fertilizers: Array<{ fertilizerName: string; massT: number; intervalYears?: number }>;
+  }) => Promise<ToolResult<RecordedActivityData>>;
+}) {
   return (
     <div className="space-y-5">
       <div>
@@ -229,6 +301,10 @@ function NoActivityData({ farms, active }: { farms: Farm[]; active: Farm }) {
           waiting on: mrv.activity_data and mrv.fertilizer_applications for this farm
         </p>
       </Card>
+
+      {action && (
+        <ActivityDataForm farmId={active.farmId} fertilizers={fertilizers} action={action} />
+      )}
     </div>
   );
 }

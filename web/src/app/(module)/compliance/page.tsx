@@ -1,4 +1,12 @@
-import { getLatestCompliance, listFarms, listPlans, listProjects } from "@/lib/data";
+import { auth } from "@/auth";
+import {
+  getLatestCompliance,
+  listBaselineSites,
+  listFarms,
+  listPlans,
+  listPlots,
+  listProjects,
+} from "@/lib/data";
 import { DEMO_PLOTS, DEMO_SAMPLING_POINTS, DEMO_SOC, DEMO_SAMPLES } from "@/lib/data/fixtures";
 import { DATA_MODE } from "@/lib/env";
 import {
@@ -7,8 +15,28 @@ import {
   type ComplianceScore,
 } from "@/lib/compliance/evaluate";
 import { ComplianceView } from "@/components/compliance/ComplianceView";
+import { BaselineSiteForm } from "@/components/compliance/BaselineSiteForm";
+import type { RecordedBaselineSite, SimilarityCriterion } from "@/lib/tools/recordBaselineSite";
+import type { ToolResult } from "@/lib/tools/context";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Record one baseline control site as the signed-in person — the same
+ * recordBaselineSite tool an agent would call, run here under a human
+ * actor, which the policy gate always allows.
+ */
+async function recordBaselineSiteAction(input: {
+  farmId: string;
+  geometry: string;
+  linkedPlotId?: string | null;
+  criteria: SimilarityCriterion[];
+}): Promise<ToolResult<RecordedBaselineSite>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { recordBaselineSite } = await import("@/lib/tools/recordBaselineSite");
+  return recordBaselineSite({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
 
 /** How each rule is labelled when the row comes from the database. */
 const RULE_LABELS: Record<string, { label: string; ref: string }> = {
@@ -117,6 +145,9 @@ export default async function CompliancePage({
       : "no cycle";
   }
 
+  const baselineSites = DATA_MODE === "db" ? await listBaselineSites(active.farmId) : [];
+  const plots = DATA_MODE === "db" ? await listPlots(active.farmId) : [];
+
   return (
     <div className="space-y-5">
       <div>
@@ -153,6 +184,46 @@ export default async function CompliancePage({
             the lab results, and the engine scores it.
           </p>
         </div>
+      )}
+
+      {DATA_MODE === "db" && (
+        <section>
+          <h2 className="mb-1 text-base font-bold text-pine-700">
+            Baseline control sites — {active.name}
+          </h2>
+          <p className="mb-3 max-w-3xl text-[13px] text-muted">
+            QA2_3_CONTROL_SITES needs at least 3, each within 250 km. Area and distance are computed
+            from the boundary you enter, not typed in.
+          </p>
+          {baselineSites.length > 0 && (
+            <div className="mb-3 overflow-hidden rounded-xl border border-line bg-white">
+              {baselineSites.map((s, i) => (
+                <div
+                  key={s.bslId}
+                  className={"flex items-baseline gap-3 px-4 py-2.5 " + (i > 0 ? "border-t border-line" : "")}
+                >
+                  <span className="w-24 shrink-0 font-mono text-[12px] font-semibold text-pine-700">
+                    {s.bslId}
+                  </span>
+                  <span className="w-20 shrink-0 text-right font-mono text-[12px] text-pine-700">
+                    {s.areaHa.toFixed(2)} ha
+                  </span>
+                  <span className="w-24 shrink-0 text-right font-mono text-[12px] text-pine-700">
+                    {s.distanceKm.toFixed(1)} km
+                  </span>
+                  <span className="text-[11.5px] text-faint">
+                    {s.criteria.filter((c) => c.met).length}/{s.criteria.length} criteria met
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <BaselineSiteForm
+            farmId={active.farmId}
+            plots={plots.map((p) => ({ plotId: p.plotId, name: p.name }))}
+            action={recordBaselineSiteAction}
+          />
+        </section>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import "server-only";
 import { DATA_MODE } from "../env";
 import type {
+  BaselineSite,
   ClimateZone,
   Farm,
   FarmWithPlots,
@@ -14,6 +15,7 @@ import type {
   WorkOrder,
   WorkOrderPoint,
 } from "./types";
+import type { ActivityData } from "../ghg/engine";
 import {
   DEMO_ACTIVITIES,
   DEMO_FARMS,
@@ -829,6 +831,102 @@ export async function countActivityData(farmId: string): Promise<number> {
     [farmId],
   );
   return Number(rows[0].n);
+}
+
+/** The fertilizer catalog (mrv.fertilizers) — what a farm's activity-data entry can be matched against. */
+export async function listFertilizers(): Promise<
+  Array<{ name: string; nContent: number; class: string }>
+> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<{ name: string; n_content: string; class: string }>(
+    `SELECT name, n_content, class::text FROM mrv.fertilizers ORDER BY name`,
+  );
+  return rows.map((r) => ({ name: r.name, nContent: Number(r.n_content), class: r.class }));
+}
+
+/** A farm's recorded QA2 baseline control sites. */
+export async function listBaselineSites(farmId: string): Promise<BaselineSite[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT bsl_id, farm_id, linked_plot_id, ST_AsGeoJSON(geom)::json AS geom,
+            area_ha, distance_km, similarity_criteria, created_at
+       FROM mrv.baseline_control_sites WHERE farm_id = $1 ORDER BY bsl_id`,
+    [farmId],
+  );
+  return rows.map((r) => ({
+    bslId: String(r.bsl_id),
+    farmId: String(r.farm_id),
+    linkedPlotId: r.linked_plot_id ? String(r.linked_plot_id) : null,
+    geom: r.geom as BaselineSite["geom"],
+    areaHa: Number(r.area_ha),
+    distanceKm: Number(r.distance_km),
+    criteria: (r.similarity_criteria ?? []) as BaselineSite["criteria"],
+    createdAt: new Date(String(r.created_at)).toISOString(),
+  }));
+}
+
+/**
+ * A farm's real GHG activity data — fuel, residue, N-fixing crops, and
+ * fertilizer applications — shaped exactly like the engine's own
+ * ActivityData, so the GHG page can hand it straight to computeReduction /
+ * explainFarmYear with no translation step of its own.
+ *
+ * mrv.fertilizer_class carries three values because the catalog
+ * distinguishes urea from other synthetics for other reasons; the engine's
+ * N2O math only branches on synthetic vs organic (VM0042 eq 18-23 apply
+ * FRAC_GASF to any synthetic and FRAC_GASM to organic, regardless of which
+ * synthetic fertilizer it is), so both synthetic variants collapse to
+ * "synthetic" here.
+ */
+export async function listActivityData(farmId: string): Promise<ActivityData[]> {
+  if (DATA_MODE === "fixtures") {
+    const { DEMO_ACTIVITY_DATA } = await import("./fixtures");
+    return DEMO_ACTIVITY_DATA.filter((a) => a.farmId === farmId);
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT activity_data_id, scenario::text, year, area_ha, diesel_l, gasoline_l,
+            residue_burnt_kg, nfix_dry_matter_t, nfix_n_content
+       FROM mrv.activity_data
+      WHERE farm_id = $1 AND scenario IN ('BSL','PR')
+      ORDER BY year`,
+    [farmId],
+  );
+  const out: ActivityData[] = [];
+  for (const r of rows) {
+    const ferts = await query<{
+      fertilizer_name: string;
+      mass_t: string;
+      n_content: string;
+      class: string;
+      interval_years: number;
+    }>(
+      `SELECT fertilizer_name, mass_t, n_content, class::text, interval_years
+         FROM mrv.fertilizer_applications WHERE activity_data_id = $1 ORDER BY application_id`,
+      [r.activity_data_id],
+    );
+    out.push({
+      farmId,
+      scenario: r.scenario as "BSL" | "PR",
+      year: Number(r.year),
+      areaHa: Number(r.area_ha),
+      dieselL: Number(r.diesel_l),
+      gasolineL: Number(r.gasoline_l),
+      residueBurntKg: Number(r.residue_burnt_kg),
+      nfixDryMatterT: Number(r.nfix_dry_matter_t),
+      nfixNContent: Number(r.nfix_n_content),
+      fertilizers: ferts.map((f) => ({
+        fertilizerName: f.fertilizer_name,
+        massT: Number(f.mass_t),
+        nContent: Number(f.n_content),
+        class: f.class === "organic" ? "organic" : "synthetic",
+        intervalYears: Number(f.interval_years),
+      })),
+    });
+  }
+  return out;
 }
 
 /** Whether any QA1 model run exists — drives the Model Run Console's honesty. */

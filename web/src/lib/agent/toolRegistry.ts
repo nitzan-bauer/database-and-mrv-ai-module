@@ -6,6 +6,8 @@ import { issueWorkOrder } from "../tools/issueWorkOrder";
 import { registerPddTemplate } from "../tools/registerPddTemplate";
 import { runPlotQaQc } from "../tools/runPlotQaQc";
 import { exportPlotsKml } from "../tools/exportPlotsKml";
+import { recordBaselineSite } from "../tools/recordBaselineSite";
+import { recordActivityData } from "../tools/recordActivityData";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -14,7 +16,7 @@ import type { ToolSchema } from "./provider";
  * tool invocation.
  *
  * Deliberately not every action in mrv.agent_action_policies — only the
- * five with a handler behind them. An agent's `tools` array is the other
+ * ones with a handler behind them. An agent's `tools` array is the other
  * half of the gate: the runtime offers a model only the schemas for
  * actions that agent holds, so this registry existing is not itself
  * permission to call anything.
@@ -165,5 +167,93 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       },
     },
     handler: (ctx, input) => exportPlotsKml(ctx, { farmId: String(input.farmId ?? "") }),
+  },
+
+  record_baseline_site: {
+    schema: {
+      name: "record_baseline_site",
+      description:
+        "Record one VM0042 QA2 baseline control site for a farm: a boundary (GeoJSON or WKT), " +
+        "which similarity criteria were assessed, and whether each was met. Area and the distance " +
+        "to the farm's nearest plot are computed from the geometry, not supplied.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          geometry: { type: "string", description: "GeoJSON Polygon (as a JSON string) or WKT POLYGON(...)." },
+          linkedPlotId: { type: "string", description: "Optional — the plot this site is a control for." },
+          criteria: {
+            type: "array",
+            description: "Whichever VM0042 Table 7 similarity criteria have actually been assessed.",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                met: { type: "boolean" },
+                note: { type: "string" },
+              },
+              required: ["name", "met"],
+            },
+          },
+        },
+        required: ["farmId", "geometry", "criteria"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordBaselineSite(ctx, {
+        farmId: String(input.farmId ?? ""),
+        geometry: input.geometry as string,
+        linkedPlotId: (input.linkedPlotId as string | undefined) ?? null,
+        criteria: (input.criteria ?? []) as never,
+      }),
+  },
+
+  record_activity_data: {
+    schema: {
+      name: "record_activity_data",
+      description:
+        "Record one farm/scenario/year of GHG Calculator activity data: fuel use, residue burning, " +
+        "N-fixing cover crops, and fertilizer applications (matched against the fertilizer catalog by name).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          scenario: { type: "string", enum: ["BSL", "PR", "WP"] },
+          year: { type: "integer" },
+          areaHa: { type: "number" },
+          dieselL: { type: "number" },
+          gasolineL: { type: "number" },
+          residueBurntKg: { type: "number" },
+          nfixDryMatterT: { type: "number" },
+          nfixNContent: { type: "number", description: "Fraction 0-1." },
+          fertilizers: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                fertilizerName: { type: "string", description: "Must match the mrv.fertilizers catalog exactly." },
+                massT: { type: "number" },
+                intervalYears: { type: "integer", description: "Default 1." },
+              },
+              required: ["fertilizerName", "massT"],
+            },
+          },
+        },
+        required: ["farmId", "scenario", "year", "areaHa"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordActivityData(ctx, {
+        farmId: String(input.farmId ?? ""),
+        scenario: input.scenario as "BSL" | "PR" | "WP",
+        year: Number(input.year),
+        areaHa: Number(input.areaHa),
+        dieselL: input.dieselL as number | undefined,
+        gasolineL: input.gasolineL as number | undefined,
+        residueBurntKg: input.residueBurntKg as number | undefined,
+        nfixDryMatterT: input.nfixDryMatterT as number | undefined,
+        nfixNContent: input.nfixNContent as number | undefined,
+        fertilizers: (input.fertilizers ?? []) as never,
+      }),
   },
 };

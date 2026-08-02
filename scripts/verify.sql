@@ -89,14 +89,46 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | expected 3 machinery defaults, found %', n;
   END IF;
 
-  -- 6 from the original seed, plus register_pdd_template (0027) and
-  -- run_plot_qa_qc / export_plots_kml (0028), all for Rebeka.
+  -- 6 from the original seed, plus register_pdd_template (0027),
+  -- run_plot_qa_qc / export_plots_kml (0028) for Rebeka, and
+  -- record_baseline_site / record_activity_data (0030) for Dave.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 9 THEN
-    RAISE EXCEPTION 'FAIL  | expected 9 agent policies, found %', n;
+  IF n <> 11 THEN
+    RAISE EXCEPTION 'FAIL  | expected 11 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 9 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 11 policies)';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0030 — baseline control sites and activity data tools
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  mode1 text;
+  mode2 text;
+  dave_tools text[];
+  bsl_id text;
+BEGIN
+  SELECT mode::text INTO mode1 FROM mrv.agent_action_policies WHERE action_name = 'record_baseline_site';
+  SELECT mode::text INTO mode2 FROM mrv.agent_action_policies WHERE action_name = 'record_activity_data';
+  IF mode1 IS DISTINCT FROM 'auto' OR mode2 IS DISTINCT FROM 'auto' THEN
+    RAISE EXCEPTION 'FAIL  | record_baseline_site / record_activity_data must both be auto, found % / %', mode1, mode2;
+  END IF;
+
+  SELECT tools INTO dave_tools FROM mrv.agents WHERE agent_id = 'dave';
+  IF NOT ('record_baseline_site' = ANY(dave_tools)) OR NOT ('record_activity_data' = ANY(dave_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing record_baseline_site or record_activity_data: %', dave_tools;
+  END IF;
+
+  -- mrv.next_bsl_id() must produce the BSL-#### shape from a real sequence,
+  -- not a max()+1 that two concurrent inserts could collide on.
+  SELECT mrv.next_bsl_id() INTO bsl_id;
+  IF bsl_id !~ '^BSL-\d{4}$' THEN
+    RAISE EXCEPTION 'FAIL  | mrv.next_bsl_id() produced %, expected BSL-####', bsl_id;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0030: baseline/activity policies auto, dave holds both tools, next_bsl_id() shaped BSL-####';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1327,9 +1359,12 @@ DECLARE
 BEGIN
   -- Dave's tools must be exactly what has a real handler behind it —
   -- run_model, recalibrate_model and issue_alerts moved to planned_tools.
+  -- record_baseline_site / record_activity_data (0030) are appended after
+  -- the original three built tools, in the order the migration wrote them.
   PERFORM 1 FROM mrv.agents
    WHERE agent_id = 'dave'
-     AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat']
+     AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat',
+                        'record_baseline_site', 'record_activity_data']
      AND planned_tools = ARRAY['run_model', 'recalibrate_model', 'issue_alerts'];
   IF NOT FOUND THEN
     RAISE EXCEPTION 'FAIL  | dave''s tools/planned_tools split does not match what is actually implemented';

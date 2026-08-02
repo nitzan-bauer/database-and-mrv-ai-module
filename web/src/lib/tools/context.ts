@@ -61,7 +61,9 @@ export type ActionName =
   | "chat"
   | "register_pdd_template"
   | "run_plot_qa_qc"
-  | "export_plots_kml";
+  | "export_plots_kml"
+  | "record_baseline_site"
+  | "record_activity_data";
 
 /**
  * Check the policy for an action and record the attempt.

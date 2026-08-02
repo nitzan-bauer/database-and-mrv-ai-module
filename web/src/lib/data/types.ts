@@ -63,6 +63,18 @@ export interface FarmWithPlots extends Farm {
   plots: Plot[];
 }
 
+/** One VM0042 QA2 baseline control site — mrv.baseline_control_sites. */
+export interface BaselineSite {
+  bslId: string;
+  farmId: string;
+  linkedPlotId: string | null;
+  geom: PolygonGeoJSON;
+  areaHa: number;
+  distanceKm: number;
+  criteria: Array<{ name: string; met: boolean; note?: string }>;
+  createdAt: string;
+}
+
 /** mrv.point_status */
 export type PointStatus = "planned" | "sampled" | "lab_pending" | "complete";
 /** mrv.sample_scenario */
