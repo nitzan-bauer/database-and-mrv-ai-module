@@ -1,5 +1,7 @@
+import { auth } from "@/auth";
 import { creditPipeline, listAgents, listAuditLog, listProjects, pddReadiness } from "@/lib/data";
 import { DATA_MODE } from "@/lib/env";
+import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
 import { AgentOrgChart } from "@/components/agents/AgentOrgChart";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +49,8 @@ export default async function AgentsPage() {
   const agentActions = audit.filter((e) => actorIds.has(e.actor)).slice(0, 12);
   const byActor = new Map(agents.map((a) => [a.actorId, a]));
 
+  const hasModelKey = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+
   // Connections are reported as they actually are. The database is reachable
   // — this page just read it — and nothing else has been wired yet.
   const dbConn = {
@@ -62,14 +66,27 @@ export default async function AgentsPage() {
           a.tools.length ? dbConn : { ...dbConn, detail: "read only — no tools held" },
           { name: "Verra registry account", status: "not configured" as const, detail: "no credentials" },
           { name: "Mailboxes", status: "not configured" as const, detail: "no mail integration" },
-          {
-            name: "Model runtime",
-            status: "not configured" as const,
-            detail: "no model API key",
-          },
+          hasModelKey
+            ? { name: "Model runtime", status: "connected" as const, detail: process.env.AGENT_MODEL_ID?.trim() || "claude-sonnet-5" }
+            : { name: "Model runtime", status: "not configured" as const, detail: "no ANTHROPIC_API_KEY" },
         ],
       ]),
     );
+
+  /**
+   * Ask an agent to do something, through the same runtime a real
+   * deployment would use. Without ANTHROPIC_API_KEY this honestly
+   * returns "no model configured" rather than a scripted imitation of
+   * reasoning — the same rule this build applies to every other screen
+   * that would otherwise show a plausible number standing in for a real
+   * one.
+   */
+  async function askAgent(agentId: string, task: string): Promise<AgentTaskResult> {
+    "use server";
+    const session = await auth().catch(() => null);
+    const { runAgentTask } = await import("@/lib/agent/runAgentTask");
+    return runAgentTask(agentId, task, { requestedBy: session?.user?.email ?? "unknown" });
+  }
 
   const totalBuilt = agents.reduce((n, a) => n + a.skills.length + a.tools.length, 0);
   const totalPlanned = agents.reduce(
@@ -92,7 +109,7 @@ export default async function AgentsPage() {
 
       <section>
         <h2 className="mb-3 text-base font-bold text-pine-700">The department</h2>
-        <AgentOrgChart agents={agents} connections={connections} />
+        <AgentOrgChart agents={agents} connections={connections} askAgent={askAgent} />
       </section>
 
       <section>

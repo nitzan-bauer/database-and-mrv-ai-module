@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import type { AgentRecord } from "@/lib/data";
+import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
 
 /** External systems each agent is defined to reach, and whether it is wired. */
 interface Connection {
@@ -28,9 +29,11 @@ interface Connection {
 export function AgentOrgChart({
   agents,
   connections,
+  askAgent,
 }: {
   agents: AgentRecord[];
   connections: Record<string, Connection[]>;
+  askAgent?: (agentId: string, task: string) => Promise<AgentTaskResult>;
 }) {
   const [open, setOpen] = useState<AgentRecord | null>(null);
 
@@ -59,7 +62,14 @@ export function AgentOrgChart({
         not the specification target &nbsp;·&nbsp; click an agent for its prompt, tools and skills
       </p>
 
-      {open && <AgentModal agent={open} connections={connections[open.agentId] ?? []} onClose={() => setOpen(null)} />}
+      {open && (
+        <AgentModal
+          agent={open}
+          connections={connections[open.agentId] ?? []}
+          askAgent={askAgent}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </div>
   );
 }
@@ -139,14 +149,16 @@ function AgentBlock({
   );
 }
 
-/** The three sections the specification asks for: prompt, tools, skills. */
+/** The three sections the specification asks for — prompt, tools, skills — plus a fourth: actually asking it something. */
 function AgentModal({
   agent,
   connections,
+  askAgent,
   onClose,
 }: {
   agent: AgentRecord;
   connections: Connection[];
+  askAgent?: (agentId: string, task: string) => Promise<AgentTaskResult>;
   onClose: () => void;
 }) {
   return (
@@ -262,8 +274,87 @@ function AgentModal({
               action, in the agent policy table.
             </p>
           </section>
+
+          {askAgent && <AskAgentPanel agent={agent} askAgent={askAgent} />}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A real call through the runtime, not a scripted demo of one. Whatever
+ * comes back is exactly what a deployment with the current configuration
+ * would produce — including, right now, an honest "no model configured"
+ * when there is no API key, rather than a canned response standing in
+ * for reasoning that did not happen.
+ */
+function AskAgentPanel({
+  agent,
+  askAgent,
+}: {
+  agent: AgentRecord;
+  askAgent: (agentId: string, task: string) => Promise<AgentTaskResult>;
+}) {
+  const [task, setTask] = useState("");
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<AgentTaskResult | null>(null);
+
+  return (
+    <section>
+      <h3 className="text-[12px] font-bold uppercase tracking-wide text-muted">
+        d · Ask {agent.displayName}
+      </h3>
+      <p className="mt-1 text-[11.5px] text-faint">
+        Runs the real turn: {agent.displayName}&apos;s own prompt, restricted to the {agent.tools.length}{" "}
+        tool{agent.tools.length === 1 ? "" : "s"} listed above, whatever model provider this
+        deployment is actually configured with.
+      </p>
+
+      <textarea
+        value={task}
+        onChange={(e) => setTask(e.target.value)}
+        placeholder={`e.g. "Run boundary QA/QC on Elad Farm"`}
+        rows={2}
+        className="mt-2 w-full rounded-lg border border-line bg-white p-2 text-[12.5px]"
+      />
+      <button
+        type="button"
+        disabled={!task.trim() || pending}
+        onClick={() =>
+          start(async () => {
+            setResult(await askAgent(agent.agentId, task.trim()));
+          })
+        }
+        className="mt-2 rounded-lg bg-pine-600 px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-pine-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {pending ? "Asking…" : "Ask"}
+      </button>
+
+      {result && (
+        <div className="mt-3 rounded-lg border border-line bg-cream p-3 text-[12px]">
+          <p className="font-mono text-[10px] text-faint">provider: {result.providerId}</p>
+          {result.outcome.kind === "text" && <p className="mt-1 text-pine-700">{result.outcome.text}</p>}
+          {result.outcome.kind === "executed" && (
+            <>
+              <p className="mt-1 font-semibold text-sage-700">
+                executed {result.outcome.action}
+              </p>
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[10.5px] text-pine-700">
+                {JSON.stringify(result.outcome.result, null, 2)}
+              </pre>
+            </>
+          )}
+          {result.outcome.kind === "needs_confirmation" && (
+            <p className="mt-1 text-earth-600">
+              held for approval — {result.outcome.action}: {result.outcome.reason}
+            </p>
+          )}
+          {result.outcome.kind === "error" && (
+            <p className="mt-1 text-danger">{result.outcome.message}</p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
