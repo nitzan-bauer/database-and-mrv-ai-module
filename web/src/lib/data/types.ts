@@ -34,6 +34,8 @@ export interface Farm {
   irrigationMethod: IrrigationMethod | null;
   status: string;
   isDemo: boolean;
+  /** The linked Google Drive folder holding this farm's documents, if any (mrv.farms.drive_folder_id). */
+  driveFolderId: string | null;
   /** derived */
   plotCount: number;
   totalAreaHa: number;

@@ -11,6 +11,9 @@ import { recordActivityData } from "../tools/recordActivityData";
 import { recordAdditionalityAssessment } from "../tools/recordAdditionalityAssessment";
 import { exportPlotsKmz } from "../tools/exportPlotsKmz";
 import { generatePddDraft } from "../tools/generatePddDraft";
+import { linkFarmDriveFolder } from "../tools/linkFarmDriveFolder";
+import { listFarmDriveDocuments } from "../tools/listFarmDriveDocuments";
+import { centralizeFarmDocument } from "../tools/centralizeFarmDocument";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -330,5 +333,62 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       },
     },
     handler: (ctx, input) => generatePddDraft(ctx, { projectId: String(input.projectId ?? "") }),
+  },
+
+  link_farm_drive_folder: {
+    schema: {
+      name: "link_farm_drive_folder",
+      description:
+        "Link a farm to the Google Drive folder that already holds its documents. The folder id " +
+        "must come from an existing folder a person has already found in Drive — never guessed.",
+      inputSchema: {
+        type: "object",
+        properties: { farmId: { type: "string" }, driveFolderId: { type: "string" } },
+        required: ["farmId", "driveFolderId"],
+      },
+    },
+    handler: (ctx, input) =>
+      linkFarmDriveFolder(ctx, {
+        farmId: String(input.farmId ?? ""),
+        driveFolderId: String(input.driveFolderId ?? ""),
+      }),
+  },
+
+  list_farm_drive_documents: {
+    schema: {
+      name: "list_farm_drive_documents",
+      description: "List the real, current files in a farm's linked Google Drive folder.",
+      inputSchema: {
+        type: "object",
+        properties: { farmId: { type: "string" } },
+        required: ["farmId"],
+      },
+    },
+    handler: (ctx, input) => listFarmDriveDocuments(ctx, { farmId: String(input.farmId ?? "") }),
+  },
+
+  centralize_farm_document: {
+    schema: {
+      name: "centralize_farm_document",
+      description:
+        "Push a document into a farm's linked Drive folder: its own KMZ export, a PDD draft " +
+        "already generated for its project, or a file already in hand (base64).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          source: {
+            type: "object",
+            description: "{type:'kmz'} | {type:'pdd_draft', draftId} | {type:'custom', fileName, mimeType, contentBase64}",
+          },
+        },
+        required: ["farmId", "source"],
+      },
+    },
+    handler: (ctx, input) =>
+      centralizeFarmDocument(ctx, {
+        farmId: String(input.farmId ?? ""),
+        source: input.source as never,
+      }),
   },
 };

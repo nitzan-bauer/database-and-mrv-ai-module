@@ -39,6 +39,14 @@ export interface ToolContext {
    * whose policy is 'confirm': it is the click, not a way around the rule.
    */
   confirmed?: boolean;
+  /**
+   * The signed-in person's Google OAuth access token, when their session
+   * granted the Drive scope (see auth.ts). Only ever present for a human
+   * actor calling a Drive tool through a server action — an agent has no
+   * browser session to draw one from, so Drive tools called by an agent
+   * fail cleanly rather than acting under someone else's identity.
+   */
+  googleAccessToken?: string;
 }
 
 export type ToolResult<T> =
@@ -66,7 +74,10 @@ export type ActionName =
   | "record_activity_data"
   | "record_additionality_assessment"
   | "export_plots_kmz"
-  | "generate_pdd_draft";
+  | "generate_pdd_draft"
+  | "link_farm_drive_folder"
+  | "list_farm_drive_documents"
+  | "centralize_farm_document";
 
 /**
  * Check the policy for an action and record the attempt.

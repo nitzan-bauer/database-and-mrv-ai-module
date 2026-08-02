@@ -75,6 +75,7 @@ export async function listFarms(projectId: string): Promise<Farm[]> {
   const rows = await query<Record<string, unknown>>(
     `SELECT f.farm_id, f.project_id, f.name, f.installation_code, f.operator,
             f.country, f.region, f.climate_zone, f.irrigation_method, f.status, f.is_demo,
+            f.drive_folder_id,
             count(p.plot_id)::int          AS plot_count,
             coalesce(sum(p.area_ha), 0)::float AS total_area_ha
        FROM mrv.farms f
@@ -373,6 +374,7 @@ export async function getPlotDetail(plotId: string): Promise<PlotDetail | null> 
   const farmRows = await query<Record<string, unknown>>(
     `SELECT f.farm_id, f.project_id, f.name, f.installation_code, f.operator,
             f.country, f.region, f.climate_zone, f.irrigation_method, f.status, f.is_demo,
+            f.drive_folder_id,
             count(p.plot_id)::int              AS plot_count,
             coalesce(sum(p.area_ha), 0)::float AS total_area_ha
        FROM mrv.farms f LEFT JOIN mrv.plots p ON p.farm_id = f.farm_id
@@ -577,6 +579,7 @@ function rowToFarm(r: Record<string, unknown>): Farm {
     irrigationMethod: (r.irrigation_method as Farm["irrigationMethod"]) ?? null,
     status: String(r.status ?? ""),
     isDemo: Boolean(r.is_demo),
+    driveFolderId: (r.drive_folder_id as string | null) ?? null,
     plotCount: Number(r.plot_count ?? 0),
     totalAreaHa: Number(r.total_area_ha ?? 0),
   };

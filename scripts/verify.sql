@@ -92,14 +92,16 @@ BEGIN
 
   -- 6 from the original seed, plus register_pdd_template (0027),
   -- run_plot_qa_qc / export_plots_kml (0028) for Rebeka, record_baseline_site
-  -- / record_activity_data (0030) for Dave, and record_additionality_assessment
-  -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka.
+  -- / record_activity_data (0030) for Dave, record_additionality_assessment
+  -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka, and
+  -- link_farm_drive_folder / list_farm_drive_documents / centralize_farm_document
+  -- (0032) for Jennifer.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 14 THEN
-    RAISE EXCEPTION 'FAIL  | expected 14 agent policies, found %', n;
+  IF n <> 17 THEN
+    RAISE EXCEPTION 'FAIL  | expected 17 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 14 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 17 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -180,6 +182,56 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0031: kmz/additionality/pdd_generator built for rebeka, stratification/baseline_definition/soc_datasheet built for dave, dndc/daycent still planned';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0032 — Jennifer's first real skill: document_centralisation, over
+-- Drive folders a person links by hand (never searched or created by
+-- guessing at folder structure).
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  bad text;
+  jennifer_tools text[];
+  jennifer_skills text[];
+  jennifer_planned text[];
+  col_type text;
+BEGIN
+  SELECT data_type INTO col_type FROM information_schema.columns
+   WHERE table_schema = 'mrv' AND table_name = 'farms' AND column_name = 'drive_folder_id';
+  IF col_type IS DISTINCT FROM 'text' THEN
+    RAISE EXCEPTION 'FAIL  | mrv.farms.drive_folder_id should be text, found %', col_type;
+  END IF;
+
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('link_farm_drive_folder', 'list_farm_drive_documents', 'centralize_farm_document')
+    AND NOT (
+      (action_name IN ('link_farm_drive_folder', 'list_farm_drive_documents') AND mode = 'auto') OR
+      (action_name = 'centralize_farm_document' AND mode = 'confirm')
+    );
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | unexpected policy mode(s) for the 0032 tools: %', bad;
+  END IF;
+
+  SELECT tools, skills, planned_skills INTO jennifer_tools, jennifer_skills, jennifer_planned
+    FROM mrv.agents WHERE agent_id = 'jennifer';
+  IF NOT (jennifer_tools @> ARRAY['link_farm_drive_folder', 'list_farm_drive_documents', 'centralize_farm_document']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing a 0032 tool: %', jennifer_tools;
+  END IF;
+  IF NOT (jennifer_skills @> ARRAY['document_centralisation']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing document_centralisation from skills: %', jennifer_skills;
+  END IF;
+  IF jennifer_planned && ARRAY['document_centralisation']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | jennifer still lists document_centralisation as planned: %', jennifer_planned;
+  END IF;
+  -- her other three stay planned — no CRM, calendar or board-protocol
+  -- integration exists yet.
+  IF NOT (jennifer_planned @> ARRAY['crm_hygiene', 'scheduling', 'board_protocol']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer should still have crm_hygiene/scheduling/board_protocol as planned: %', jennifer_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0032: mrv.farms.drive_folder_id present, jennifer holds document_centralisation, her other 3 skills stay planned';
 END $$;
 
 -- ---------------------------------------------------------------------
