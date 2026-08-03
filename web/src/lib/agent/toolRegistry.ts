@@ -24,6 +24,7 @@ import { recordMvrSignoff } from "../tools/recordMvrSignoff";
 import { checkCreditAllocation } from "../tools/checkCreditAllocation";
 import { recordAgentMemory } from "../tools/recordAgentMemory";
 import { recallAgentMemory } from "../tools/recallAgentMemory";
+import { fetchPublicUrl } from "../tools/fetchPublicUrl";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -615,6 +616,22 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         kind: input.kind as string | undefined,
         limit: input.limit as number | undefined,
       }),
+  },
+
+  fetch_public_url: {
+    schema: {
+      name: "fetch_public_url",
+      description:
+        "Fetch one public https:// URL and return its real, visible text — e.g. a Verra registry project page " +
+        "or a methodology update. Never a substitute for reading it: returns what the page actually says, " +
+        "truncated if long, not a summary invented from the URL alone.",
+      inputSchema: {
+        type: "object",
+        properties: { url: { type: "string" } },
+        required: ["url"],
+      },
+    },
+    handler: (ctx, input) => fetchPublicUrl(ctx, { url: String(input.url ?? "") }),
   },
 
   export_plots_kmz: {

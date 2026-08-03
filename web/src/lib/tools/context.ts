@@ -88,7 +88,8 @@ export type ActionName =
   | "record_mvr_signoff"
   | "credit_allocation_qa"
   | "record_agent_memory"
-  | "recall_agent_memory";
+  | "recall_agent_memory"
+  | "fetch_public_url";
 
 /**
  * Check the policy for an action and record the attempt.

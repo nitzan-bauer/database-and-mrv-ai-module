@@ -102,14 +102,15 @@ BEGIN
   -- record_grouped_project_design / record_public_comment (0035) for Rebeka,
   -- get_pipeline_status / get_department_report (0036) for John,
   -- ingest_model_results (0037) and record_mvr_signoff (0038) for Dave,
-  -- credit_allocation_qa (0039) for John, and record_agent_memory /
-  -- recall_agent_memory (0040), shared across all five agents.
+  -- credit_allocation_qa (0039) for John, record_agent_memory /
+  -- recall_agent_memory (0040) shared across all five agents, and
+  -- fetch_public_url (0041) for Rebeka and John.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 28 THEN
-    RAISE EXCEPTION 'FAIL  | expected 28 agent policies, found %', n;
+  IF n <> 29 THEN
+    RAISE EXCEPTION 'FAIL  | expected 29 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 28 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 29 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -375,10 +376,11 @@ BEGIN
   IF john_planned && ARRAY['pipeline_control', 'ceo_reporting']::text[] THEN
     RAISE EXCEPTION 'FAIL  | john still lists a 0036 skill as planned: %', john_planned;
   END IF;
-  -- credit_allocation_qa moved to built in 0039; forecast_vs_actual and
-  -- verra_benchmarking still have no real engine or data source.
-  IF NOT (john_planned @> ARRAY['forecast_vs_actual', 'verra_benchmarking']) THEN
-    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual/verra_benchmarking as planned: %', john_planned;
+  -- credit_allocation_qa moved to built in 0039, verra_benchmarking in
+  -- 0041; forecast_vs_actual still has no real "planned" figures recorded
+  -- anywhere to reconcile against.
+  IF NOT (john_planned @> ARRAY['forecast_vs_actual']) THEN
+    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual as planned: %', john_planned;
   END IF;
 
   RAISE NOTICE 'PASS  | 0036: pipeline_control/ceo_reporting auto and held by john';
@@ -471,11 +473,13 @@ BEGIN
   IF john_planned && ARRAY['credit_allocation_qa']::text[] THEN
     RAISE EXCEPTION 'FAIL  | john still lists credit_allocation_qa as planned: %', john_planned;
   END IF;
-  IF NOT (john_planned @> ARRAY['forecast_vs_actual', 'verra_benchmarking']) THEN
-    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual/verra_benchmarking as planned: %', john_planned;
+  -- verra_benchmarking moved to built in 0041; forecast_vs_actual is the
+  -- one still with no real "planned" figures recorded to reconcile against.
+  IF NOT (john_planned @> ARRAY['forecast_vs_actual']) THEN
+    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual as planned: %', john_planned;
   END IF;
 
-  RAISE NOTICE 'PASS  | 0039: credit_allocation_qa is auto and held by john, his other 2 skills stay planned';
+  RAISE NOTICE 'PASS  | 0039: credit_allocation_qa is auto and held by john, forecast_vs_actual stays planned';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -512,6 +516,42 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0040: mrv.agent_memory.embedding is vector(1024), record_agent_memory/recall_agent_memory auto and held by every agent';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0041 — fetch_public_url, and John's fourth skill: verra_benchmarking,
+-- built on the same real-fetch tool that also grounds Rebeka's
+-- pdd_generator registry-research claim.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  mode1 text;
+  john_skills text[];
+  john_planned text[];
+BEGIN
+  SELECT mode::text INTO mode1 FROM mrv.agent_action_policies WHERE action_name = 'fetch_public_url';
+  IF mode1 IS DISTINCT FROM 'auto' THEN
+    RAISE EXCEPTION 'FAIL  | fetch_public_url should be auto, found %', mode1;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM mrv.agents WHERE agent_id IN ('rebeka', 'john') AND NOT ('fetch_public_url' = ANY (tools))
+  ) THEN
+    RAISE EXCEPTION 'FAIL  | rebeka and john should both hold fetch_public_url';
+  END IF;
+
+  SELECT skills, planned_skills INTO john_skills, john_planned FROM mrv.agents WHERE agent_id = 'john';
+  IF NOT (john_skills @> ARRAY['verra_benchmarking']) THEN
+    RAISE EXCEPTION 'FAIL  | john is missing verra_benchmarking from skills: %', john_skills;
+  END IF;
+  IF john_planned && ARRAY['verra_benchmarking']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | john still lists verra_benchmarking as planned: %', john_planned;
+  END IF;
+  IF NOT (john_planned @> ARRAY['forecast_vs_actual']) THEN
+    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual as planned: %', john_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0041: fetch_public_url is auto and held by rebeka+john, verra_benchmarking built for john';
 END $$;
 
 -- ---------------------------------------------------------------------
