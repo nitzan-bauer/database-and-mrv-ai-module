@@ -91,7 +91,9 @@ export type ActionName =
   | "recall_agent_memory"
   | "fetch_public_url"
   | "record_vvb_finding"
-  | "resolve_vvb_finding";
+  | "resolve_vvb_finding"
+  | "record_pdd_forecast"
+  | "get_forecast_vs_actual";
 
 /**
  * Check the policy for an action and record the attempt.

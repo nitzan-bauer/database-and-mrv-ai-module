@@ -26,20 +26,21 @@ BEGIN
   -- plus mrv.agents (0024) and mrv.pdd_templates (0027) from Tier 2, plus
   -- mrv.additionality_assessments and mrv.pdd_drafts (0031), plus
   -- mrv.grouped_project_eligibility_areas, mrv.grouped_project_eligibility_criteria
-  -- and mrv.public_comments (0035), plus mrv.vvb_findings (0042).
+  -- and mrv.public_comments (0035), plus mrv.vvb_findings (0042), plus
+  -- mrv.pdd_forecast_vintages (0043).
   -- BASE TABLE only: information_schema.tables counts views too, and
   -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 49 THEN
-    RAISE EXCEPTION 'FAIL  | expected 49 base tables in mrv, found %', n;
+  IF n <> 50 THEN
+    RAISE EXCEPTION 'FAIL  | expected 50 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 49 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 50 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -104,14 +105,15 @@ BEGIN
   -- ingest_model_results (0037) and record_mvr_signoff (0038) for Dave,
   -- credit_allocation_qa (0039) for John, record_agent_memory /
   -- recall_agent_memory (0040) shared across all five agents,
-  -- fetch_public_url (0041) for Rebeka and John, and record_vvb_finding /
-  -- resolve_vvb_finding (0042) for Dave and Rebeka.
+  -- fetch_public_url (0041) for Rebeka and John, record_vvb_finding /
+  -- resolve_vvb_finding (0042) for Dave and Rebeka, and record_pdd_forecast
+  -- (0043) for Rebeka / get_forecast_vs_actual (0043) for John.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 31 THEN
-    RAISE EXCEPTION 'FAIL  | expected 31 agent policies, found %', n;
+  IF n <> 33 THEN
+    RAISE EXCEPTION 'FAIL  | expected 33 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 31 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 33 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -378,11 +380,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL  | john still lists a 0036 skill as planned: %', john_planned;
   END IF;
   -- credit_allocation_qa moved to built in 0039, verra_benchmarking in
-  -- 0041; forecast_vs_actual still has no real "planned" figures recorded
-  -- anywhere to reconcile against.
-  IF NOT (john_planned @> ARRAY['forecast_vs_actual']) THEN
-    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual as planned: %', john_planned;
-  END IF;
+  -- 0041, forecast_vs_actual in 0043 — this check no longer applies.
 
   RAISE NOTICE 'PASS  | 0036: pipeline_control/ceo_reporting auto and held by john';
 END $$;
@@ -474,13 +472,9 @@ BEGIN
   IF john_planned && ARRAY['credit_allocation_qa']::text[] THEN
     RAISE EXCEPTION 'FAIL  | john still lists credit_allocation_qa as planned: %', john_planned;
   END IF;
-  -- verra_benchmarking moved to built in 0041; forecast_vs_actual is the
-  -- one still with no real "planned" figures recorded to reconcile against.
-  IF NOT (john_planned @> ARRAY['forecast_vs_actual']) THEN
-    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual as planned: %', john_planned;
-  END IF;
+  -- verra_benchmarking moved to built in 0041, forecast_vs_actual in 0043.
 
-  RAISE NOTICE 'PASS  | 0039: credit_allocation_qa is auto and held by john, forecast_vs_actual stays planned';
+  RAISE NOTICE 'PASS  | 0039: credit_allocation_qa is auto and held by john';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -548,9 +542,7 @@ BEGIN
   IF john_planned && ARRAY['verra_benchmarking']::text[] THEN
     RAISE EXCEPTION 'FAIL  | john still lists verra_benchmarking as planned: %', john_planned;
   END IF;
-  IF NOT (john_planned @> ARRAY['forecast_vs_actual']) THEN
-    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual as planned: %', john_planned;
-  END IF;
+  -- forecast_vs_actual moved to built in 0043.
 
   RAISE NOTICE 'PASS  | 0041: fetch_public_url is auto and held by rebeka+john, verra_benchmarking built for john';
 END $$;
@@ -609,6 +601,50 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0042: record_vvb_finding/resolve_vvb_finding auto and held by dave+rebeka, vvb_liaison built for both, finding types match Verra''s template';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0043 — forecast_vs_actual: record_pdd_forecast (Rebeka) and
+-- get_forecast_vs_actual (John), over the PDD template's own
+-- "estimated net reductions and removals" table, captured as data for
+-- the first time.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  bad text;
+  rebeka_tools text[];
+  john_tools text[];
+  john_skills text[];
+  john_planned text[];
+BEGIN
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('record_pdd_forecast', 'get_forecast_vs_actual') AND mode <> 'auto';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | unexpected policy mode(s) for the 0043 tools: %', bad;
+  END IF;
+
+  SELECT tools INTO rebeka_tools FROM mrv.agents WHERE agent_id = 'rebeka';
+  IF NOT ('record_pdd_forecast' = ANY (rebeka_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | rebeka is missing record_pdd_forecast: %', rebeka_tools;
+  END IF;
+
+  SELECT tools, skills, planned_skills INTO john_tools, john_skills, john_planned
+    FROM mrv.agents WHERE agent_id = 'john';
+  IF NOT ('get_forecast_vs_actual' = ANY (john_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | john is missing get_forecast_vs_actual: %', john_tools;
+  END IF;
+  IF NOT (john_skills @> ARRAY['forecast_vs_actual']) THEN
+    RAISE EXCEPTION 'FAIL  | john is missing forecast_vs_actual from skills: %', john_skills;
+  END IF;
+  IF john_planned && ARRAY['forecast_vs_actual']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | john still lists forecast_vs_actual as planned: %', john_planned;
+  END IF;
+  IF john_planned <> ARRAY[]::text[] THEN
+    RAISE EXCEPTION 'FAIL  | john should have no planned skills left: %', john_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0043: record_pdd_forecast held by rebeka, get_forecast_vs_actual auto and held by john, forecast_vs_actual built (john has no planned skills left)';
 END $$;
 
 -- ---------------------------------------------------------------------

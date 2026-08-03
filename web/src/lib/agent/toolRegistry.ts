@@ -27,6 +27,8 @@ import { recallAgentMemory } from "../tools/recallAgentMemory";
 import { fetchPublicUrl } from "../tools/fetchPublicUrl";
 import { recordVvbFinding } from "../tools/recordVvbFinding";
 import { resolveVvbFinding } from "../tools/resolveVvbFinding";
+import { recordPddForecast } from "../tools/recordPddForecast";
+import { getForecastVsActual } from "../tools/getForecastVsActual";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -689,6 +691,48 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         response: String(input.response ?? ""),
         conclusion: String(input.conclusion ?? ""),
       }),
+  },
+
+  record_pdd_forecast: {
+    schema: {
+      name: "record_pdd_forecast",
+      description:
+        "Record one vintage period of the VCS PDD Template v5.0A's own 'estimated net reductions and removals' " +
+        "table — the PDD's declared forecast. Revisable: recording the same vintage again updates it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          vintageStart: { type: "string", description: "ISO date." },
+          vintageEnd: { type: "string", description: "ISO date." },
+          estimatedNetTco2e: { type: "number" },
+        },
+        required: ["projectId", "vintageStart", "vintageEnd", "estimatedNetTco2e"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordPddForecast(ctx, {
+        projectId: String(input.projectId ?? ""),
+        vintageStart: String(input.vintageStart ?? ""),
+        vintageEnd: String(input.vintageEnd ?? ""),
+        estimatedNetTco2e: Number(input.estimatedNetTco2e),
+      }),
+  },
+
+  get_forecast_vs_actual: {
+    schema: {
+      name: "get_forecast_vs_actual",
+      description:
+        "Reconcile the PDD's own declared forecast (per vintage) against real mrv.credits (issued/retired/sold) " +
+        "for the same vintage year — the same 'actual' standing credit_allocation_qa uses. Refuses if no " +
+        "forecast has been recorded yet.",
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) => getForecastVsActual(ctx, { projectId: String(input.projectId ?? "") }),
   },
 
   export_plots_kmz: {
