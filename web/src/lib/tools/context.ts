@@ -83,7 +83,8 @@ export type ActionName =
   | "record_grouped_project_design"
   | "record_public_comment"
   | "get_pipeline_status"
-  | "get_department_report";
+  | "get_department_report"
+  | "ingest_model_results";
 
 /**
  * Check the policy for an action and record the attempt.

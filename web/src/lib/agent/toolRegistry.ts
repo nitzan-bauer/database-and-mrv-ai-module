@@ -19,6 +19,7 @@ import { recordGroupedProjectDesign } from "../tools/recordGroupedProjectDesign"
 import { recordPublicComment } from "../tools/recordPublicComment";
 import { getPipelineStatus } from "../tools/getPipelineStatus";
 import { getDepartmentReport } from "../tools/getDepartmentReport";
+import { ingestModelResults } from "../tools/ingestModelResults";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -187,6 +188,66 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         farmId: String(input.farmId ?? ""),
         path: input.path as "analytical" | "monte_carlo" | undefined,
         degreesOfFreedom: input.degreesOfFreedom as number | undefined,
+      }),
+  },
+
+  ingest_model_results: {
+    schema: {
+      name: "ingest_model_results",
+      description:
+        "Ingest a DNDC/DayCent run that already happened outside this repo — never simulates or computes a " +
+        "stock-change figure itself, only records one a real external run produced. The model's own output " +
+        "file is required as source evidence. Every stratum in the rows must belong to this farm.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          cycleId: { type: "string" },
+          model: { type: "string", enum: ["DNDC", "DayCent"] },
+          modelVersion: { type: "string" },
+          parameterSet: { type: "string" },
+          runType: { type: "string", description: "e.g. 'baseline_init' | 'true_up' | 'verification' | 'recalibrate'." },
+          scenario: { type: "string", enum: ["baseline", "project", "paired"], description: "Defaults to 'paired'." },
+          periodStart: { type: "string", description: "ISO date." },
+          periodEnd: { type: "string", description: "ISO date." },
+          uncertaintyMethod: { type: "string", enum: ["analytical", "monte_carlo"] },
+          monteCarloIters: { type: "number" },
+          outputFileUrl: { type: "string", description: "The model's own output file — kept as source evidence." },
+          outputFileSha256: { type: "string" },
+          rows: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                stratumId: { type: "string" },
+                deltaSocWpTHa: { type: "number" },
+                deltaSocBslTHa: { type: "number" },
+                varModel: { type: "number" },
+                varSampling: { type: "number" },
+              },
+              required: ["stratumId"],
+            },
+          },
+        },
+        required: ["farmId", "model", "uncertaintyMethod", "outputFileUrl", "rows"],
+      },
+    },
+    handler: (ctx, input) =>
+      ingestModelResults(ctx, {
+        farmId: String(input.farmId ?? ""),
+        cycleId: input.cycleId as string | undefined,
+        model: input.model as "DNDC" | "DayCent",
+        modelVersion: input.modelVersion as string | undefined,
+        parameterSet: input.parameterSet as string | undefined,
+        runType: input.runType as string | undefined,
+        scenario: input.scenario as "baseline" | "project" | "paired" | undefined,
+        periodStart: input.periodStart as string | undefined,
+        periodEnd: input.periodEnd as string | undefined,
+        uncertaintyMethod: input.uncertaintyMethod as "analytical" | "monte_carlo",
+        monteCarloIters: input.monteCarloIters as number | undefined,
+        outputFileUrl: String(input.outputFileUrl ?? ""),
+        outputFileSha256: input.outputFileSha256 as string | undefined,
+        rows: (input.rows ?? []) as never,
       }),
   },
 

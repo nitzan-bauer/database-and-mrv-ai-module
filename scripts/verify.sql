@@ -99,14 +99,15 @@ BEGIN
   -- link_farm_drive_folder / list_farm_drive_documents / centralize_farm_document
   -- (0032), unlink_farm_drive_folder (0033) for Jennifer,
   -- compute_uncertainty_deduction (0034) for Dave,
-  -- record_grouped_project_design / record_public_comment (0035) for Rebeka, and
-  -- get_pipeline_status / get_department_report (0036) for John.
+  -- record_grouped_project_design / record_public_comment (0035) for Rebeka,
+  -- get_pipeline_status / get_department_report (0036) for John, and
+  -- ingest_model_results (0037) for Dave.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 23 THEN
-    RAISE EXCEPTION 'FAIL  | expected 23 agent policies, found %', n;
+  IF n <> 24 THEN
+    RAISE EXCEPTION 'FAIL  | expected 24 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 23 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 24 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -379,6 +380,32 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0036: pipeline_control/ceo_reporting auto and held by john, his other 3 skills stay planned';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0037 — Dave's ingest_model_results tool: records an external
+-- DNDC/DayCent run, never simulates one. dndc/daycent stay planned.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  mode1 text;
+  dave_tools text[];
+  dave_planned text[];
+BEGIN
+  SELECT mode::text INTO mode1 FROM mrv.agent_action_policies WHERE action_name = 'ingest_model_results';
+  IF mode1 IS DISTINCT FROM 'confirm' THEN
+    RAISE EXCEPTION 'FAIL  | ingest_model_results should be confirm, found %', mode1;
+  END IF;
+
+  SELECT tools, planned_skills INTO dave_tools, dave_planned FROM mrv.agents WHERE agent_id = 'dave';
+  IF NOT ('ingest_model_results' = ANY (dave_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing ingest_model_results: %', dave_tools;
+  END IF;
+  IF NOT (dave_planned @> ARRAY['dndc', 'daycent']) THEN
+    RAISE EXCEPTION 'FAIL  | dave should still have dndc and daycent as planned (unbuilt): %', dave_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0037: ingest_model_results is confirm and held by dave, dndc/daycent still planned';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1609,14 +1636,15 @@ DECLARE
 BEGIN
   -- Dave's tools must be exactly what has a real handler behind it —
   -- run_model, recalibrate_model and issue_alerts moved to planned_tools.
-  -- record_baseline_site / record_activity_data (0030) and
-  -- compute_uncertainty_deduction (0034) are appended after the original
-  -- three built tools, in the order each migration wrote them.
+  -- record_baseline_site / record_activity_data (0030),
+  -- compute_uncertainty_deduction (0034) and ingest_model_results (0037)
+  -- are appended after the original three built tools, in the order each
+  -- migration wrote them.
   PERFORM 1 FROM mrv.agents
    WHERE agent_id = 'dave'
      AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat',
                         'record_baseline_site', 'record_activity_data',
-                        'compute_uncertainty_deduction']
+                        'compute_uncertainty_deduction', 'ingest_model_results']
      AND planned_tools = ARRAY['run_model', 'recalibrate_model', 'issue_alerts'];
   IF NOT FOUND THEN
     RAISE EXCEPTION 'FAIL  | dave''s tools/planned_tools split does not match what is actually implemented';
