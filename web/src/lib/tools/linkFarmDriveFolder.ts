@@ -59,3 +59,34 @@ export async function linkFarmDriveFolder(
 
   return ok({ farmId: input.farmId, driveFolderId: input.driveFolderId.trim(), driveFolderName: verified.name });
 }
+
+/**
+ * Undo a link — for exactly the case that prompted building this: a folder
+ * was linked to prove the integration works, or simply to the wrong farm,
+ * and needs clearing before it misleads anyone browsing that farm's real
+ * documents later. Clears the mapping only; nothing in Drive is touched.
+ */
+export async function unlinkFarmDriveFolder(
+  ctx: ToolContext,
+  input: { farmId: string },
+): Promise<ToolResult<{ farmId: string }>> {
+  const guard = requireDbMode("unlinkFarmDriveFolder");
+  if (guard) return guard;
+
+  const policy = await checkPolicy("unlink_farm_drive_folder", ctx);
+  if (!policy.allowed) return fail(policy.reason!, true);
+
+  const { query } = await import("../db");
+  const farms = await query<{ n: string }>(`SELECT count(*)::text n FROM mrv.farms WHERE farm_id = $1`, [
+    input.farmId,
+  ]);
+  if (Number(farms[0].n) === 0) return fail("unlinkFarmDriveFolder: no such farm.");
+
+  await query(`UPDATE mrv.farms SET drive_folder_id = NULL, updated_at = now() WHERE farm_id = $1`, [
+    input.farmId,
+  ]);
+
+  await audit(ctx, "unlink_farm_drive_folder", { type: "farm", id: input.farmId }, {});
+
+  return ok({ farmId: input.farmId });
+}

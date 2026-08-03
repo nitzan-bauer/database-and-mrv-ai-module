@@ -11,7 +11,7 @@ import { recordActivityData } from "../tools/recordActivityData";
 import { recordAdditionalityAssessment } from "../tools/recordAdditionalityAssessment";
 import { exportPlotsKmz } from "../tools/exportPlotsKmz";
 import { generatePddDraft } from "../tools/generatePddDraft";
-import { linkFarmDriveFolder } from "../tools/linkFarmDriveFolder";
+import { linkFarmDriveFolder, unlinkFarmDriveFolder } from "../tools/linkFarmDriveFolder";
 import { listFarmDriveDocuments } from "../tools/listFarmDriveDocuments";
 import { centralizeFarmDocument } from "../tools/centralizeFarmDocument";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
@@ -352,6 +352,19 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         farmId: String(input.farmId ?? ""),
         driveFolderId: String(input.driveFolderId ?? ""),
       }),
+  },
+
+  unlink_farm_drive_folder: {
+    schema: {
+      name: "unlink_farm_drive_folder",
+      description: "Clear a farm's linked Drive folder mapping. Touches nothing in Drive itself.",
+      inputSchema: {
+        type: "object",
+        properties: { farmId: { type: "string" } },
+        required: ["farmId"],
+      },
+    },
+    handler: (ctx, input) => unlinkFarmDriveFolder(ctx, { farmId: String(input.farmId ?? "") }),
   },
 
   list_farm_drive_documents: {

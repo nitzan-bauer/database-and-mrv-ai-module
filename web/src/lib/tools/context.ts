@@ -76,6 +76,7 @@ export type ActionName =
   | "export_plots_kmz"
   | "generate_pdd_draft"
   | "link_farm_drive_folder"
+  | "unlink_farm_drive_folder"
   | "list_farm_drive_documents"
   | "centralize_farm_document";
 

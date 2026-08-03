@@ -27,12 +27,24 @@ async function driveFetch(accessToken: string, path: string, init?: RequestInit)
   });
 }
 
+/**
+ * Every call here passes supportsAllDrives=true. Without it the Drive v3
+ * API silently treats a Shared Drive item as not found (404) rather than
+ * returning it — a real folder reads as "doesn't exist" purely because of
+ * where it lives, which is exactly the kind of failure that looks like a
+ * copy-paste mistake and is not.
+ */
+const ALL_DRIVES = "supportsAllDrives=true";
+
 /** Confirms a folder id is real, reachable, and actually a folder — not a guess about what a person pasted. */
 export async function verifyDriveFolder(
   accessToken: string,
   folderId: string,
 ): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
-  const res = await driveFetch(accessToken, `files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed`);
+  const res = await driveFetch(
+    accessToken,
+    `files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed&${ALL_DRIVES}`,
+  );
   if (res.status === 404) return { ok: false, error: "No Drive folder with that id — check it was copied correctly." };
   if (res.status === 401) return { ok: false, error: "Drive access token is invalid or expired — sign out and back in." };
   if (!res.ok) return { ok: false, error: `Drive API error ${res.status}` };
@@ -49,7 +61,8 @@ export async function listDriveFolderFiles(accessToken: string, folderId: string
   const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
   const res = await driveFetch(
     accessToken,
-    `files?q=${q}&fields=files(id,name,mimeType,modifiedTime,webViewLink)&orderBy=name&pageSize=100`,
+    `files?q=${q}&fields=files(id,name,mimeType,modifiedTime,webViewLink)&orderBy=name&pageSize=100` +
+      `&${ALL_DRIVES}&includeItemsFromAllDrives=true`,
   );
   if (!res.ok) throw new Error(`Drive API error ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as { files: DriveFile[] };
@@ -77,7 +90,7 @@ export async function uploadFileToDriveFolder(
   ]);
 
   const res = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,modifiedTime,webViewLink",
+    `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,modifiedTime,webViewLink&${ALL_DRIVES}`,
     {
       method: "POST",
       headers: {

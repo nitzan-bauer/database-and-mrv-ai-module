@@ -19,6 +19,7 @@ export function DocumentsPanel({
   driveFolderId,
   pddDraftOptions,
   linkAction,
+  unlinkAction,
   listAction,
   centralizeAction,
 }: {
@@ -27,6 +28,7 @@ export function DocumentsPanel({
   driveFolderId: string | null;
   pddDraftOptions: Array<{ draftId: string; label: string }>;
   linkAction: (input: { farmId: string; driveFolderId: string }) => Promise<ToolResult<LinkedDriveFolder>>;
+  unlinkAction: (input: { farmId: string }) => Promise<ToolResult<{ farmId: string }>>;
   listAction: (input: { farmId: string }) => Promise<ToolResult<DriveFile[]>>;
   centralizeAction: (input: { farmId: string; source: CentralizeSource }) => Promise<ToolResult<CentralizedDocument>>;
 }) {
@@ -38,6 +40,7 @@ export function DocumentsPanel({
   const [listError, setListError] = useState<string | null>(null);
   const [pushMessage, setPushMessage] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState("");
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false);
 
   function link() {
     start(async () => {
@@ -63,6 +66,15 @@ export function DocumentsPanel({
       const res = await centralizeAction({ farmId, source });
       setPushMessage(res.ok ? `Uploaded ${res.data.file.name}.` : res.error);
       if (res.ok) loadFiles();
+    });
+  }
+
+  function unlink() {
+    start(async () => {
+      const res = await unlinkAction({ farmId });
+      setConfirmingUnlink(false);
+      if (res.ok) router.refresh();
+      else setListError(res.error);
     });
   }
 
@@ -100,14 +112,45 @@ export function DocumentsPanel({
     <div className="rounded-xl border border-line bg-white p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-[13px] font-bold text-pine-700">{farmName} — Drive documents</h3>
-        <button
-          type="button"
-          onClick={loadFiles}
-          disabled={pending}
-          className="text-[11.5px] font-semibold text-pine-700 hover:underline disabled:opacity-40"
-        >
-          {files ? "refresh" : "load"}
-        </button>
+        <div className="flex items-center gap-3">
+          {confirmingUnlink ? (
+            <span className="flex items-center gap-1.5 text-[11.5px]">
+              <span className="text-faint">unlink?</span>
+              <button
+                type="button"
+                onClick={unlink}
+                disabled={pending}
+                className="font-semibold text-danger hover:underline disabled:opacity-40"
+              >
+                {pending ? "…" : "yes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingUnlink(false)}
+                className="font-semibold text-pine-700 hover:underline"
+              >
+                no
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingUnlink(true)}
+              disabled={pending}
+              className="text-[11.5px] font-semibold text-faint hover:text-danger disabled:opacity-40"
+            >
+              unlink
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={loadFiles}
+            disabled={pending}
+            className="text-[11.5px] font-semibold text-pine-700 hover:underline disabled:opacity-40"
+          >
+            {files ? "refresh" : "load"}
+          </button>
+        </div>
       </div>
       <p className="mt-1 font-mono text-[10.5px] text-faint">folder: {driveFolderId}</p>
 

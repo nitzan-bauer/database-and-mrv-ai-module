@@ -39,6 +39,12 @@ async function linkFarmDriveFolderAction(input: {
   return linkFarmDriveFolder(await driveCtx(), input);
 }
 
+async function unlinkFarmDriveFolderAction(input: { farmId: string }): Promise<ToolResult<{ farmId: string }>> {
+  "use server";
+  const { unlinkFarmDriveFolder } = await import("@/lib/tools/linkFarmDriveFolder");
+  return unlinkFarmDriveFolder(await driveCtx(), input);
+}
+
 async function listFarmDriveDocumentsAction(input: { farmId: string }): Promise<ToolResult<DriveFile[]>> {
   "use server";
   const { listFarmDriveDocuments } = await import("@/lib/tools/listFarmDriveDocuments");
@@ -175,6 +181,7 @@ export default async function AdminPage() {
                 driveFolderId={f.driveFolderId}
                 pddDraftOptions={pddDraftOptions}
                 linkAction={linkFarmDriveFolderAction}
+                unlinkAction={unlinkFarmDriveFolderAction}
                 listAction={listFarmDriveDocumentsAction}
                 centralizeAction={centralizeFarmDocumentAction}
               />

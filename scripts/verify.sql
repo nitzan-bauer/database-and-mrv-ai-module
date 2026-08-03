@@ -93,15 +93,15 @@ BEGIN
   -- 6 from the original seed, plus register_pdd_template (0027),
   -- run_plot_qa_qc / export_plots_kml (0028) for Rebeka, record_baseline_site
   -- / record_activity_data (0030) for Dave, record_additionality_assessment
-  -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka, and
+  -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka,
   -- link_farm_drive_folder / list_farm_drive_documents / centralize_farm_document
-  -- (0032) for Jennifer.
+  -- (0032), and unlink_farm_drive_folder (0033), all for Jennifer.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 17 THEN
-    RAISE EXCEPTION 'FAIL  | expected 17 agent policies, found %', n;
+  IF n <> 18 THEN
+    RAISE EXCEPTION 'FAIL  | expected 18 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 17 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 18 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -232,6 +232,29 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0032: mrv.farms.drive_folder_id present, jennifer holds document_centralisation, her other 3 skills stay planned';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0033 — undo a Drive folder link. Needed the same day 0032 shipped: a
+-- demo farm got linked to a real prospective client's folder to prove
+-- the integration worked, and needed clearing the moment it did.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  mode1 text;
+  jennifer_tools text[];
+BEGIN
+  SELECT mode::text INTO mode1 FROM mrv.agent_action_policies WHERE action_name = 'unlink_farm_drive_folder';
+  IF mode1 IS DISTINCT FROM 'auto' THEN
+    RAISE EXCEPTION 'FAIL  | unlink_farm_drive_folder should be auto, found %', mode1;
+  END IF;
+
+  SELECT tools INTO jennifer_tools FROM mrv.agents WHERE agent_id = 'jennifer';
+  IF NOT ('unlink_farm_drive_folder' = ANY (jennifer_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing unlink_farm_drive_folder: %', jennifer_tools;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0033: unlink_farm_drive_folder is auto and held by jennifer';
 END $$;
 
 -- ---------------------------------------------------------------------
