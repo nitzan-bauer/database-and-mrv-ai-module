@@ -85,7 +85,8 @@ export type ActionName =
   | "get_pipeline_status"
   | "get_department_report"
   | "ingest_model_results"
-  | "record_mvr_signoff";
+  | "record_mvr_signoff"
+  | "credit_allocation_qa";
 
 /**
  * Check the policy for an action and record the attempt.

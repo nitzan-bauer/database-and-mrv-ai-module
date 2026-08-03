@@ -21,6 +21,7 @@ import { getPipelineStatus } from "../tools/getPipelineStatus";
 import { getDepartmentReport } from "../tools/getDepartmentReport";
 import { ingestModelResults } from "../tools/ingestModelResults";
 import { recordMvrSignoff } from "../tools/recordMvrSignoff";
+import { checkCreditAllocation } from "../tools/checkCreditAllocation";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -540,6 +541,22 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       getDepartmentReport(ctx, {
         recentActivityLimit: input.recentActivityLimit as number | undefined,
       }),
+  },
+
+  credit_allocation_qa: {
+    schema: {
+      name: "credit_allocation_qa",
+      description:
+        "Read-only QA over a project's real mrv.credits and mrv.vcu_issuances: application area vs plot area, " +
+        "duplicate plot/activity/vintage combinations, issued credits missing a vintage, and VCUs issued beyond " +
+        "what the project's own credits support per vintage.",
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) => checkCreditAllocation(ctx, { projectId: String(input.projectId ?? "") }),
   },
 
   export_plots_kmz: {

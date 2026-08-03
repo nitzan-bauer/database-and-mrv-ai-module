@@ -101,13 +101,14 @@ BEGIN
   -- compute_uncertainty_deduction (0034) for Dave,
   -- record_grouped_project_design / record_public_comment (0035) for Rebeka,
   -- get_pipeline_status / get_department_report (0036) for John,
-  -- ingest_model_results (0037), and record_mvr_signoff (0038), both for Dave.
+  -- ingest_model_results (0037) and record_mvr_signoff (0038) for Dave, and
+  -- credit_allocation_qa (0039) for John.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 25 THEN
-    RAISE EXCEPTION 'FAIL  | expected 25 agent policies, found %', n;
+  IF n <> 26 THEN
+    RAISE EXCEPTION 'FAIL  | expected 26 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 25 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 26 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -373,13 +374,13 @@ BEGIN
   IF john_planned && ARRAY['pipeline_control', 'ceo_reporting']::text[] THEN
     RAISE EXCEPTION 'FAIL  | john still lists a 0036 skill as planned: %', john_planned;
   END IF;
-  -- forecast_vs_actual/credit_allocation_qa/verra_benchmarking have no real
-  -- engine or data source yet.
-  IF NOT (john_planned @> ARRAY['forecast_vs_actual', 'credit_allocation_qa', 'verra_benchmarking']) THEN
-    RAISE EXCEPTION 'FAIL  | john should still have his other 3 skills as planned: %', john_planned;
+  -- credit_allocation_qa moved to built in 0039; forecast_vs_actual and
+  -- verra_benchmarking still have no real engine or data source.
+  IF NOT (john_planned @> ARRAY['forecast_vs_actual', 'verra_benchmarking']) THEN
+    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual/verra_benchmarking as planned: %', john_planned;
   END IF;
 
-  RAISE NOTICE 'PASS  | 0036: pipeline_control/ceo_reporting auto and held by john, his other 3 skills stay planned';
+  RAISE NOTICE 'PASS  | 0036: pipeline_control/ceo_reporting auto and held by john';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -440,6 +441,40 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0038: record_mvr_signoff is confirm and held by dave, mvr_ime_signoff built (dndc/daycent still planned)';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0039 — John's third skill: credit_allocation_qa, read-only checks
+-- over real mrv.credits/vcu_issuances.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  mode1 text;
+  john_tools text[];
+  john_skills text[];
+  john_planned text[];
+BEGIN
+  SELECT mode::text INTO mode1 FROM mrv.agent_action_policies WHERE action_name = 'credit_allocation_qa';
+  IF mode1 IS DISTINCT FROM 'auto' THEN
+    RAISE EXCEPTION 'FAIL  | credit_allocation_qa should be auto, found %', mode1;
+  END IF;
+
+  SELECT tools, skills, planned_skills INTO john_tools, john_skills, john_planned
+    FROM mrv.agents WHERE agent_id = 'john';
+  IF NOT ('credit_allocation_qa' = ANY (john_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | john is missing credit_allocation_qa tool: %', john_tools;
+  END IF;
+  IF NOT (john_skills @> ARRAY['credit_allocation_qa']) THEN
+    RAISE EXCEPTION 'FAIL  | john is missing credit_allocation_qa skill: %', john_skills;
+  END IF;
+  IF john_planned && ARRAY['credit_allocation_qa']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | john still lists credit_allocation_qa as planned: %', john_planned;
+  END IF;
+  IF NOT (john_planned @> ARRAY['forecast_vs_actual', 'verra_benchmarking']) THEN
+    RAISE EXCEPTION 'FAIL  | john should still have forecast_vs_actual/verra_benchmarking as planned: %', john_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0039: credit_allocation_qa is auto and held by john, his other 2 skills stay planned';
 END $$;
 
 -- ---------------------------------------------------------------------
