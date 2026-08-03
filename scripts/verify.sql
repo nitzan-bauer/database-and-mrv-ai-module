@@ -26,20 +26,20 @@ BEGIN
   -- plus mrv.agents (0024) and mrv.pdd_templates (0027) from Tier 2, plus
   -- mrv.additionality_assessments and mrv.pdd_drafts (0031), plus
   -- mrv.grouped_project_eligibility_areas, mrv.grouped_project_eligibility_criteria
-  -- and mrv.public_comments (0035).
+  -- and mrv.public_comments (0035), plus mrv.vvb_findings (0042).
   -- BASE TABLE only: information_schema.tables counts views too, and
   -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 48 THEN
-    RAISE EXCEPTION 'FAIL  | expected 48 base tables in mrv, found %', n;
+  IF n <> 49 THEN
+    RAISE EXCEPTION 'FAIL  | expected 49 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 48 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 49 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -103,14 +103,15 @@ BEGIN
   -- get_pipeline_status / get_department_report (0036) for John,
   -- ingest_model_results (0037) and record_mvr_signoff (0038) for Dave,
   -- credit_allocation_qa (0039) for John, record_agent_memory /
-  -- recall_agent_memory (0040) shared across all five agents, and
-  -- fetch_public_url (0041) for Rebeka and John.
+  -- recall_agent_memory (0040) shared across all five agents,
+  -- fetch_public_url (0041) for Rebeka and John, and record_vvb_finding /
+  -- resolve_vvb_finding (0042) for Dave and Rebeka.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 29 THEN
-    RAISE EXCEPTION 'FAIL  | expected 29 agent policies, found %', n;
+  IF n <> 31 THEN
+    RAISE EXCEPTION 'FAIL  | expected 31 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 29 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 31 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -552,6 +553,62 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0041: fetch_public_url is auto and held by rebeka+john, verra_benchmarking built for john';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0042 — vvb_liaison / vvb_validation_liaison: record_vvb_finding /
+-- resolve_vvb_finding, grounded in Verra's own CAR/CR/FAR finding types.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  bad text;
+  finding_types text[];
+  dave_skills text[];
+  dave_planned text[];
+  rebeka_skills text[];
+  rebeka_planned text[];
+BEGIN
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('record_vvb_finding', 'resolve_vvb_finding') AND mode <> 'auto';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | unexpected policy mode(s) for the 0042 tools: %', bad;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM mrv.agents
+     WHERE agent_id IN ('dave', 'rebeka')
+       AND NOT (tools @> ARRAY['record_vvb_finding', 'resolve_vvb_finding'])
+  ) THEN
+    RAISE EXCEPTION 'FAIL  | dave and rebeka should both hold record_vvb_finding/resolve_vvb_finding';
+  END IF;
+
+  SELECT skills, planned_skills INTO dave_skills, dave_planned FROM mrv.agents WHERE agent_id = 'dave';
+  IF NOT (dave_skills @> ARRAY['vvb_liaison']) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing vvb_liaison from skills: %', dave_skills;
+  END IF;
+  IF dave_planned && ARRAY['vvb_liaison']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | dave still lists vvb_liaison as planned: %', dave_planned;
+  END IF;
+  IF NOT (dave_planned @> ARRAY['dndc', 'daycent']) THEN
+    RAISE EXCEPTION 'FAIL  | dave should still have dndc and daycent as planned (unbuilt): %', dave_planned;
+  END IF;
+
+  SELECT skills, planned_skills INTO rebeka_skills, rebeka_planned FROM mrv.agents WHERE agent_id = 'rebeka';
+  IF NOT (rebeka_skills @> ARRAY['vvb_validation_liaison']) THEN
+    RAISE EXCEPTION 'FAIL  | rebeka is missing vvb_validation_liaison from skills: %', rebeka_skills;
+  END IF;
+  IF rebeka_planned && ARRAY['vvb_validation_liaison']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | rebeka still lists vvb_validation_liaison as planned: %', rebeka_planned;
+  END IF;
+
+  SELECT array_agg(enumlabel ORDER BY enumlabel) INTO finding_types
+  FROM pg_enum WHERE enumtypid = 'mrv.vvb_finding_type'::regtype;
+  IF finding_types <> ARRAY['CAR', 'CR', 'FAR', 'other']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | vvb_finding_type does not match Verra''s own CAR/CR/FAR/other: %', finding_types;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0042: record_vvb_finding/resolve_vvb_finding auto and held by dave+rebeka, vvb_liaison built for both, finding types match Verra''s template';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1784,15 +1841,17 @@ BEGIN
   -- run_model, recalibrate_model and issue_alerts moved to planned_tools.
   -- record_baseline_site / record_activity_data (0030),
   -- compute_uncertainty_deduction (0034), ingest_model_results (0037),
-  -- record_mvr_signoff (0038) and record_agent_memory/recall_agent_memory
-  -- (0040) are appended after the original three built tools, in the
-  -- order each migration wrote them.
+  -- record_mvr_signoff (0038), record_agent_memory/recall_agent_memory
+  -- (0040) and record_vvb_finding/resolve_vvb_finding (0042) are appended
+  -- after the original three built tools, in the order each migration
+  -- wrote them.
   PERFORM 1 FROM mrv.agents
    WHERE agent_id = 'dave'
      AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat',
                         'record_baseline_site', 'record_activity_data',
                         'compute_uncertainty_deduction', 'ingest_model_results',
-                        'record_mvr_signoff', 'record_agent_memory', 'recall_agent_memory']
+                        'record_mvr_signoff', 'record_agent_memory', 'recall_agent_memory',
+                        'record_vvb_finding', 'resolve_vvb_finding']
      AND planned_tools = ARRAY['run_model', 'recalibrate_model', 'issue_alerts'];
   IF NOT FOUND THEN
     RAISE EXCEPTION 'FAIL  | dave''s tools/planned_tools split does not match what is actually implemented';

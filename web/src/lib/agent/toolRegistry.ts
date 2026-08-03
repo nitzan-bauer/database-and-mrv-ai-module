@@ -25,6 +25,8 @@ import { checkCreditAllocation } from "../tools/checkCreditAllocation";
 import { recordAgentMemory } from "../tools/recordAgentMemory";
 import { recallAgentMemory } from "../tools/recallAgentMemory";
 import { fetchPublicUrl } from "../tools/fetchPublicUrl";
+import { recordVvbFinding } from "../tools/recordVvbFinding";
+import { resolveVvbFinding } from "../tools/resolveVvbFinding";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -632,6 +634,61 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       },
     },
     handler: (ctx, input) => fetchPublicUrl(ctx, { url: String(input.url ?? "") }),
+  },
+
+  record_vvb_finding: {
+    schema: {
+      name: "record_vvb_finding",
+      description:
+        "Record one VVB finding — a Corrective Action Request (CAR), Clarification Request (CR), Forward " +
+        "Action Request (FAR), or other, per the VCS Joint Validation & Verification Report Template. Logs " +
+        "real correspondence already received; does not simulate the VVB or send anything.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          stage: { type: "string", enum: ["validation", "verification"] },
+          findingType: { type: "string", enum: ["CAR", "CR", "FAR", "other"] },
+          issueRaised: { type: "string" },
+          raisedBy: { type: "string", description: "The VVB's own name or reference." },
+          raisedAt: { type: "string", description: "ISO date." },
+        },
+        required: ["projectId", "stage", "findingType", "issueRaised"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordVvbFinding(ctx, {
+        projectId: String(input.projectId ?? ""),
+        stage: input.stage as "validation" | "verification",
+        findingType: input.findingType as "CAR" | "CR" | "FAR" | "other",
+        issueRaised: String(input.issueRaised ?? ""),
+        raisedBy: input.raisedBy as string | undefined,
+        raisedAt: input.raisedAt as string | undefined,
+      }),
+  },
+
+  resolve_vvb_finding: {
+    schema: {
+      name: "resolve_vvb_finding",
+      description:
+        "Resolve one open VVB finding with the proponent's real response and the final conclusion, both " +
+        "required. Refuses if the finding does not exist or is already resolved.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          findingId: { type: "string" },
+          response: { type: "string" },
+          conclusion: { type: "string" },
+        },
+        required: ["findingId", "response", "conclusion"],
+      },
+    },
+    handler: (ctx, input) =>
+      resolveVvbFinding(ctx, {
+        findingId: String(input.findingId ?? ""),
+        response: String(input.response ?? ""),
+        conclusion: String(input.conclusion ?? ""),
+      }),
   },
 
   export_plots_kmz: {

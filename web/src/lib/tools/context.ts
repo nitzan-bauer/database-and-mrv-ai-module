@@ -89,7 +89,9 @@ export type ActionName =
   | "credit_allocation_qa"
   | "record_agent_memory"
   | "recall_agent_memory"
-  | "fetch_public_url";
+  | "fetch_public_url"
+  | "record_vvb_finding"
+  | "resolve_vvb_finding";
 
 /**
  * Check the policy for an action and record the attempt.
