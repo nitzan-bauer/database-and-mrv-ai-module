@@ -14,6 +14,7 @@ import { generatePddDraft } from "../tools/generatePddDraft";
 import { linkFarmDriveFolder, unlinkFarmDriveFolder } from "../tools/linkFarmDriveFolder";
 import { listFarmDriveDocuments } from "../tools/listFarmDriveDocuments";
 import { centralizeFarmDocument } from "../tools/centralizeFarmDocument";
+import { computeUncertaintyDeduction } from "../tools/computeUncertaintyDeduction";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -159,6 +160,29 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       runPlotQaQc(ctx, {
         farmId: String(input.farmId ?? ""),
         areaTolerancePct: input.areaTolerancePct as number | undefined,
+      }),
+  },
+
+  compute_uncertainty_deduction: {
+    schema: {
+      name: "compute_uncertainty_deduction",
+      description:
+        "VM0042 Eq. 74 uncertainty deduction for a farm's most recent completed model run, area-weighted across strata from stored model + sampling variance. Returns the deduction % and the net ERR after it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          path: { type: "string", enum: ["analytical", "monte_carlo"], description: "Defaults to the run's own method." },
+          degreesOfFreedom: { type: "number", description: "Omit for the large-sample t value." },
+        },
+        required: ["farmId"],
+      },
+    },
+    handler: (ctx, input) =>
+      computeUncertaintyDeduction(ctx, {
+        farmId: String(input.farmId ?? ""),
+        path: input.path as "analytical" | "monte_carlo" | undefined,
+        degreesOfFreedom: input.degreesOfFreedom as number | undefined,
       }),
   },
 

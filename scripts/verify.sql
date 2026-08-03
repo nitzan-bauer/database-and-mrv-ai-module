@@ -95,13 +95,14 @@ BEGIN
   -- / record_activity_data (0030) for Dave, record_additionality_assessment
   -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka,
   -- link_farm_drive_folder / list_farm_drive_documents / centralize_farm_document
-  -- (0032), and unlink_farm_drive_folder (0033), all for Jennifer.
+  -- (0032), unlink_farm_drive_folder (0033) for Jennifer, and
+  -- compute_uncertainty_deduction (0034) for Dave.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 18 THEN
-    RAISE EXCEPTION 'FAIL  | expected 18 agent policies, found %', n;
+  IF n <> 19 THEN
+    RAISE EXCEPTION 'FAIL  | expected 19 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 18 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 19 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -255,6 +256,42 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0033: unlink_farm_drive_folder is auto and held by jennifer';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0034 — Dave's sixth skill: uncertainty_deduction, the same
+-- thin-wrapper-over-a-verified-engine pattern as the GHG-Calculator
+-- pilot, this time over VM0042 Eq. 74 (web/src/lib/model/uncertainty.ts).
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  mode1 text;
+  dave_tools text[];
+  dave_skills text[];
+  dave_planned text[];
+BEGIN
+  SELECT mode::text INTO mode1 FROM mrv.agent_action_policies WHERE action_name = 'compute_uncertainty_deduction';
+  IF mode1 IS DISTINCT FROM 'auto' THEN
+    RAISE EXCEPTION 'FAIL  | compute_uncertainty_deduction should be auto, found %', mode1;
+  END IF;
+
+  SELECT tools, skills, planned_skills INTO dave_tools, dave_skills, dave_planned
+    FROM mrv.agents WHERE agent_id = 'dave';
+  IF NOT ('compute_uncertainty_deduction' = ANY (dave_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing compute_uncertainty_deduction: %', dave_tools;
+  END IF;
+  IF NOT (dave_skills @> ARRAY['uncertainty_deduction']) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing uncertainty_deduction from skills: %', dave_skills;
+  END IF;
+  IF dave_planned && ARRAY['uncertainty_deduction']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | dave still lists uncertainty_deduction as planned: %', dave_planned;
+  END IF;
+  -- dndc/daycent still have no real model integration to build on.
+  IF NOT (dave_planned @> ARRAY['dndc', 'daycent']) THEN
+    RAISE EXCEPTION 'FAIL  | dave should still have dndc and daycent as planned (unbuilt): %', dave_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0034: compute_uncertainty_deduction is auto and held by dave, uncertainty_deduction built (dndc/daycent still planned)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1485,12 +1522,14 @@ DECLARE
 BEGIN
   -- Dave's tools must be exactly what has a real handler behind it —
   -- run_model, recalibrate_model and issue_alerts moved to planned_tools.
-  -- record_baseline_site / record_activity_data (0030) are appended after
-  -- the original three built tools, in the order the migration wrote them.
+  -- record_baseline_site / record_activity_data (0030) and
+  -- compute_uncertainty_deduction (0034) are appended after the original
+  -- three built tools, in the order each migration wrote them.
   PERFORM 1 FROM mrv.agents
    WHERE agent_id = 'dave'
      AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat',
-                        'record_baseline_site', 'record_activity_data']
+                        'record_baseline_site', 'record_activity_data',
+                        'compute_uncertainty_deduction']
      AND planned_tools = ARRAY['run_model', 'recalibrate_model', 'issue_alerts'];
   IF NOT FOUND THEN
     RAISE EXCEPTION 'FAIL  | dave''s tools/planned_tools split does not match what is actually implemented';
