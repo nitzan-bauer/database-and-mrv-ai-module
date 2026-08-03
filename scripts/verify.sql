@@ -100,14 +100,14 @@ BEGIN
   -- (0032), unlink_farm_drive_folder (0033) for Jennifer,
   -- compute_uncertainty_deduction (0034) for Dave,
   -- record_grouped_project_design / record_public_comment (0035) for Rebeka,
-  -- get_pipeline_status / get_department_report (0036) for John, and
-  -- ingest_model_results (0037) for Dave.
+  -- get_pipeline_status / get_department_report (0036) for John,
+  -- ingest_model_results (0037), and record_mvr_signoff (0038), both for Dave.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 24 THEN
-    RAISE EXCEPTION 'FAIL  | expected 24 agent policies, found %', n;
+  IF n <> 25 THEN
+    RAISE EXCEPTION 'FAIL  | expected 25 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 24 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 25 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -406,6 +406,40 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0037: ingest_model_results is confirm and held by dave, dndc/daycent still planned';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0038 — Dave's mvr_ime_signoff skill: record_mvr_signoff, over the
+-- real VMD0053 fields mrv.mvr has held since Stage 6.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  mode1 text;
+  dave_tools text[];
+  dave_skills text[];
+  dave_planned text[];
+BEGIN
+  SELECT mode::text INTO mode1 FROM mrv.agent_action_policies WHERE action_name = 'record_mvr_signoff';
+  IF mode1 IS DISTINCT FROM 'confirm' THEN
+    RAISE EXCEPTION 'FAIL  | record_mvr_signoff should be confirm, found %', mode1;
+  END IF;
+
+  SELECT tools, skills, planned_skills INTO dave_tools, dave_skills, dave_planned
+    FROM mrv.agents WHERE agent_id = 'dave';
+  IF NOT ('record_mvr_signoff' = ANY (dave_tools)) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing record_mvr_signoff: %', dave_tools;
+  END IF;
+  IF NOT (dave_skills @> ARRAY['mvr_ime_signoff']) THEN
+    RAISE EXCEPTION 'FAIL  | dave is missing mvr_ime_signoff from skills: %', dave_skills;
+  END IF;
+  IF dave_planned && ARRAY['mvr_ime_signoff']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | dave still lists mvr_ime_signoff as planned: %', dave_planned;
+  END IF;
+  IF NOT (dave_planned @> ARRAY['dndc', 'daycent']) THEN
+    RAISE EXCEPTION 'FAIL  | dave should still have dndc and daycent as planned (unbuilt): %', dave_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0038: record_mvr_signoff is confirm and held by dave, mvr_ime_signoff built (dndc/daycent still planned)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1637,14 +1671,15 @@ BEGIN
   -- Dave's tools must be exactly what has a real handler behind it —
   -- run_model, recalibrate_model and issue_alerts moved to planned_tools.
   -- record_baseline_site / record_activity_data (0030),
-  -- compute_uncertainty_deduction (0034) and ingest_model_results (0037)
-  -- are appended after the original three built tools, in the order each
-  -- migration wrote them.
+  -- compute_uncertainty_deduction (0034), ingest_model_results (0037) and
+  -- record_mvr_signoff (0038) are appended after the original three built
+  -- tools, in the order each migration wrote them.
   PERFORM 1 FROM mrv.agents
    WHERE agent_id = 'dave'
      AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat',
                         'record_baseline_site', 'record_activity_data',
-                        'compute_uncertainty_deduction', 'ingest_model_results']
+                        'compute_uncertainty_deduction', 'ingest_model_results',
+                        'record_mvr_signoff']
      AND planned_tools = ARRAY['run_model', 'recalibrate_model', 'issue_alerts'];
   IF NOT FOUND THEN
     RAISE EXCEPTION 'FAIL  | dave''s tools/planned_tools split does not match what is actually implemented';

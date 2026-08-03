@@ -20,6 +20,7 @@ import { recordPublicComment } from "../tools/recordPublicComment";
 import { getPipelineStatus } from "../tools/getPipelineStatus";
 import { getDepartmentReport } from "../tools/getDepartmentReport";
 import { ingestModelResults } from "../tools/ingestModelResults";
+import { recordMvrSignoff } from "../tools/recordMvrSignoff";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -248,6 +249,45 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         outputFileUrl: String(input.outputFileUrl ?? ""),
         outputFileSha256: input.outputFileSha256 as string | undefined,
         rows: (input.rows ?? []) as never,
+      }),
+  },
+
+  record_mvr_signoff: {
+    schema: {
+      name: "record_mvr_signoff",
+      description:
+        "Record the VMD0053 Model Validation Report + IME sign-off for a model run. bias_within_pmu and " +
+        "coverage_pass are computed here from the given inputs, not asked of the caller. ime_contracted_by must " +
+        "be 'VVB' — the IME is always contracted by the VVB, never the proponent.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          runId: { type: "string" },
+          meanBias: { type: "number" },
+          pooledMeasUnc: { type: "number", description: "Pooled measurement uncertainty (PMU)." },
+          coveragePct: { type: "number", description: "0-100." },
+          imeName: { type: "string" },
+          imeContractedBy: { type: "string", description: "Must be 'VVB'; defaults to 'VVB'." },
+          documentUrl: { type: "string", description: "The MVR document itself." },
+          imeReportUrl: { type: "string" },
+          registryUrl: { type: "string", description: "Public Verra registry link." },
+          signedAt: { type: "string", description: "ISO date/time." },
+        },
+        required: ["runId"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordMvrSignoff(ctx, {
+        runId: String(input.runId ?? ""),
+        meanBias: input.meanBias as number | undefined,
+        pooledMeasUnc: input.pooledMeasUnc as number | undefined,
+        coveragePct: input.coveragePct as number | undefined,
+        imeName: input.imeName as string | undefined,
+        imeContractedBy: input.imeContractedBy as string | undefined,
+        documentUrl: input.documentUrl as string | undefined,
+        imeReportUrl: input.imeReportUrl as string | undefined,
+        registryUrl: input.registryUrl as string | undefined,
+        signedAt: input.signedAt as string | undefined,
       }),
   },
 
