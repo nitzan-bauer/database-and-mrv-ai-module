@@ -81,7 +81,9 @@ export type ActionName =
   | "centralize_farm_document"
   | "compute_uncertainty_deduction"
   | "record_grouped_project_design"
-  | "record_public_comment";
+  | "record_public_comment"
+  | "get_pipeline_status"
+  | "get_department_report";
 
 /**
  * Check the policy for an action and record the attempt.

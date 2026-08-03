@@ -17,6 +17,8 @@ import { centralizeFarmDocument } from "../tools/centralizeFarmDocument";
 import { computeUncertaintyDeduction } from "../tools/computeUncertaintyDeduction";
 import { recordGroupedProjectDesign } from "../tools/recordGroupedProjectDesign";
 import { recordPublicComment } from "../tools/recordPublicComment";
+import { getPipelineStatus } from "../tools/getPipelineStatus";
+import { getDepartmentReport } from "../tools/getDepartmentReport";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -405,6 +407,37 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         receivedAt: String(input.receivedAt ?? ""),
         isAfterCommentPeriod: input.isAfterCommentPeriod as boolean | undefined,
         actionsTaken: String(input.actionsTaken ?? ""),
+      }),
+  },
+
+  get_pipeline_status: {
+    schema: {
+      name: "get_pipeline_status",
+      description:
+        "The credit pipeline as it actually stands: every stage from farms enrolled through VCUs issued, each a " +
+        "count of real rows, with the reason stated for any stage stuck at zero.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    handler: (ctx) => getPipelineStatus(ctx),
+  },
+
+  get_department_report: {
+    schema: {
+      name: "get_department_report",
+      description:
+        "A department-wide report: the credit pipeline, every agent's built/planned counts and action count, " +
+        "and the most recent agent-actor-only audit log entries. The same figures the control-tower dashboard " +
+        "renders, aggregated into one call.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          recentActivityLimit: { type: "number", description: "Default 10, max 50." },
+        },
+      },
+    },
+    handler: (ctx, input) =>
+      getDepartmentReport(ctx, {
+        recentActivityLimit: input.recentActivityLimit as number | undefined,
       }),
   },
 

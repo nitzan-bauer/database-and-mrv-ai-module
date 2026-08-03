@@ -98,14 +98,15 @@ BEGIN
   -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka,
   -- link_farm_drive_folder / list_farm_drive_documents / centralize_farm_document
   -- (0032), unlink_farm_drive_folder (0033) for Jennifer,
-  -- compute_uncertainty_deduction (0034) for Dave, and
-  -- record_grouped_project_design / record_public_comment (0035) for Rebeka.
+  -- compute_uncertainty_deduction (0034) for Dave,
+  -- record_grouped_project_design / record_public_comment (0035) for Rebeka, and
+  -- get_pipeline_status / get_department_report (0036) for John.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 21 THEN
-    RAISE EXCEPTION 'FAIL  | expected 21 agent policies, found %', n;
+  IF n <> 23 THEN
+    RAISE EXCEPTION 'FAIL  | expected 23 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 21 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 23 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -339,6 +340,45 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0035: grouped_project_design/public_comment auto and held by rebeka, 5 eligibility criteria types match the template';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0036 — John's first two skills: pipeline_control and ceo_reporting,
+-- both read-only aggregations of what the control-tower dashboard
+-- already computes.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  bad text;
+  john_tools text[];
+  john_skills text[];
+  john_planned text[];
+BEGIN
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('get_pipeline_status', 'get_department_report') AND mode <> 'auto';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | unexpected policy mode(s) for the 0036 tools: %', bad;
+  END IF;
+
+  SELECT tools, skills, planned_skills INTO john_tools, john_skills, john_planned
+    FROM mrv.agents WHERE agent_id = 'john';
+  IF NOT (john_tools @> ARRAY['get_pipeline_status', 'get_department_report']) THEN
+    RAISE EXCEPTION 'FAIL  | john is missing a 0036 tool: %', john_tools;
+  END IF;
+  IF NOT (john_skills @> ARRAY['pipeline_control', 'ceo_reporting']) THEN
+    RAISE EXCEPTION 'FAIL  | john is missing a 0036 skill: %', john_skills;
+  END IF;
+  IF john_planned && ARRAY['pipeline_control', 'ceo_reporting']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | john still lists a 0036 skill as planned: %', john_planned;
+  END IF;
+  -- forecast_vs_actual/credit_allocation_qa/verra_benchmarking have no real
+  -- engine or data source yet.
+  IF NOT (john_planned @> ARRAY['forecast_vs_actual', 'credit_allocation_qa', 'verra_benchmarking']) THEN
+    RAISE EXCEPTION 'FAIL  | john should still have his other 3 skills as planned: %', john_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0036: pipeline_control/ceo_reporting auto and held by john, his other 3 skills stay planned';
 END $$;
 
 -- ---------------------------------------------------------------------
