@@ -79,7 +79,9 @@ export type ActionName =
   | "unlink_farm_drive_folder"
   | "list_farm_drive_documents"
   | "centralize_farm_document"
-  | "compute_uncertainty_deduction";
+  | "compute_uncertainty_deduction"
+  | "record_grouped_project_design"
+  | "record_public_comment";
 
 /**
  * Check the policy for an action and record the attempt.

@@ -24,20 +24,22 @@ DECLARE
 BEGIN
   -- 9 core hierarchy + 3 reference + 2 audit + agent_memory + 5 stage-3,
   -- plus mrv.agents (0024) and mrv.pdd_templates (0027) from Tier 2, plus
-  -- mrv.additionality_assessments and mrv.pdd_drafts (0031).
+  -- mrv.additionality_assessments and mrv.pdd_drafts (0031), plus
+  -- mrv.grouped_project_eligibility_areas, mrv.grouped_project_eligibility_criteria
+  -- and mrv.public_comments (0035).
   -- BASE TABLE only: information_schema.tables counts views too, and
   -- mrv.v_real_plots would otherwise inflate this.
   SELECT count(*) INTO n
   FROM information_schema.tables
   WHERE table_schema = 'mrv' AND table_type = 'BASE TABLE';
-  IF n <> 45 THEN
-    RAISE EXCEPTION 'FAIL  | expected 45 base tables in mrv, found %', n;
+  IF n <> 48 THEN
+    RAISE EXCEPTION 'FAIL  | expected 48 base tables in mrv, found %', n;
   END IF;
 
   IF to_regclass('mrv.v_real_plots') IS NULL THEN
     RAISE EXCEPTION 'FAIL  | mrv.v_real_plots view is missing';
   END IF;
-  RAISE NOTICE 'PASS  | 45 base tables + v_real_plots view';
+  RAISE NOTICE 'PASS  | 48 base tables + v_real_plots view';
 
   -- Every geometry column must be SRID 4326. A wrong projection here
   -- silently mis-locates plots by hundreds of kilometres.
@@ -95,14 +97,15 @@ BEGIN
   -- / record_activity_data (0030) for Dave, record_additionality_assessment
   -- / export_plots_kmz / generate_pdd_draft (0031) for Rebeka,
   -- link_farm_drive_folder / list_farm_drive_documents / centralize_farm_document
-  -- (0032), unlink_farm_drive_folder (0033) for Jennifer, and
-  -- compute_uncertainty_deduction (0034) for Dave.
+  -- (0032), unlink_farm_drive_folder (0033) for Jennifer,
+  -- compute_uncertainty_deduction (0034) for Dave, and
+  -- record_grouped_project_design / record_public_comment (0035) for Rebeka.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 19 THEN
-    RAISE EXCEPTION 'FAIL  | expected 19 agent policies, found %', n;
+  IF n <> 21 THEN
+    RAISE EXCEPTION 'FAIL  | expected 21 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 19 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 21 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -292,6 +295,50 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0034: compute_uncertainty_deduction is auto and held by dave, uncertainty_deduction built (dndc/daycent still planned)';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0035 — Rebeka's fourth and fifth tools: grouped_project_design and
+-- public_comment, grounded in the VCS PDD Template v5.0A's own
+-- "Grouped Project Design" and "Public Comments" sections.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  bad text;
+  rebeka_tools text[];
+  rebeka_skills text[];
+  rebeka_planned text[];
+  criteria_types text[];
+BEGIN
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('record_grouped_project_design', 'record_public_comment') AND mode <> 'auto';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | unexpected policy mode(s) for the 0035 tools: %', bad;
+  END IF;
+
+  SELECT tools, skills, planned_skills INTO rebeka_tools, rebeka_skills, rebeka_planned
+    FROM mrv.agents WHERE agent_id = 'rebeka';
+  IF NOT (rebeka_tools @> ARRAY['record_grouped_project_design', 'record_public_comment']) THEN
+    RAISE EXCEPTION 'FAIL  | rebeka is missing a 0035 tool: %', rebeka_tools;
+  END IF;
+  IF NOT (rebeka_skills @> ARRAY['grouped_project_design', 'public_comment']) THEN
+    RAISE EXCEPTION 'FAIL  | rebeka is missing a 0035 skill: %', rebeka_skills;
+  END IF;
+  IF rebeka_planned && ARRAY['grouped_project_design', 'public_comment']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | rebeka still lists a 0035 skill as planned: %', rebeka_planned;
+  END IF;
+
+  -- The five eligibility criteria types are the template's own fixed
+  -- list, not an invented enum.
+  SELECT array_agg(enumlabel ORDER BY enumlabel) INTO criteria_types
+  FROM pg_enum WHERE enumtypid = 'mrv.eligibility_criteria_type'::regtype;
+  IF criteria_types <> ARRAY['additionality', 'baseline_scenario', 'methodology_applicability_conditions',
+                             'technology_or_measure', 'uniquely_identifiable']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | eligibility_criteria_type does not match the template''s 5 axes: %', criteria_types;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0035: grouped_project_design/public_comment auto and held by rebeka, 5 eligibility criteria types match the template';
 END $$;
 
 -- ---------------------------------------------------------------------

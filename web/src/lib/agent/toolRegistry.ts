@@ -15,6 +15,8 @@ import { linkFarmDriveFolder, unlinkFarmDriveFolder } from "../tools/linkFarmDri
 import { listFarmDriveDocuments } from "../tools/listFarmDriveDocuments";
 import { centralizeFarmDocument } from "../tools/centralizeFarmDocument";
 import { computeUncertaintyDeduction } from "../tools/computeUncertaintyDeduction";
+import { recordGroupedProjectDesign } from "../tools/recordGroupedProjectDesign";
+import { recordPublicComment } from "../tools/recordPublicComment";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -327,6 +329,82 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
           input.commonPracticeAdoptionPct == null ? null : Number(input.commonPracticeAdoptionPct),
         step4cDemonstrated: input.step4cDemonstrated as boolean | undefined,
         step4cNote: input.step4cNote as string | undefined,
+      }),
+  },
+
+  record_grouped_project_design: {
+    schema: {
+      name: "record_grouped_project_design",
+      description:
+        "Record one eligibility area of a grouped project — VCS PDD Template v5.0A's own 'Grouped Project Design' " +
+        "section: the area (id shaped '[Project ID]_EA[N]', e.g. '9001_EA1') plus the criteria for adding a new " +
+        "instance on each of the template's five axes (uniquely identifiable, baseline scenario, additionality, " +
+        "technology or measure, methodology applicability conditions). Refuses on a non-grouped project.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          areaId: { type: "string", description: "e.g. '9001_EA1'." },
+          summary: { type: "string", description: "Boundary, activities/methodology, initial instances." },
+          criteria: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                type: {
+                  type: "string",
+                  enum: [
+                    "uniquely_identifiable",
+                    "baseline_scenario",
+                    "additionality",
+                    "technology_or_measure",
+                    "methodology_applicability_conditions",
+                  ],
+                },
+                text: { type: "string" },
+              },
+              required: ["type", "text"],
+            },
+          },
+        },
+        required: ["projectId", "areaId", "summary", "criteria"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordGroupedProjectDesign(ctx, {
+        projectId: String(input.projectId ?? ""),
+        areaId: String(input.areaId ?? ""),
+        summary: String(input.summary ?? ""),
+        criteria: (input.criteria ?? []) as never,
+      }),
+  },
+
+  record_public_comment: {
+    schema: {
+      name: "record_public_comment",
+      description:
+        "Record one public comment — VCS PDD Template v5.0A's own 'Public Comments' table: the comment, when it " +
+        "was received, whether it arrived after the comment period, and the actions taken (or the justification " +
+        "for why none were needed).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          commentText: { type: "string" },
+          receivedAt: { type: "string", description: "ISO date." },
+          isAfterCommentPeriod: { type: "boolean" },
+          actionsTaken: { type: "string" },
+        },
+        required: ["projectId", "commentText", "receivedAt", "actionsTaken"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordPublicComment(ctx, {
+        projectId: String(input.projectId ?? ""),
+        commentText: String(input.commentText ?? ""),
+        receivedAt: String(input.receivedAt ?? ""),
+        isAfterCommentPeriod: input.isAfterCommentPeriod as boolean | undefined,
+        actionsTaken: String(input.actionsTaken ?? ""),
       }),
   },
 
