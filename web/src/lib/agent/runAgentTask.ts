@@ -1,8 +1,37 @@
 import "server-only";
 import { getAgent } from "../data";
+import { DATA_MODE } from "../env";
 import { audit, type ToolContext } from "../tools/context";
 import { getConfiguredProvider, type ModelProvider } from "./provider";
 import { TOOL_REGISTRY } from "./toolRegistry";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A task comes from a person, who names a farm the way they would in
+ * conversation — "Elad Farm" — never by its UUID. Every tool that takes a
+ * farmId is written against the real primary key, so a name typed straight
+ * through reaches Postgres as a malformed uuid literal rather than a
+ * sensible "not found". Resolving it here, once, keeps every farmId tool
+ * working the way a person actually asks for one instead of teaching each
+ * tool to guess what it was handed.
+ */
+type FarmIdResolution = { ok: true; input: Record<string, unknown> } | { ok: false; error: string };
+
+async function resolveFarmId(input: Record<string, unknown>): Promise<FarmIdResolution> {
+  const farmId = input.farmId;
+  if (typeof farmId !== "string" || UUID_RE.test(farmId) || DATA_MODE !== "db") return { ok: true, input };
+
+  const { query } = await import("../db");
+  const matches = await query<{ farm_id: string }>(`SELECT farm_id FROM mrv.farms WHERE lower(name) = lower($1)`, [
+    farmId,
+  ]);
+  if (matches.length === 1) return { ok: true, input: { ...input, farmId: matches[0].farm_id } };
+  if (matches.length === 0) {
+    return { ok: false, error: `No farm named "${farmId}" — check the spelling or pass its id directly.` };
+  }
+  return { ok: false, error: `More than one farm is named "${farmId}" — ask by id instead.` };
+}
 
 export type AgentTaskOutcome =
   | { kind: "text"; text: string }
@@ -97,8 +126,13 @@ export async function runAgentTask(
     };
   }
 
+  const resolved = await resolveFarmId(response.call.input);
+  if (!resolved.ok) {
+    return { agentId, providerId: provider.id, outcome: { kind: "error", message: resolved.error } };
+  }
+
   const ctx: ToolContext = { actor: agent.actorId, actorKind: "agent", confirmed: opts.confirmed };
-  const result = await entry.handler(ctx, response.call.input);
+  const result = await entry.handler(ctx, resolved.input);
 
   if (!result.ok) {
     if (result.needsConfirmation) {
