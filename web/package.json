@@ -17,7 +17,8 @@
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:certs": "node scripts/fetch-rds-ca.mjs",
     "auth:google": "node scripts/set-oauth-secret.mjs",
-    "agent:key": "node scripts/set-anthropic-key.mjs"
+    "agent:key": "node scripts/set-anthropic-key.mjs",
+    "agent:key:voyage": "node scripts/set-voyage-key.mjs"
   },
   "dependencies": {
     "@turf/area": "^7.3.5",

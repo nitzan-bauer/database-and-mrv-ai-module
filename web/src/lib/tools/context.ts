@@ -86,7 +86,9 @@ export type ActionName =
   | "get_department_report"
   | "ingest_model_results"
   | "record_mvr_signoff"
-  | "credit_allocation_qa";
+  | "credit_allocation_qa"
+  | "record_agent_memory"
+  | "recall_agent_memory";
 
 /**
  * Check the policy for an action and record the attempt.

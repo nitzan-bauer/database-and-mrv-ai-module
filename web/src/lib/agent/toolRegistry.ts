@@ -22,6 +22,8 @@ import { getDepartmentReport } from "../tools/getDepartmentReport";
 import { ingestModelResults } from "../tools/ingestModelResults";
 import { recordMvrSignoff } from "../tools/recordMvrSignoff";
 import { checkCreditAllocation } from "../tools/checkCreditAllocation";
+import { recordAgentMemory } from "../tools/recordAgentMemory";
+import { recallAgentMemory } from "../tools/recallAgentMemory";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -557,6 +559,62 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       },
     },
     handler: (ctx, input) => checkCreditAllocation(ctx, { projectId: String(input.projectId ?? "") }),
+  },
+
+  record_agent_memory: {
+    schema: {
+      name: "record_agent_memory",
+      description:
+        "Write one note to shared, cross-agent long-term memory (Voyage AI embedding, semantically recallable " +
+        "by any agent). Not per-agent — any other agent working the same project or farm can recall it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          content: { type: "string" },
+          farmId: { type: "string" },
+          kind: { type: "string", description: "e.g. 'note' | 'finding' | 'decision'. Defaults to 'long_term'." },
+          metadata: { type: "object" },
+        },
+        required: ["projectId", "content"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordAgentMemory(ctx, {
+        projectId: String(input.projectId ?? ""),
+        content: String(input.content ?? ""),
+        farmId: input.farmId as string | undefined,
+        kind: input.kind as string | undefined,
+        metadata: input.metadata as Record<string, unknown> | undefined,
+      }),
+  },
+
+  recall_agent_memory: {
+    schema: {
+      name: "recall_agent_memory",
+      description:
+        "Semantic search over shared agent memory — embeds the query (Voyage AI) and ranks stored notes by " +
+        "cosine distance. Optional projectId/farmId/kind narrow the search.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          projectId: { type: "string" },
+          farmId: { type: "string" },
+          kind: { type: "string" },
+          limit: { type: "number", description: "Default 5, max 20." },
+        },
+        required: ["query"],
+      },
+    },
+    handler: (ctx, input) =>
+      recallAgentMemory(ctx, {
+        query: String(input.query ?? ""),
+        projectId: input.projectId as string | undefined,
+        farmId: input.farmId as string | undefined,
+        kind: input.kind as string | undefined,
+        limit: input.limit as number | undefined,
+      }),
   },
 
   export_plots_kmz: {

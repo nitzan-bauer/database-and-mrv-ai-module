@@ -101,14 +101,15 @@ BEGIN
   -- compute_uncertainty_deduction (0034) for Dave,
   -- record_grouped_project_design / record_public_comment (0035) for Rebeka,
   -- get_pipeline_status / get_department_report (0036) for John,
-  -- ingest_model_results (0037) and record_mvr_signoff (0038) for Dave, and
-  -- credit_allocation_qa (0039) for John.
+  -- ingest_model_results (0037) and record_mvr_signoff (0038) for Dave,
+  -- credit_allocation_qa (0039) for John, and record_agent_memory /
+  -- recall_agent_memory (0040), shared across all five agents.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 26 THEN
-    RAISE EXCEPTION 'FAIL  | expected 26 agent policies, found %', n;
+  IF n <> 28 THEN
+    RAISE EXCEPTION 'FAIL  | expected 28 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 26 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 28 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -475,6 +476,42 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0039: credit_allocation_qa is auto and held by john, his other 2 skills stay planned';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0040 — T2-2 agent memory: record_agent_memory / recall_agent_memory,
+-- shared across all five agents, over a corrected vector(1024) column
+-- (voyage-3's real default dimension, not the 1536 the column was
+-- originally — and wrongly — declared with).
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  bad text;
+  vec_type text;
+  missing text;
+BEGIN
+  SELECT format_type(atttypid, atttypmod) INTO vec_type
+    FROM pg_attribute
+   WHERE attrelid = 'mrv.agent_memory'::regclass AND attname = 'embedding';
+  IF vec_type IS DISTINCT FROM 'vector(1024)' THEN
+    RAISE EXCEPTION 'FAIL  | mrv.agent_memory.embedding should be vector(1024), found %', vec_type;
+  END IF;
+
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('record_agent_memory', 'recall_agent_memory') AND mode <> 'auto';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | unexpected policy mode(s) for the 0040 tools: %', bad;
+  END IF;
+
+  SELECT string_agg(agent_id, ', ') INTO missing
+  FROM mrv.agents
+  WHERE NOT (tools @> ARRAY['record_agent_memory', 'recall_agent_memory']);
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | these agents are missing record_agent_memory/recall_agent_memory: %', missing;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0040: mrv.agent_memory.embedding is vector(1024), record_agent_memory/recall_agent_memory auto and held by every agent';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1706,15 +1743,16 @@ BEGIN
   -- Dave's tools must be exactly what has a real handler behind it —
   -- run_model, recalibrate_model and issue_alerts moved to planned_tools.
   -- record_baseline_site / record_activity_data (0030),
-  -- compute_uncertainty_deduction (0034), ingest_model_results (0037) and
-  -- record_mvr_signoff (0038) are appended after the original three built
-  -- tools, in the order each migration wrote them.
+  -- compute_uncertainty_deduction (0034), ingest_model_results (0037),
+  -- record_mvr_signoff (0038) and record_agent_memory/recall_agent_memory
+  -- (0040) are appended after the original three built tools, in the
+  -- order each migration wrote them.
   PERFORM 1 FROM mrv.agents
    WHERE agent_id = 'dave'
      AND tools = ARRAY['propose_sampling_plan', 'send_work_order', 'chat',
                         'record_baseline_site', 'record_activity_data',
                         'compute_uncertainty_deduction', 'ingest_model_results',
-                        'record_mvr_signoff']
+                        'record_mvr_signoff', 'record_agent_memory', 'recall_agent_memory']
      AND planned_tools = ARRAY['run_model', 'recalibrate_model', 'issue_alerts'];
   IF NOT FOUND THEN
     RAISE EXCEPTION 'FAIL  | dave''s tools/planned_tools split does not match what is actually implemented';
