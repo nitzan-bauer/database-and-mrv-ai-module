@@ -29,6 +29,10 @@ import { recordVvbFinding } from "../tools/recordVvbFinding";
 import { resolveVvbFinding } from "../tools/resolveVvbFinding";
 import { recordPddForecast } from "../tools/recordPddForecast";
 import { getForecastVsActual } from "../tools/getForecastVsActual";
+import { recordLead } from "../tools/recordLead";
+import { updateCrmLeadStage } from "../tools/updateCrmLeadStage";
+import { addCrmFollowUp } from "../tools/addCrmFollowUp";
+import { draftOutreachMessage } from "../tools/draftOutreachMessage";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -831,6 +835,101 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       centralizeFarmDocument(ctx, {
         farmId: String(input.farmId ?? ""),
         source: input.source as never,
+      }),
+  },
+
+  record_lead: {
+    schema: {
+      name: "record_lead",
+      description:
+        "Record a new CRM lead — Farmer or Credit Buyer — at that type's first pipeline stage. " +
+        "Writes to the crm schema on the shared RDS instance, not mrv.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          leadType: { type: "string", enum: ["farmer", "credit_buyer"] },
+          fullName: { type: "string" },
+          email: { type: "string" },
+          phone: { type: "string" },
+          companyName: { type: "string" },
+          farmId: { type: "string", description: "Link to the SaaS record, once known." },
+          leadSource: { type: "string", description: "e.g. 'hubspot', 'manual', a campaign name." },
+        },
+        required: ["leadType", "fullName"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordLead(ctx, {
+        leadType: input.leadType as "farmer" | "credit_buyer",
+        fullName: String(input.fullName ?? ""),
+        email: input.email ? String(input.email) : undefined,
+        phone: input.phone ? String(input.phone) : undefined,
+        companyName: input.companyName ? String(input.companyName) : undefined,
+        farmId: input.farmId ? String(input.farmId) : undefined,
+        leadSource: input.leadSource ? String(input.leadSource) : undefined,
+      }),
+  },
+
+  update_lead_stage: {
+    schema: {
+      name: "update_lead_stage",
+      description: "Move a CRM lead to a different pipeline stage, recording the change in crm.stage_history.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          leadId: { type: "string" },
+          toStage: { type: "string", description: "Must be one of that lead's own pipeline_stages." },
+        },
+        required: ["leadId", "toStage"],
+      },
+    },
+    handler: (ctx, input) =>
+      updateCrmLeadStage(ctx, { leadId: String(input.leadId ?? ""), toStage: String(input.toStage ?? "") }),
+  },
+
+  add_follow_up: {
+    schema: {
+      name: "add_follow_up",
+      description: "Add an open follow-up task to a CRM lead.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          leadId: { type: "string" },
+          description: { type: "string" },
+          dueAt: { type: "string", description: "ISO date, optional." },
+        },
+        required: ["leadId", "description"],
+      },
+    },
+    handler: (ctx, input) =>
+      addCrmFollowUp(ctx, {
+        leadId: String(input.leadId ?? ""),
+        description: String(input.description ?? ""),
+        dueAt: input.dueAt ? String(input.dueAt) : undefined,
+      }),
+  },
+
+  draft_outreach_message: {
+    schema: {
+      name: "draft_outreach_message",
+      description:
+        "Draft an outreach message to a CRM lead. Always lands as pending_approval — nothing in this " +
+        "registry can approve its own draft; only a human, in the CRM app's approval queue, can.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          leadId: { type: "string" },
+          channel: { type: "string", description: "e.g. 'email', 'linkedin'." },
+          body: { type: "string" },
+        },
+        required: ["leadId", "channel", "body"],
+      },
+    },
+    handler: (ctx, input) =>
+      draftOutreachMessage(ctx, {
+        leadId: String(input.leadId ?? ""),
+        channel: String(input.channel ?? ""),
+        body: String(input.body ?? ""),
       }),
   },
 };

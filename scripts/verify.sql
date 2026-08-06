@@ -237,13 +237,14 @@ BEGIN
   IF jennifer_planned && ARRAY['document_centralisation']::text[] THEN
     RAISE EXCEPTION 'FAIL  | jennifer still lists document_centralisation as planned: %', jennifer_planned;
   END IF;
-  -- her other three stay planned — no CRM, calendar or board-protocol
-  -- integration exists yet.
-  IF NOT (jennifer_planned @> ARRAY['crm_hygiene', 'scheduling', 'board_protocol']) THEN
-    RAISE EXCEPTION 'FAIL  | jennifer should still have crm_hygiene/scheduling/board_protocol as planned: %', jennifer_planned;
+  -- scheduling/board_protocol stay planned — no calendar or board-protocol
+  -- integration exists yet. crm_hygiene moved to skills in 0044, once the
+  -- CRM tools existed; it is checked there, not here.
+  IF NOT (jennifer_planned @> ARRAY['scheduling', 'board_protocol']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer should still have scheduling/board_protocol as planned: %', jennifer_planned;
   END IF;
 
-  RAISE NOTICE 'PASS  | 0032: mrv.farms.drive_folder_id present, jennifer holds document_centralisation, her other 3 skills stay planned';
+  RAISE NOTICE 'PASS  | 0032: mrv.farms.drive_folder_id present, jennifer holds document_centralisation, her other 2 remaining skills stay planned';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1748,14 +1749,18 @@ BEGIN
   RAISE NOTICE 'PASS  | dave holds the Tier-1 tools he is defined to operate';
 
   -- Every tool an agent may call needs a policy row, or checkPolicy refuses
-  -- it at runtime and the agent silently does nothing.
+  -- it at runtime and the agent silently does nothing. The four CRM tools
+  -- (0044) are the one deliberate exception: they are governed by
+  -- crm.agent_action_policies in the carbonature-crm repo, not this table,
+  -- since they write to the crm schema on this same RDS instance.
   SELECT string_agg(DISTINCT t, ', ') INTO bad
   FROM mrv.agents a, unnest(a.tools) t
-  WHERE NOT EXISTS (SELECT 1 FROM mrv.agent_action_policies p WHERE p.action_name = t);
+  WHERE NOT EXISTS (SELECT 1 FROM mrv.agent_action_policies p WHERE p.action_name = t)
+    AND t NOT IN ('record_lead', 'update_lead_stage', 'add_follow_up', 'draft_outreach_message');
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'FAIL  | agents hold tools with no policy governing them: %', bad;
   END IF;
-  RAISE NOTICE 'PASS  | every tool held by an agent has a policy governing it';
+  RAISE NOTICE 'PASS  | every mrv tool held by an agent has a policy governing it (CRM tools excepted — see 0044)';
 END $$;
 
 -- =====================================================================
@@ -1903,6 +1908,55 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | built and planned tools are disjoint, and dave''s split matches reality';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0044 — CRM tools for Jennifer and Ron. Governed by crm.agent_action_
+-- policies (the carbonature-crm repo's own migrations), not mrv's —
+-- this block only checks what mrv.agents itself records.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  jennifer_tools text[];
+  jennifer_skills text[];
+  jennifer_planned text[];
+  ron_tools text[];
+  ron_skills text[];
+  ron_planned text[];
+  crm_tool_names text[] := ARRAY['record_lead', 'update_lead_stage', 'add_follow_up', 'draft_outreach_message'];
+BEGIN
+  SELECT tools, skills, planned_skills INTO jennifer_tools, jennifer_skills, jennifer_planned
+    FROM mrv.agents WHERE agent_id = 'jennifer';
+  SELECT tools, skills, planned_skills INTO ron_tools, ron_skills, ron_planned
+    FROM mrv.agents WHERE agent_id = 'ron';
+
+  IF NOT (jennifer_tools @> crm_tool_names) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing a 0044 CRM tool: %', jennifer_tools;
+  END IF;
+  IF NOT (ron_tools @> crm_tool_names) THEN
+    RAISE EXCEPTION 'FAIL  | ron is missing a 0044 CRM tool: %', ron_tools;
+  END IF;
+
+  IF NOT (jennifer_skills @> ARRAY['crm_hygiene']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing crm_hygiene from skills: %', jennifer_skills;
+  END IF;
+  IF jennifer_planned && ARRAY['crm_hygiene']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | jennifer still lists crm_hygiene as planned: %', jennifer_planned;
+  END IF;
+
+  IF NOT (ron_skills @> ARRAY['farmer_funnel', 'buyer_funnel']) THEN
+    RAISE EXCEPTION 'FAIL  | ron is missing farmer_funnel/buyer_funnel from skills: %', ron_skills;
+  END IF;
+  IF ron_planned && ARRAY['farmer_funnel', 'buyer_funnel']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | ron still lists farmer_funnel/buyer_funnel as planned: %', ron_planned;
+  END IF;
+  -- his other three stay planned — no AiSDR/HubSpot webhook, farmer
+  -- onboarding, or content pipeline exists yet.
+  IF NOT (ron_planned @> ARRAY['onboard_new_client', 'ai_sdr_campaigns', 'content_and_seo']) THEN
+    RAISE EXCEPTION 'FAIL  | ron should still have onboard_new_client/ai_sdr_campaigns/content_and_seo as planned: %', ron_planned;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0044: jennifer and ron hold the 4 CRM tools; crm_hygiene and farmer_funnel/buyer_funnel moved to skills';
 END $$;
 
 \echo ''
