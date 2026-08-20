@@ -142,6 +142,23 @@ export async function draftPddChapterContent(
   const l1 = result.rows.filter((r) => r.sectionLevel === 1);
   const provider = await getConfiguredProvider();
 
+  // Agent-learning plan (0078): past lessons on this exact action,
+  // recalled once per call (not per section — one extra embedding call
+  // is cheap, per-section would not be) and folded into every section's
+  // own prompt below. This is the one piece of code that turns
+  // accumulated feedback/outcomes into an actual influence on what gets
+  // written, not just a memory row that sits unread.
+  const { recallLessons } = await import("../agent/lessonMemory");
+  const pastLessons = await recallLessons(ctx, {
+    actionName: "draft_pdd_chapter_content",
+    projectId: input.projectId,
+    situation: input.chapterTitles.join(", "),
+  });
+  const lessonsBlock = pastLessons.length
+    ? "\n\nLessons from past drafting on this project (apply these — don't repeat a known mistake):\n" +
+      pastLessons.map((l) => `- ${l.content}`).join("\n")
+    : "";
+
   const projectFacts =
     `Project: ${project.name} · ${project.methodology} · ${project.country}\n` +
     `Participating farms:\n${farmFacts}` +
@@ -230,7 +247,8 @@ export async function draftPddChapterContent(
         `Verra's own guidance for this section:\n${guidance}\n\n` +
         `Project facts:\n${projectFacts}` +
         (direction ? `\n\nDirection from the founder (raw, not final wording — write proper prose from this):\n${direction}` : "") +
-        excerptBlock;
+        excerptBlock +
+        lessonsBlock;
 
       try {
         const resp = await provider.complete({ system: DRAFTING_SYSTEM_PROMPT, userMessage, tools: [] });
@@ -238,6 +256,15 @@ export async function draftPddChapterContent(
         if (!text) {
           sections.push({ sectionIndex: row.sectionIndex, sectionTitle: row.sectionTitle, outcome: "error", detail: "empty model response" });
           continue;
+        }
+        // The version this redraft is about to replace, captured before
+        // the UPDATE overwrites it (0079) — only when there was a prior
+        // draft; a first-ever draft has nothing to preserve.
+        if (row.draftedText?.trim()) {
+          await query(
+            `INSERT INTO mrv.pdd_section_draft_history (status_id, drafted_text, replaced_by) VALUES ($1, $2, $3)`,
+            [row.statusId, row.draftedText, ctx.actor],
+          );
         }
         await query(
           `UPDATE mrv.pdd_section_status SET drafted_text = $1, status = 'drafted', updated_by = $2 WHERE status_id = $3`,
@@ -289,6 +316,20 @@ export async function draftPddChapterContent(
     chaptersRequested: input.chapterTitles,
     draftedCount: sections.filter((s) => s.outcome === "drafted").length,
     errorCount: sections.filter((s) => s.outcome === "error").length,
+  });
+
+  // Agent-learning plan (0078): the producer half of the loop this
+  // function's own read side (recallLessons, above) consumes on the
+  // next call — best-effort, never blocks the real result below.
+  const { recordLesson } = await import("../agent/lessonMemory");
+  const errors = sections.filter((s) => s.outcome === "error");
+  await recordLesson(ctx, {
+    agentId: "rebeka",
+    actionName: "draft_pdd_chapter_content",
+    projectId: input.projectId,
+    outcomeSummary:
+      `Drafted ${sections.filter((s) => s.outcome === "drafted").length} section(s) across ${input.chapterTitles.join(", ")}.` +
+      (errors.length ? ` Errors: ${errors.map((e) => `"${e.sectionTitle}" — ${e.detail}`).join("; ")}.` : " No errors."),
   });
 
   return ok({

@@ -18,6 +18,7 @@ export interface RecalledMemory {
   farmId: string | null;
   createdBy: string | null;
   createdAt: string;
+  metadata: Record<string, unknown>;
   /** Cosine distance — 0 is identical, larger is less similar. */
   distance: number;
 }
@@ -62,9 +63,10 @@ export async function recallAgentMemory(
     farm_id: string | null;
     created_by: string | null;
     created_at: string;
+    metadata: Record<string, unknown> | null;
     distance: string;
   }>(
-    `SELECT memory_id, kind, content, project_id, farm_id, created_by, created_at,
+    `SELECT memory_id, kind, content, project_id, farm_id, created_by, created_at, metadata,
             (embedding <=> $1::vector)::text AS distance
        FROM mrv.agent_memory
       WHERE embedding IS NOT NULL
@@ -92,6 +94,7 @@ export async function recallAgentMemory(
       farmId: r.farm_id,
       createdBy: r.created_by,
       createdAt: new Date(r.created_at).toISOString(),
+      metadata: r.metadata ?? {},
       distance: Number(r.distance),
     })),
   });

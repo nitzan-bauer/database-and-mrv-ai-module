@@ -21,10 +21,13 @@ export async function finishScheduledTask(
     memoryKind: string;
     /** Task 5 only sends an email when it actually found something new — everything else always emails. */
     sendEmail?: boolean;
+    /** All 5 tasks live today are Rebeka's — future agents' own scheduled tasks pass their own id. */
+    agentId?: string;
   },
 ): Promise<ScheduledTaskOutcome> {
   const sendEmail = input.sendEmail ?? true;
   const bodyText = input.bodyParagraphs.join("\n\n");
+  const agentId = input.agentId ?? "rebeka";
 
   const { query } = await import("../db");
   const { recordAgentMemory } = await import("../tools/recordAgentMemory");
@@ -40,6 +43,18 @@ export async function finishScheduledTask(
     // rest of the report over — the DB row and email below still carry it.
     console.warn(`[${input.taskKey}] recordAgentMemory failed: ${memoryResult.error}`);
   }
+
+  // Agent-learning plan (0078): one lesson distilled from this run, only
+  // recorded if there's genuinely something worth a future run knowing
+  // (see lessonMemory.ts's own NOTHING short-circuit) — best-effort,
+  // never blocks the report itself.
+  const { recordLesson } = await import("../agent/lessonMemory");
+  await recordLesson(ctx, {
+    agentId,
+    actionName: input.taskKey,
+    projectId: input.projectId,
+    outcomeSummary: bodyText,
+  });
 
   // 2. Database — "שומרת במסד הנתונים", the literal queryable log.
   await query(

@@ -13,6 +13,8 @@ import { DATA_MODE } from "@/lib/env";
 import { AdminView } from "@/components/admin/AdminView";
 import { FarmContextForm } from "@/components/admin/FarmContextForm";
 import { DocumentsPanel } from "@/components/admin/DocumentsPanel";
+import { AgentLearningPanel } from "@/components/admin/AgentLearningPanel";
+import { listAgentLearningStats } from "@/lib/agent/learningStats";
 import type { DriveFile } from "@/lib/google/driveClient";
 import type { LinkedDriveFolder } from "@/lib/tools/linkFarmDriveFolder";
 import type { CentralizedDocument, CentralizeSource } from "@/lib/tools/centralizeFarmDocument";
@@ -74,12 +76,18 @@ export default async function AdminPage() {
   // In db mode these are the real rows — the same users the sign-in upserts,
   // the same policies checkPolicy() enforces, the same audit trail the tools
   // write. In fixtures mode the reads fall back to the demo set themselves.
-  const [farms, users, policies, audit, pddDrafts] = await Promise.all([
+  const [farms, users, policies, audit, pddDrafts, agentLearningStats] = await Promise.all([
     listFarms(project.projectId),
     listAdminUsers(),
     listAgentPolicies(),
     listAuditLog(40),
     listPddDrafts(project.projectId),
+    DATA_MODE === "db"
+      ? (async () => {
+          const { query } = await import("@/lib/db");
+          return listAgentLearningStats(query);
+        })()
+      : Promise.resolve([]),
   ]);
   const pddDraftOptions = pddDrafts.map((d) => ({
     draftId: d.draftId,
@@ -189,6 +197,8 @@ export default async function AdminPage() {
           </div>
         </section>
       )}
+
+      {DATA_MODE === "db" && <AgentLearningPanel stats={agentLearningStats} />}
 
       <AdminView users={users} policies={policies} audit={audit} />
     </div>

@@ -85,7 +85,12 @@ export async function GET(req: Request) {
         const googleAccessToken = (await getServiceGoogleAccessToken(query, serviceEmail)) ?? undefined;
         console.log(`[cron] ${row.task_key}: got access token in ${Date.now() - tokenStart}ms (present: ${Boolean(googleAccessToken)})`);
         const handlerStart = Date.now();
-        const outcome = await handler({ actor: "cron", actorKind: "agent", googleAccessToken });
+        // The real agent id, not the generic "cron" trigger mechanism —
+        // already sitting right here on the due row. Audit/learning
+        // queries group by actor to compute a per-agent picture (0078's
+        // agent-learning plan); "cron" as the actor would attribute
+        // every scheduled task, for every agent, to the same identity.
+        const outcome = await handler({ actor: row.agent_id, actorKind: "agent", googleAccessToken });
         console.log(`[cron] ${row.task_key}: handler finished in ${Date.now() - handlerStart}ms`);
         status = outcome.ok ? "ok" : "error";
         detail = outcome.detail;
@@ -110,8 +115,8 @@ export async function GET(req: Request) {
 
     await query(
       `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
-       VALUES ('cron', 'run_scheduled_task', 'scheduled_task', $1, $2::jsonb)`,
-      [row.task_id, JSON.stringify({ taskKey: row.task_key, agentId: row.agent_id, status, detail })],
+       VALUES ($1, 'run_scheduled_task', 'scheduled_task', $2, $3::jsonb)`,
+      [row.agent_id, row.task_id, JSON.stringify({ taskKey: row.task_key, triggeredBy: "cron", status, detail })],
     );
 
     results.push({ taskKey: row.task_key, status, detail });
