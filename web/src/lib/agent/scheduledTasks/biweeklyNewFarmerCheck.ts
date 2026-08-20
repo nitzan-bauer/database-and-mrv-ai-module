@@ -24,11 +24,17 @@ export async function runBiweeklyNewFarmerCheck(ctx: ToolContext): Promise<Sched
   const { listPddSectionStatus, chapterTitleForSectionIndex } = await import("../../pdd/sectionStatus");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
 
-  const own = await query<{ last_run_at: string | null; created_at: string }>(
+  const own = await query<{ last_run_at: string | Date | null; created_at: string | Date }>(
     `SELECT last_run_at, created_at FROM mrv.scheduled_tasks WHERE task_key = $1`,
     [TASK_KEY],
   );
-  const since = own[0]?.last_run_at ?? own[0]?.created_at ?? "1970-01-01T00:00:00Z";
+  // node-postgres returns a timestamptz column as a native Date, not a
+  // string (confirmed live: this exact value, unconverted, produced
+  // "Thu Aug 20 2026 05:58:28 GMT+0000 (...)" in the SaaS REST query URL
+  // instead of ISO, and Postgres rejected it outright). new Date(x) is a
+  // no-op for an already-Date x, so this is safe regardless of which
+  // shape pg actually handed back.
+  const since = new Date(own[0]?.last_run_at ?? own[0]?.created_at ?? "1970-01-01T00:00:00Z").toISOString();
 
   let newFarms;
   try {

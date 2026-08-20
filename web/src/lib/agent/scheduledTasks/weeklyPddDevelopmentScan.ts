@@ -21,11 +21,17 @@ export async function runWeeklyPddDevelopmentScan(ctx: ToolContext): Promise<Sch
   const { draftPddChapterContent } = await import("../../tools/draftPddChapterContent");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
 
-  const own = await query<{ last_run_at: string | null }>(
+  const own = await query<{ last_run_at: string | Date | null }>(
     `SELECT last_run_at FROM mrv.scheduled_tasks WHERE task_key = $1`,
     [TASK_KEY],
   );
-  const since = own[0]?.last_run_at ?? "1970-01-01T00:00:00Z";
+  // node-postgres hands back a timestamptz column as a native Date, not a
+  // string (confirmed live in biweeklyNewFarmerCheck.ts's identical
+  // pattern — the raw value broke a URL query there). Only worked here
+  // on this task's first-ever run because last_run_at was still null,
+  // taking the string-literal fallback — new Date(x) is a no-op for an
+  // already-Date x, so both the null case and a real Date are safe now.
+  const since = new Date(own[0]?.last_run_at ?? "1970-01-01T00:00:00Z").toISOString();
 
   const sectionStatus = await listPddSectionStatus(query, TARGET_PROJECT_ID);
   if (!sectionStatus) {
