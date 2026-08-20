@@ -93,7 +93,23 @@ export type ActionName =
   | "record_vvb_finding"
   | "resolve_vvb_finding"
   | "record_pdd_forecast"
-  | "get_forecast_vs_actual";
+  | "get_forecast_vs_actual"
+  | "submit_project_status"
+  | "research_pdd_precedents"
+  | "search_verra_registry"
+  | "sync_pdd_google_doc"
+  | "update_pdd_section_status"
+  | "run_pdd_generator_pipeline"
+  | "import_saas_project_farms"
+  | "draft_pdd_chapter_content"
+  | "download_related_pdds"
+  | "ingest_related_pdd_precedents"
+  | "research_project_kickoff_date"
+  | "compile_eligibility_evidence_pack"
+  | "update_pdd_seed_answer"
+  | "check_calendar_availability"
+  | "schedule_calendar_event"
+  | "list_recent_mail";
 
 /**
  * Check the policy for an action and record the attempt.

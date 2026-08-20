@@ -17,8 +17,17 @@ export default async function MapPage({
 }) {
   const { farm } = await searchParams;
   const [project] = await listProjects();
-  const farms = await getFarmsWithPlots(project.projectId);
-  const points = await listSamplingPoints(project.projectId);
+  // Demo farms (mrv.farms.is_demo, e.g. Elad Farm / Nitzan-Veg-Tech Farm)
+  // are test fixtures, not real prospects — keep them off the map real
+  // staff and prospects look at.
+  const farms = (await getFarmsWithPlots(project.projectId)).filter((f) => !f.isDemo);
+  // Sampling points are fetched independently of the farm list above, so
+  // without this a demo farm's points would still float on the map with no
+  // plot polygon under them.
+  const visiblePlotIds = new Set(farms.flatMap((f) => f.plots.map((p) => p.plotId)));
+  const points = (await listSamplingPoints(project.projectId)).filter(
+    (sp) => sp.plotId == null || visiblePlotIds.has(sp.plotId),
+  );
 
   if (!MAPBOX_TOKEN) {
     return (

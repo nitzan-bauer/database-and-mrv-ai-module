@@ -36,6 +36,14 @@ export const DEMO_PROJECT: Project = {
   country: "Kenya",
   status: "under_development",
   isDemo: true,
+  googleDocId: null,
+  googleDocUrl: null,
+  readinessReportDocId: null,
+  readinessReportDocUrl: null,
+  eligibilityPackDocId: null,
+  eligibilityPackDocUrl: null,
+  lastPddPipelineRunAt: null,
+  pddGeneratorLockedAt: null,
 };
 
 const NVT = "617f7cfb-701e-4760-b13b-7663904be8bf";

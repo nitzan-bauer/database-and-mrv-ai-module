@@ -33,7 +33,11 @@ export default async function ProjectsPage() {
 }
 
 async function ProjectBlock({ project }: { project: Project }) {
-  const farms = await getFarmsWithPlots(project.projectId);
+  // Demo farms (mrv.farms.is_demo, e.g. Elad Farm / Nitzan-Veg-Tech Farm)
+  // are test fixtures, not real prospects — keep them out of this
+  // farm-facing listing. Non-demo projects already never mix these in;
+  // this guards the case where a demo farm sits inside a real project.
+  const farms = (await getFarmsWithPlots(project.projectId)).filter((f) => !f.isDemo);
 
   const totalPlots = farms.reduce((s, f) => s + f.plotCount, 0);
   const totalHa = farms.reduce((s, f) => s + f.totalAreaHa, 0);

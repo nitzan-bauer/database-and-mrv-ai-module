@@ -1,20 +1,65 @@
 import { auth } from "@/auth";
-import { creditPipeline, listAgents, listAuditLog, listPddDrafts, listProjects, pddReadiness } from "@/lib/data";
+import { creditPipeline, listAgents, listAuditLog, listProjects, pddReadiness, resolveActiveProject } from "@/lib/data";
+import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
+import { ChapterReadinessBars } from "@/components/agents/ChapterReadinessBars";
 import { DATA_MODE } from "@/lib/env";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
-import type { GeneratedPddDraft } from "@/lib/tools/generatePddDraft";
 import type { ToolResult } from "@/lib/tools/context";
 import { AgentOrgChart } from "@/components/agents/AgentOrgChart";
-import { PddDraftPanel } from "@/components/agents/PddDraftPanel";
+import { ProjectStatusPanel } from "@/components/agents/ProjectStatusPanel";
+import type { SubmittedProjectStatus, ProjectStatus } from "@/lib/tools/submitProjectStatus";
+import { GoogleDocPanel } from "@/components/agents/GoogleDocPanel";
+import type { SyncedPddGoogleDoc } from "@/lib/tools/syncPddGoogleDoc";
+import { ReadinessGauge } from "@/components/agents/ReadinessGauge";
+import { SeedQuestionnaireBlock } from "@/components/agents/SeedQuestionnaireBlock";
+import type { UpdatedPddSeedAnswer } from "@/lib/tools/updatePddSeedAnswer";
+import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipeline";
+
+/** Save one SEED-questionnaire answer, as the signed-in person. */
+async function updateSeedAnswerAction(input: {
+  projectId: string;
+  questionKey: string;
+  answerText: string;
+}): Promise<ToolResult<UpdatedPddSeedAnswer>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { updatePddSeedAnswer } = await import("@/lib/tools/updatePddSeedAnswer");
+  return updatePddSeedAnswer({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
+
+/** Run the full PDD Generator pipeline as the signed-in person. */
+async function runPddGeneratorAction(input: { projectId: string }): Promise<ToolResult<PddGeneratorPipelineResult>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { runPddGeneratorPipeline } = await import("@/lib/tools/runPddGeneratorPipeline");
+  return runPddGeneratorPipeline(
+    { actor: session?.user?.email ?? "unknown", actorKind: "human", googleAccessToken: session?.googleAccessToken },
+    input,
+  );
+}
 
 export const dynamic = "force-dynamic";
 
-/** Generate a PDD draft as the signed-in person. */
-async function generatePddDraftAction(input: { projectId: string }): Promise<ToolResult<GeneratedPddDraft>> {
+/** Advance the project's declared VM0042 pipeline status as the signed-in person. */
+async function submitProjectStatusAction(input: {
+  projectId: string;
+  status: ProjectStatus;
+}): Promise<ToolResult<SubmittedProjectStatus>> {
   "use server";
   const session = await auth().catch(() => null);
-  const { generatePddDraft } = await import("@/lib/tools/generatePddDraft");
-  return generatePddDraft({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+  const { submitProjectStatus } = await import("@/lib/tools/submitProjectStatus");
+  return submitProjectStatus({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
+
+/** Create or update the project's live Google Doc, as the signed-in person's own Drive access. */
+async function syncPddGoogleDocAction(input: { projectId: string }): Promise<ToolResult<SyncedPddGoogleDoc>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { syncPddGoogleDoc } = await import("@/lib/tools/syncPddGoogleDoc");
+  return syncPddGoogleDoc(
+    { actor: session?.user?.email ?? "unknown", actorKind: "human", googleAccessToken: session?.googleAccessToken },
+    input,
+  );
 }
 
 /**
@@ -30,7 +75,11 @@ async function generatePddDraftAction(input: { projectId: string }): Promise<Too
  * reads zero, the reason is printed beside it, because a zero on a control
  * tower is only useful with its cause attached.
  */
-export default async function AgentsPage() {
+export default async function AgentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
   if (DATA_MODE !== "db") {
     return (
       <Frame>
@@ -48,14 +97,32 @@ export default async function AgentsPage() {
     );
   }
 
-  const [project] = await listProjects();
-  const [agents, pipeline, audit, readiness, pddDrafts] = await Promise.all([
+  const { project: requestedProjectId } = await searchParams;
+  const allProjects = await listProjects();
+  const project = resolveActiveProject(allProjects, requestedProjectId);
+  const [agents, pipeline, audit, readiness] = await Promise.all([
     listAgents(),
     creditPipeline(),
     listAuditLog(200),
     pddReadiness(project.projectId),
-    listPddDrafts(project.projectId),
   ]);
+
+  // The questionnaire's own answered/total — a second, independent
+  // readiness figure from what pddReadiness above reports: that one is
+  // Rebeka's fixed 4-metric check (boundaries, baseline, etc.), this one
+  // is the structured questionnaire's actual fill-in progress.
+  const { query } = await import("@/lib/db");
+  const { listPddSectionStatus, summarizeByChapter } = await import("@/lib/pdd/sectionStatus");
+  const questionnaire = await listPddSectionStatus(query, project.projectId);
+  const questionnaireAnswered = questionnaire?.rows.filter((r) => r.status === "answered").length ?? 0;
+  const questionnaireDrafted = questionnaire?.rows.filter((r) => r.status === "drafted").length ?? 0;
+  const questionnairePct = questionnaire?.rows.length
+    ? Math.round((questionnaireAnswered / questionnaire.rows.length) * 100)
+    : 0;
+  const chapterReadiness = questionnaire ? summarizeByChapter(questionnaire.rows) : [];
+
+  const { listSeedAnswers } = await import("@/lib/pdd/seedAnswers");
+  const seedState = await listSeedAnswers(query, project.projectId);
 
   const actorIds = new Set(agents.map((a) => a.actorId));
   const agentActions = audit.filter((e) => actorIds.has(e.actor)).slice(0, 12);
@@ -63,26 +130,51 @@ export default async function AgentsPage() {
 
   const hasModelKey = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 
-  // Connections are reported as they actually are. The database is reachable
-  // — this page just read it — and nothing else has been wired yet.
+  // Connections are reported as they actually are, per agent — not one
+  // uniform list. A tool existing in the registry is not the same as an
+  // agent holding it, so "connected" here always means this specific
+  // agent's own tools array includes something that reaches that system.
   const dbConn = {
     name: "Project database (mrv on RDS)",
     status: "connected" as const,
     detail: "read and write",
   };
+  const DRIVE_TOOLS = ["link_farm_drive_folder", "list_farm_drive_documents", "centralize_farm_document", "unlink_farm_drive_folder"];
+  const CALENDAR_TOOLS = ["check_calendar_availability", "schedule_calendar_event"];
+  const CRM_TOOLS = [
+    "record_lead", "update_lead_stage", "add_follow_up", "draft_outreach_message",
+    "crm_hygiene", "farmer_funnel", "buyer_funnel",
+  ];
+  const modelConn = hasModelKey
+    ? { name: "Model runtime", status: "connected" as const, detail: process.env.AGENT_MODEL_ID?.trim() || "claude-sonnet-5" }
+    : { name: "Model runtime", status: "not configured" as const, detail: "no ANTHROPIC_API_KEY" };
+
   const connections: Record<string, Array<{ name: string; status: "connected" | "not configured"; detail: string }>> =
     Object.fromEntries(
-      agents.map((a) => [
-        a.agentId,
-        [
+      agents.map((a) => {
+        const holds = (names: string[]) => names.some((n) => a.tools.includes(n));
+        const rows: Array<{ name: string; status: "connected" | "not configured"; detail: string }> = [
           a.tools.length ? dbConn : { ...dbConn, detail: "read only — no tools held" },
-          { name: "Verra registry account", status: "not configured" as const, detail: "no credentials" },
-          { name: "Mailboxes", status: "not configured" as const, detail: "no mail integration" },
-          hasModelKey
-            ? { name: "Model runtime", status: "connected" as const, detail: process.env.AGENT_MODEL_ID?.trim() || "claude-sonnet-5" }
-            : { name: "Model runtime", status: "not configured" as const, detail: "no ANTHROPIC_API_KEY" },
-        ],
-      ]),
+        ];
+
+        if (holds(CRM_TOOLS)) {
+          rows.push({ name: "CRM database (crm schema, shared RDS)", status: "connected", detail: "read and write" });
+        }
+        if (holds(DRIVE_TOOLS)) {
+          rows.push({ name: "Google Drive", status: "connected", detail: "as the signed-in person, via their own OAuth session" });
+        }
+        if (holds(CALENDAR_TOOLS)) {
+          rows.push({ name: "Google Calendar", status: "connected", detail: "as the signed-in person, via their own OAuth session" });
+        }
+        if (a.tools.includes("list_recent_mail")) {
+          rows.push({ name: "Gmail", status: "connected", detail: "read-only, as the signed-in person" });
+        }
+        if (a.tools.includes("fetch_public_url")) {
+          rows.push({ name: "Verra registry", status: "connected", detail: "public — no credentials needed" });
+        }
+        rows.push(modelConn);
+        return [a.agentId, rows];
+      }),
     );
 
   /**
@@ -97,7 +189,10 @@ export default async function AgentsPage() {
     "use server";
     const session = await auth().catch(() => null);
     const { runAgentTask } = await import("@/lib/agent/runAgentTask");
-    return runAgentTask(agentId, task, { requestedBy: session?.user?.email ?? "unknown" });
+    return runAgentTask(agentId, task, {
+      requestedBy: session?.user?.email ?? "unknown",
+      googleAccessToken: session?.googleAccessToken,
+    });
   }
 
   const totalBuilt = agents.reduce((n, a) => n + a.skills.length + a.tools.length, 0);
@@ -108,7 +203,25 @@ export default async function AgentsPage() {
 
   return (
     <Frame>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ProjectSwitcher projects={allProjects} activeProjectId={project.projectId} basePath="/agents" />
+        <a
+          href={`/api/pdd/${encodeURIComponent(project.projectId)}/export`}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-pine-600 bg-white px-3 py-1.5 text-[12px] font-bold text-pine-700 hover:bg-pine-50"
+        >
+          Download Drafted PDD
+        </a>
+      </div>
       <div className="grid gap-3 sm:grid-cols-4">
+        {questionnaire && (
+          <ReadinessGauge
+            pct={questionnairePct}
+            label={
+              `${questionnaireAnswered}/${questionnaire.rows.length} confirmed` +
+              (questionnaireDrafted ? ` · ${questionnaireDrafted} AI-drafted, awaiting your review` : "")
+            }
+          />
+        )}
         <Stat label="Agents" value={String(agents.length)} foot="one head, four reports" />
         <Stat label="Built" value={String(totalBuilt)} foot="skills and tools that run" />
         <Stat label="Planned" value={String(totalPlanned)} foot="named in the specification" />
@@ -118,6 +231,15 @@ export default async function AgentsPage() {
           foot="by an agent, in the audit log"
         />
       </div>
+
+      <ChapterReadinessBars
+        chapters={chapterReadiness}
+        overall={
+          questionnaire
+            ? { total: questionnaire.rows.length, answered: questionnaireAnswered, drafted: questionnaireDrafted }
+            : undefined
+        }
+      />
 
       <section>
         <h2 className="mb-3 text-base font-bold text-pine-700">The department</h2>
@@ -157,7 +279,29 @@ export default async function AgentsPage() {
       </section>
 
       <section>
-        <h2 className="mb-1 text-base font-bold text-pine-700">PDD readiness — Rebeka</h2>
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-base font-bold text-pine-700">PDD readiness — Rebeka</h2>
+          <a
+            href={`/pdd-development?project=${encodeURIComponent(project.projectId)}`}
+            className="rounded-md border border-line px-2.5 py-1 text-[12px] font-semibold text-pine-700 hover:bg-cream"
+          >
+            Open PDD Development →
+          </a>
+        </div>
+
+        <div className="mb-4">
+          <SeedQuestionnaireBlock
+            projectId={project.projectId}
+            projectName={seedState.projectName}
+            rows={seedState.rows}
+            autoFacts={seedState.autoFacts}
+            pendingCount={seedState.pendingCount}
+            lockedAt={project.pddGeneratorLockedAt}
+            saveAnswerAction={updateSeedAnswerAction}
+            runGeneratorAction={runPddGeneratorAction}
+          />
+        </div>
+
         <p className="mb-3 max-w-3xl text-[13px] text-muted">
           Not a check against the wording of any one template — that would mean assuming what an
           arbitrary section title requires, which is exactly what storing the template as data was
@@ -206,8 +350,17 @@ export default async function AgentsPage() {
             })}
           </div>
         )}
-        <div className="mt-3">
-          <PddDraftPanel projectId={project.projectId} drafts={pddDrafts} action={generatePddDraftAction} />
+        <div className="mt-3 space-y-3">
+          <ProjectStatusPanel
+            projectId={project.projectId}
+            currentStatus={project.status}
+            action={submitProjectStatusAction}
+          />
+          <GoogleDocPanel
+            projectId={project.projectId}
+            googleDocUrl={project.googleDocUrl}
+            action={syncPddGoogleDocAction}
+          />
         </div>
       </section>
 

@@ -9,7 +9,14 @@ import { fail, ok, type ToolContext, type ToolResult } from "./context";
  * logged to crm.audit_log, not mrv's. Keeping the two apart means neither
  * schema's policy table has to know the other exists.
  */
-export type CrmActionName = "record_lead" | "update_lead_stage" | "add_follow_up" | "draft_outreach_message";
+export type CrmActionName =
+  | "record_lead"
+  | "update_lead_stage"
+  | "add_follow_up"
+  | "draft_outreach_message"
+  | "crm_hygiene"
+  | "farmer_funnel"
+  | "buyer_funnel";
 
 export async function checkCrmPolicy(
   action: CrmActionName,

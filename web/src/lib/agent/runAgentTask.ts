@@ -71,7 +71,7 @@ export interface AgentTaskResult {
 export async function runAgentTask(
   agentId: string,
   userTask: string,
-  opts: { requestedBy: string; confirmed?: boolean; provider?: ModelProvider },
+  opts: { requestedBy: string; confirmed?: boolean; provider?: ModelProvider; googleAccessToken?: string },
 ): Promise<AgentTaskResult> {
   const agent = await getAgent(agentId);
   if (!agent) {
@@ -131,7 +131,16 @@ export async function runAgentTask(
     return { agentId, providerId: provider.id, outcome: { kind: "error", message: resolved.error } };
   }
 
-  const ctx: ToolContext = { actor: agent.actorId, actorKind: "agent", confirmed: opts.confirmed };
+  // The agent acts with exactly the Google access the human who invoked it
+  // already has by hand — not a separate service identity. Without this,
+  // any Drive/Gmail/Calendar tool an agent holds fails with "no token for
+  // this session" even when the requester's own sign-in granted the scope.
+  const ctx: ToolContext = {
+    actor: agent.actorId,
+    actorKind: "agent",
+    confirmed: opts.confirmed,
+    googleAccessToken: opts.googleAccessToken,
+  };
   const result = await entry.handler(ctx, resolved.input);
 
   if (!result.ok) {

@@ -18,6 +18,14 @@ export interface Project {
   country: string;
   status: ProjectStatus;
   isDemo: boolean;
+  googleDocId: string | null;
+  googleDocUrl: string | null;
+  readinessReportDocId: string | null;
+  readinessReportDocUrl: string | null;
+  eligibilityPackDocId: string | null;
+  eligibilityPackDocUrl: string | null;
+  lastPddPipelineRunAt: string | null;
+  pddGeneratorLockedAt: string | null;
 }
 
 export interface Farm {

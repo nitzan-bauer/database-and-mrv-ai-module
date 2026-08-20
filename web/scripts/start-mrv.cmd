@@ -62,7 +62,22 @@ rem Open the browser once the port answers, without blocking the server.
 start "" /b powershell -NoProfile -WindowStyle Hidden -Command ^
   "for ($i=0; $i -lt 60; $i++) { try { Invoke-WebRequest -Uri '%URL%' -UseBasicParsing -TimeoutSec 3 | Out-Null; Start-Process '%URL%'; break } catch { Start-Sleep -Seconds 2 } }"
 
-call npm run dev -- -p %PORT%
+rem ---------------------------------------------------------------------
+rem  Next is invoked directly (node_modules\.bin\next.cmd), not through
+rem  "npm run dev". npm.cmd is itself another process hop — cmd.exe spawns
+rem  node to run npm-cli.js, which spawns a THIRD process for next dev —
+rem  and closing this console window does not reliably kill that deep a
+rem  chain on Windows: the actual server can survive as an orphan, still
+rem  holding the port, so the next launch always refuses with "port in
+rem  use" even though the window is gone. One hop closer to the console
+rem  terminates cleanly.
+rem
+rem  "npm run dev" also runs the predev hook (clean:conflicts, resolving
+rem  OneDrive sync-conflict files) before starting — invoking next
+rem  directly skips that, so it is run explicitly here instead.
+rem ---------------------------------------------------------------------
+call npm run clean:conflicts
+call "node_modules\.bin\next.cmd" dev -p %PORT%
 
 echo.
 echo   Server stopped.

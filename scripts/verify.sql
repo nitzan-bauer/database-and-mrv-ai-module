@@ -106,14 +106,17 @@ BEGIN
   -- credit_allocation_qa (0039) for John, record_agent_memory /
   -- recall_agent_memory (0040) shared across all five agents,
   -- fetch_public_url (0041) for Rebeka and John, record_vvb_finding /
-  -- resolve_vvb_finding (0042) for Dave and Rebeka, and record_pdd_forecast
-  -- (0043) for Rebeka / get_forecast_vs_actual (0043) for John.
+  -- resolve_vvb_finding (0042) for Dave and Rebeka, record_pdd_forecast
+  -- (0043) for Rebeka / get_forecast_vs_actual (0043) for John, and
+  -- check_calendar_availability / schedule_calendar_event / list_recent_mail
+  -- (0046) for Jennifer. The CRM tools (0044/0045) are NOT here — they are
+  -- governed by crm.agent_action_policies in the carbonature-crm repo.
   SELECT count(*) INTO n FROM mrv.agent_action_policies;
-  IF n <> 33 THEN
-    RAISE EXCEPTION 'FAIL  | expected 33 agent policies, found %', n;
+  IF n <> 36 THEN
+    RAISE EXCEPTION 'FAIL  | expected 36 agent policies, found %', n;
   END IF;
 
-  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 33 policies)';
+  RAISE NOTICE 'PASS  | reference data seeded (18 fertilizers, 3 machinery, 36 policies)';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -237,14 +240,14 @@ BEGIN
   IF jennifer_planned && ARRAY['document_centralisation']::text[] THEN
     RAISE EXCEPTION 'FAIL  | jennifer still lists document_centralisation as planned: %', jennifer_planned;
   END IF;
-  -- scheduling/board_protocol stay planned — no calendar or board-protocol
-  -- integration exists yet. crm_hygiene moved to skills in 0044, once the
-  -- CRM tools existed; it is checked there, not here.
-  IF NOT (jennifer_planned @> ARRAY['scheduling', 'board_protocol']) THEN
-    RAISE EXCEPTION 'FAIL  | jennifer should still have scheduling/board_protocol as planned: %', jennifer_planned;
+  -- board_protocol stays planned — no board-protocol content source
+  -- exists yet. crm_hygiene moved to skills in 0044/0045, scheduling in
+  -- 0046, once their respective tools existed; both checked there, not here.
+  IF NOT (jennifer_planned @> ARRAY['board_protocol']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer should still have board_protocol as planned: %', jennifer_planned;
   END IF;
 
-  RAISE NOTICE 'PASS  | 0032: mrv.farms.drive_folder_id present, jennifer holds document_centralisation, her other 2 remaining skills stay planned';
+  RAISE NOTICE 'PASS  | 0032: mrv.farms.drive_folder_id present, jennifer holds document_centralisation, her remaining skill stays planned';
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1749,18 +1752,19 @@ BEGIN
   RAISE NOTICE 'PASS  | dave holds the Tier-1 tools he is defined to operate';
 
   -- Every tool an agent may call needs a policy row, or checkPolicy refuses
-  -- it at runtime and the agent silently does nothing. The four CRM tools
-  -- (0044) are the one deliberate exception: they are governed by
+  -- it at runtime and the agent silently does nothing. The seven CRM tools
+  -- (0044, 0045) are the one deliberate exception: they are governed by
   -- crm.agent_action_policies in the carbonature-crm repo, not this table,
   -- since they write to the crm schema on this same RDS instance.
   SELECT string_agg(DISTINCT t, ', ') INTO bad
   FROM mrv.agents a, unnest(a.tools) t
   WHERE NOT EXISTS (SELECT 1 FROM mrv.agent_action_policies p WHERE p.action_name = t)
-    AND t NOT IN ('record_lead', 'update_lead_stage', 'add_follow_up', 'draft_outreach_message');
+    AND t NOT IN ('record_lead', 'update_lead_stage', 'add_follow_up', 'draft_outreach_message',
+                  'crm_hygiene', 'farmer_funnel', 'buyer_funnel');
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'FAIL  | agents hold tools with no policy governing them: %', bad;
   END IF;
-  RAISE NOTICE 'PASS  | every mrv tool held by an agent has a policy governing it (CRM tools excepted — see 0044)';
+  RAISE NOTICE 'PASS  | every mrv tool held by an agent has a policy governing it (CRM tools excepted — see 0044, 0045)';
 END $$;
 
 -- =====================================================================
@@ -1957,6 +1961,69 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'PASS  | 0044: jennifer and ron hold the 4 CRM tools; crm_hygiene and farmer_funnel/buyer_funnel moved to skills';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0045 — the read-side tools crm_hygiene/farmer_funnel/buyer_funnel
+-- actually need, added to mrv.agents.tools (skills were already correct
+-- as of 0044). Also governed by crm.agent_action_policies, not mrv's.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  jennifer_tools text[];
+  ron_tools text[];
+BEGIN
+  SELECT tools INTO jennifer_tools FROM mrv.agents WHERE agent_id = 'jennifer';
+  SELECT tools INTO ron_tools FROM mrv.agents WHERE agent_id = 'ron';
+
+  IF NOT (jennifer_tools @> ARRAY['crm_hygiene']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing crm_hygiene from tools: %', jennifer_tools;
+  END IF;
+  IF NOT (ron_tools @> ARRAY['farmer_funnel', 'buyer_funnel']) THEN
+    RAISE EXCEPTION 'FAIL  | ron is missing farmer_funnel/buyer_funnel from tools: %', ron_tools;
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0045: jennifer holds crm_hygiene, ron holds farmer_funnel/buyer_funnel';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 0046 — real Calendar + Gmail tools for Jennifer; scheduling moves to
+-- skills (board_protocol stays planned — no board-meeting source yet).
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  jennifer_tools text[];
+  jennifer_skills text[];
+  jennifer_planned text[];
+  bad text;
+BEGIN
+  SELECT tools, skills, planned_skills INTO jennifer_tools, jennifer_skills, jennifer_planned
+    FROM mrv.agents WHERE agent_id = 'jennifer';
+
+  IF NOT (jennifer_tools @> ARRAY['check_calendar_availability', 'schedule_calendar_event', 'list_recent_mail']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing a 0046 tool: %', jennifer_tools;
+  END IF;
+  IF NOT (jennifer_skills @> ARRAY['scheduling']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer is missing scheduling from skills: %', jennifer_skills;
+  END IF;
+  IF jennifer_planned && ARRAY['scheduling']::text[] THEN
+    RAISE EXCEPTION 'FAIL  | jennifer still lists scheduling as planned: %', jennifer_planned;
+  END IF;
+  IF NOT (jennifer_planned @> ARRAY['board_protocol']) THEN
+    RAISE EXCEPTION 'FAIL  | jennifer should still have board_protocol as planned: %', jennifer_planned;
+  END IF;
+
+  SELECT string_agg(action_name || ':' || mode, ', ') INTO bad
+  FROM mrv.agent_action_policies
+  WHERE action_name IN ('check_calendar_availability', 'list_recent_mail') AND mode <> 'auto';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL  | expected check_calendar_availability/list_recent_mail to be auto, found %', bad;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM mrv.agent_action_policies WHERE action_name = 'schedule_calendar_event' AND mode = 'confirm') THEN
+    RAISE EXCEPTION 'FAIL  | expected schedule_calendar_event to be confirm';
+  END IF;
+
+  RAISE NOTICE 'PASS  | 0046: jennifer holds real Calendar/Gmail tools, scheduling moved to skills';
 END $$;
 
 \echo ''

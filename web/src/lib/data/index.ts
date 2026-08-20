@@ -53,7 +53,9 @@ export async function listProjects(): Promise<Project[]> {
   const { query } = await import("../db");
   return (
     await query<Record<string, unknown>>(
-      `SELECT project_id, name, methodology, is_grouped, country, status, is_demo
+      `SELECT project_id, name, methodology, is_grouped, country, status, is_demo, google_doc_id, google_doc_url,
+              readiness_report_doc_id, readiness_report_doc_url, eligibility_pack_doc_id, eligibility_pack_doc_url,
+              last_pdd_pipeline_run_at, pdd_generator_locked_at
          FROM mrv.projects ORDER BY name`,
     )
   ).map(rowToProject);
@@ -62,6 +64,24 @@ export async function listProjects(): Promise<Project[]> {
 export async function getProject(projectId: string): Promise<Project | null> {
   const all = await listProjects();
   return all.find((p) => p.projectId === projectId) ?? null;
+}
+
+/**
+ * Which project a single-project-scoped page (Factory, PDD questionnaire)
+ * should show. Picking `projects[0]` broke the moment a second project
+ * existed: `listProjects()` sorts by name, so which project lands at [0]
+ * is an accident of naming, not a choice — a real project could silently
+ * replace the demo one a page had always shown, or (the opposite problem)
+ * be unreachable because it never sorts first.
+ *
+ * Explicit id (from `?project=`) wins. Otherwise default to the demo
+ * project — matching every page's existing behaviour today — so nothing
+ * changes for existing links until a person deliberately switches.
+ */
+export function resolveActiveProject(projects: Project[], requestedId?: string): Project {
+  const requested = requestedId ? projects.find((p) => p.projectId === requestedId) : undefined;
+  if (requested) return requested;
+  return projects.find((p) => p.isDemo) ?? projects[0];
 }
 
 export async function listFarms(projectId: string): Promise<Farm[]> {
@@ -560,6 +580,18 @@ function rowToProject(r: Record<string, unknown>): Project {
     country: String(r.country ?? ""),
     status: (r.status as Project["status"]) ?? "under_development",
     isDemo: Boolean(r.is_demo),
+    googleDocId: (r.google_doc_id as string | null) ?? null,
+    googleDocUrl: (r.google_doc_url as string | null) ?? null,
+    readinessReportDocId: (r.readiness_report_doc_id as string | null) ?? null,
+    readinessReportDocUrl: (r.readiness_report_doc_url as string | null) ?? null,
+    eligibilityPackDocId: (r.eligibility_pack_doc_id as string | null) ?? null,
+    eligibilityPackDocUrl: (r.eligibility_pack_doc_url as string | null) ?? null,
+    lastPddPipelineRunAt: r.last_pdd_pipeline_run_at
+      ? new Date(r.last_pdd_pipeline_run_at as string | Date).toISOString()
+      : null,
+    pddGeneratorLockedAt: r.pdd_generator_locked_at
+      ? new Date(r.pdd_generator_locked_at as string | Date).toISOString()
+      : null,
   };
 }
 

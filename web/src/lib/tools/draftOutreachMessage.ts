@@ -5,6 +5,8 @@ export interface DraftOutreachMessageInput {
   leadId: string;
   channel: string; // 'email' | 'linkedin' | ...
   body: string;
+  /** Required in practice for channel='email' — enforced at send time, not here. */
+  subject?: string;
 }
 
 export interface DraftOutreachMessageResult {
@@ -33,9 +35,9 @@ export async function draftOutreachMessage(
 
   const { crmQuery } = await import("../crmDb");
   const rows = await crmQuery<{ draft_id: string }>(
-    `INSERT INTO crm.draft_messages (lead_id, channel, body, created_by_agent)
-     VALUES ($1, $2, $3, $4) RETURNING draft_id`,
-    [input.leadId, input.channel, input.body, ctx.actor],
+    `INSERT INTO crm.draft_messages (lead_id, channel, subject, body, created_by_agent)
+     VALUES ($1, $2, $3, $4, $5) RETURNING draft_id`,
+    [input.leadId, input.channel, input.subject ?? null, input.body, ctx.actor],
   );
 
   await crmAudit(ctx, "draft_outreach_message", { type: "lead", id: input.leadId }, { channel: input.channel });

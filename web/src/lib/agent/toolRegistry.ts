@@ -29,10 +29,28 @@ import { recordVvbFinding } from "../tools/recordVvbFinding";
 import { resolveVvbFinding } from "../tools/resolveVvbFinding";
 import { recordPddForecast } from "../tools/recordPddForecast";
 import { getForecastVsActual } from "../tools/getForecastVsActual";
+import { submitProjectStatus } from "../tools/submitProjectStatus";
+import { researchPddPrecedents } from "../tools/researchPddPrecedents";
+import { searchVerraRegistry } from "../tools/searchVerraRegistry";
+import { syncPddGoogleDoc } from "../tools/syncPddGoogleDoc";
+import { updatePddSectionStatus } from "../tools/updatePddSectionStatus";
+import { runPddGeneratorPipeline } from "../tools/runPddGeneratorPipeline";
+import { importSaasProjectFarms } from "../tools/importSaasProjectFarms";
+import { draftPddChapterContent } from "../tools/draftPddChapterContent";
+import { downloadRelatedPdds } from "../tools/downloadRelatedPdds";
+import { ingestRelatedPddPrecedents } from "../tools/ingestRelatedPddPrecedents";
+import { researchProjectKickoffDate } from "../tools/researchProjectKickoffDate";
+import { compileEligibilityEvidencePack } from "../tools/compileEligibilityEvidencePack";
+import { updatePddSeedAnswer } from "../tools/updatePddSeedAnswer";
 import { recordLead } from "../tools/recordLead";
 import { updateCrmLeadStage } from "../tools/updateCrmLeadStage";
 import { addCrmFollowUp } from "../tools/addCrmFollowUp";
 import { draftOutreachMessage } from "../tools/draftOutreachMessage";
+import { checkCrmHygiene } from "../tools/checkCrmHygiene";
+import { getFarmerFunnel, getBuyerFunnel } from "../tools/getCrmFunnel";
+import { checkCalendarAvailability } from "../tools/checkCalendarAvailability";
+import { scheduleCalendarEvent } from "../tools/scheduleCalendarEvent";
+import { listRecentMail } from "../tools/listRecentMail";
 import { fail, type ToolContext, type ToolResult } from "../tools/context";
 import type { ToolSchema } from "./provider";
 
@@ -739,6 +757,126 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
     handler: (ctx, input) => getForecastVsActual(ctx, { projectId: String(input.projectId ?? "") }),
   },
 
+  submit_project_status: {
+    schema: {
+      name: "submit_project_status",
+      description:
+        "Move a project forward through the VM0042 pipeline stages (under_development -> registered -> " +
+        "validated -> verified) and record who declared it. Not a call to Verra — Verra has no public " +
+        "submission API; the real filing still happens by hand. Refuses to move a project backward.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          status: { type: "string", enum: ["under_development", "registered", "validated", "verified"] },
+          note: { type: "string", description: "Optional context for the audit trail." },
+        },
+        required: ["projectId", "status"],
+      },
+    },
+    handler: (ctx, input) =>
+      submitProjectStatus(ctx, {
+        projectId: String(input.projectId ?? ""),
+        status: input.status as never,
+        note: input.note as string | undefined,
+      }),
+  },
+
+  research_pdd_precedents: {
+    schema: {
+      name: "research_pdd_precedents",
+      description:
+        "Search real, issued VM0042 PDDs for precedent — the closest projects by crop, geography, " +
+        "climate, activities or approach. Indexes the local precedent folder incrementally (only new or " +
+        "changed files), then searches its extracted text. Not a live Verra registry crawl — " +
+        "registry.verra.org is a client-rendered app a raw fetch cannot read.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "e.g. 'orchard drip irrigation Israel'. Omit to list the most recently indexed." },
+          limit: { type: "number", description: "Default 5, max 20." },
+        },
+      },
+    },
+    handler: (ctx, input) =>
+      researchPddPrecedents(ctx, {
+        query: input.query as string | undefined,
+        limit: input.limit as number | undefined,
+      }),
+  },
+
+  search_verra_registry: {
+    schema: {
+      name: "search_verra_registry",
+      description:
+        "Live search over Verra's own real project registry API (registry.verra.org's own data source, " +
+        "not a guess) — filter by methodology (default VM0042), status (e.g. 'Registered', 'Rejected by " +
+        "Administrator', 'Under validation'), or a project-name keyword. Distinguishes rejected/denied " +
+        "projects (what not to do) from registered ones (real precedent). Every match is saved to a local " +
+        "snapshot, so isNew means genuinely new since the last time this was run.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          methodology: { type: "string", description: "Default 'VM0042'." },
+          query: { type: "string", description: "Project-name keyword, e.g. 'mycorrhizae'." },
+          status: { type: "string", description: "e.g. 'Registered', 'Rejected', 'Under validation'." },
+          limit: { type: "number", description: "Default 20, max 100." },
+        },
+      },
+    },
+    handler: (ctx, input) =>
+      searchVerraRegistry(ctx, {
+        methodology: input.methodology as string | undefined,
+        query: input.query as string | undefined,
+        status: input.status as string | undefined,
+        limit: input.limit as number | undefined,
+      }),
+  },
+
+  sync_pdd_google_doc: {
+    schema: {
+      name: "sync_pdd_google_doc",
+      description:
+        "Create (first call) or update (later calls) a real Google Doc with the project's current PDD " +
+        "draft — the live, editable document, not the read-only preview. Requires the signed-in person's " +
+        "own Drive access; writes to their own Drive.",
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) => syncPddGoogleDoc(ctx, { projectId: String(input.projectId ?? "") }),
+  },
+
+  update_pdd_section_status: {
+    schema: {
+      name: "update_pdd_section_status",
+      description:
+        "Answer, skip, or reset one section of the structured PDD questionnaire (0-indexed position in the " +
+        "registered template's own outline). Both Rebeka and a person write to the same rows.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          templateId: { type: "string" },
+          sectionIndex: { type: "number" },
+          status: { type: "string", enum: ["pending", "answered", "skipped"] },
+          inputText: { type: "string" },
+        },
+        required: ["projectId", "templateId", "sectionIndex", "status"],
+      },
+    },
+    handler: (ctx, input) =>
+      updatePddSectionStatus(ctx, {
+        projectId: String(input.projectId ?? ""),
+        templateId: String(input.templateId ?? ""),
+        sectionIndex: Number(input.sectionIndex),
+        status: input.status as never,
+        inputText: input.inputText as string | undefined,
+      }),
+  },
+
   export_plots_kmz: {
     schema: {
       name: "export_plots_kmz",
@@ -920,6 +1058,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         properties: {
           leadId: { type: "string" },
           channel: { type: "string", description: "e.g. 'email', 'linkedin'." },
+          subject: { type: "string", description: "Required in practice for channel='email' — sending refuses without one." },
           body: { type: "string" },
         },
         required: ["leadId", "channel", "body"],
@@ -929,7 +1068,283 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       draftOutreachMessage(ctx, {
         leadId: String(input.leadId ?? ""),
         channel: String(input.channel ?? ""),
+        subject: input.subject ? String(input.subject) : undefined,
         body: String(input.body ?? ""),
+      }),
+  },
+
+  crm_hygiene: {
+    schema: {
+      name: "crm_hygiene",
+      description:
+        "Read-only QA over crm.leads: duplicate emails, leads with no stage change in staleDays " +
+        "(default 14) that haven't already reached their pipeline's last stage, and leads with " +
+        "neither an email nor a phone. Flags issues for a human to act on — never merges or deletes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          staleDays: { type: "number", description: "Default 14." },
+        },
+      },
+    },
+    handler: (ctx, input) => checkCrmHygiene(ctx, { staleDays: input.staleDays as number | undefined }),
+  },
+
+  farmer_funnel: {
+    schema: {
+      name: "farmer_funnel",
+      description: "Farmer-acquisition funnel: lead count and conversion rate per pipeline stage, from real crm.leads rows.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    handler: (ctx) => getFarmerFunnel(ctx),
+  },
+
+  buyer_funnel: {
+    schema: {
+      name: "buyer_funnel",
+      description: "Credit-buyer acquisition funnel: lead count and conversion rate per pipeline stage, from real crm.leads rows.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    handler: (ctx) => getBuyerFunnel(ctx),
+  },
+
+  check_calendar_availability: {
+    schema: {
+      name: "check_calendar_availability",
+      description:
+        "Read-only: candidate free 30-minute slots (9am-5pm workdays) on the requester's own primary " +
+        "Google Calendar over the next few days, from a real freeBusy query.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          days: { type: "number", description: "Default 5." },
+          maxSlots: { type: "number", description: "Default 10." },
+        },
+      },
+    },
+    handler: (ctx, input) =>
+      checkCalendarAvailability(ctx, {
+        days: input.days as number | undefined,
+        maxSlots: input.maxSlots as number | undefined,
+      }),
+  },
+
+  schedule_calendar_event: {
+    schema: {
+      name: "schedule_calendar_event",
+      description:
+        "Create a real event on the requester's own primary Google Calendar — a meeting, farmer site " +
+        "visit, or VVB call. Externally visible the moment it is created (an attendee gets a real invite).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          start: { type: "string", description: "ISO 8601 datetime." },
+          end: { type: "string", description: "ISO 8601 datetime." },
+          description: { type: "string" },
+          attendeeEmail: { type: "string" },
+        },
+        required: ["summary", "start", "end"],
+      },
+    },
+    handler: (ctx, input) =>
+      scheduleCalendarEvent(ctx, {
+        summary: String(input.summary ?? ""),
+        start: String(input.start ?? ""),
+        end: String(input.end ?? ""),
+        description: input.description as string | undefined,
+        attendeeEmail: input.attendeeEmail as string | undefined,
+      }),
+  },
+
+  list_recent_mail: {
+    schema: {
+      name: "list_recent_mail",
+      description: "Read-only: the requester's own recent inbox messages (sender, subject, snippet, date) — never sends or modifies anything.",
+      inputSchema: {
+        type: "object",
+        properties: { maxResults: { type: "number", description: "Default 15." } },
+      },
+    },
+    handler: (ctx, input) => listRecentMail(ctx, { maxResults: input.maxResults as number | undefined }),
+  },
+
+  run_pdd_generator_pipeline: {
+    schema: {
+      name: "run_pdd_generator_pipeline",
+      description:
+        "PDD GENERATOR: gated on the SEED questionnaire being fully answered. Runs precedent research " +
+        "(local + live Verra registry), drafts every chapter, syncs the live PDD Google Doc, exports it as " +
+        "PDF, emails it (defaults to nitzan@carbonature.io), records the run in Rebeka's memory, and locks " +
+        "the SEED questionnaire. A fixed, deterministic sequence — not an autonomous loop.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          notifyEmail: { type: "string", description: "Defaults to the requester's own email." },
+        },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) =>
+      runPddGeneratorPipeline(ctx, {
+        projectId: String(input.projectId ?? ""),
+        notifyEmail: input.notifyEmail as string | undefined,
+      }),
+  },
+
+  import_saas_project_farms: {
+    schema: {
+      name: "import_saas_project_farms",
+      description:
+        "Bring a real, already-onboarded project and its farms from the customer-facing SaaS database " +
+        "into mrv (name, location, operator) — is_demo=false throughout. Creates the project row if it " +
+        "doesn't exist yet. Does NOT import plots (quantification_approach must be decided first).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string", description: "e.g. 'CARBO-3988' — the mrv project id to create or add farms under." },
+          projectName: { type: "string" },
+          country: { type: "string" },
+          methodology: { type: "string", description: "Defaults to 'VM0042 v2.2'." },
+          creditingStart: { type: "string", description: "YYYY-MM-DD" },
+          creditingEnd: { type: "string", description: "YYYY-MM-DD" },
+          saasFarmIds: { type: "array", items: { type: "string" }, description: "public.farms.id values in the SaaS database." },
+        },
+        required: ["projectId", "projectName", "country", "saasFarmIds"],
+      },
+    },
+    handler: (ctx, input) =>
+      importSaasProjectFarms(ctx, {
+        projectId: String(input.projectId ?? ""),
+        projectName: String(input.projectName ?? ""),
+        country: String(input.country ?? ""),
+        methodology: input.methodology as string | undefined,
+        creditingStart: input.creditingStart as string | undefined,
+        creditingEnd: input.creditingEnd as string | undefined,
+        saasFarmIds: (input.saasFarmIds as string[]) ?? [],
+      }),
+  },
+
+  draft_pdd_chapter_content: {
+    schema: {
+      name: "draft_pdd_chapter_content",
+      description:
+        "Draft actual VM0042-precedent-style prose for a project's pending questionnaire sections within " +
+        "given chapters (level-1 titles, e.g. 'Project Details'). Grounds each section in the founder's raw " +
+        "direction (input_text), real project/farm facts, and indexed precedent excerpts. Writes to " +
+        "drafted_text with status='drafted' — never 'answered', never overwrites a human-typed answer.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          chapterTitles: { type: "array", items: { type: "string" }, description: "Level-1 chapter titles from the registered template's own outline." },
+        },
+        required: ["projectId", "chapterTitles"],
+      },
+    },
+    handler: (ctx, input) =>
+      draftPddChapterContent(ctx, {
+        projectId: String(input.projectId ?? ""),
+        chapterTitles: (input.chapterTitles as string[]) ?? [],
+      }),
+  },
+
+  download_related_pdds: {
+    schema: {
+      name: "download_related_pdds",
+      description:
+        "Download the real documents (PDD, listing representation, public comment summary, project boundary) for " +
+        "given Verra project ids straight from Verra's public registry into a 'RELATED PDDS' subfolder under this " +
+        "project's own Drive folder — real files, not links.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          verraProjectIds: { type: "array", items: { type: "string" }, description: "Verra registry project ids, e.g. '5325'." },
+        },
+        required: ["projectId", "verraProjectIds"],
+      },
+    },
+    handler: (ctx, input) =>
+      downloadRelatedPdds(ctx, {
+        projectId: String(input.projectId ?? ""),
+        verraProjectIds: (input.verraProjectIds as string[]) ?? [],
+      }),
+  },
+
+  ingest_related_pdd_precedents: {
+    schema: {
+      name: "ingest_related_pdd_precedents",
+      description:
+        "Extract real text from the PDF/DOCX files already downloaded into this project's 'RELATED PDDS' Drive " +
+        "folder and index it into the precedent corpus (mrv.pdd_precedents), so drafting can cite and be grounded " +
+        "in them — content-addressed, so a second run only does the work for files that actually changed.",
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) => ingestRelatedPddPrecedents(ctx, { projectId: String(input.projectId ?? "") }),
+  },
+
+  research_project_kickoff_date: {
+    schema: {
+      name: "research_project_kickoff_date",
+      description:
+        "Scan the project's own FARMERS Drive folder (one subfolder per client, each holding a Project Kick-off " +
+        "Meeting report) for the earliest real kick-off meeting date across all clients, and record it as the " +
+        "project's real activity start date (mrv.projects.project_start_date) — distinct from the crediting period " +
+        "start, which is a separate, Verra-defined date.",
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) => researchProjectKickoffDate(ctx, { projectId: String(input.projectId ?? "") }),
+  },
+
+  compile_eligibility_evidence_pack: {
+    schema: {
+      name: "compile_eligibility_evidence_pack",
+      description:
+        "Create (first call) or update (later calls) the Eligibility Evidence Pack — a Google Doc, in the " +
+        "project's own Drive folder, linking every real recorded project activity (mrv.alm_activities) to " +
+        "the specific VM0042 v2.2 Appendix 1 category and bullet it falls under, as supporting evidence for " +
+        "eligibility (Applicability Condition 1) and additionality (Step 3 Common Practice). An activity type " +
+        "with no Appendix 1 match is listed as needing a person's manual citation, never guessed at.",
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+      },
+    },
+    handler: (ctx, input) => compileEligibilityEvidencePack(ctx, { projectId: String(input.projectId ?? "") }),
+  },
+
+  update_pdd_seed_answer: {
+    schema: {
+      name: "update_pdd_seed_answer",
+      description:
+        "Save one answer in the flat SEED questionnaire (not tied to any PDD template section) — human-only, " +
+        "same standing as update_pdd_section_status.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          questionKey: { type: "string" },
+          answerText: { type: "string" },
+        },
+        required: ["projectId", "questionKey", "answerText"],
+      },
+    },
+    handler: (ctx, input) =>
+      updatePddSeedAnswer(ctx, {
+        projectId: String(input.projectId ?? ""),
+        questionKey: String(input.questionKey ?? ""),
+        answerText: String(input.answerText ?? ""),
       }),
   },
 };
