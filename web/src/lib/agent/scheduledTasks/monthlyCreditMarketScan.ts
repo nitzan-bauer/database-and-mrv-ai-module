@@ -57,7 +57,13 @@ export async function runMonthlyCreditMarketScan(ctx: ToolContext): Promise<Sche
       `Today's date: ${new Date().toISOString().slice(0, 10)}. Search for recent VM0042 and non-Verra ` +
       `regenerative-agriculture carbon-credit deals and prices.`,
     tools: [],
-    webSearch: { maxUses: 2, timeoutMs: 30_000 },
+    // Measured live: finding real, sourced deal/price data consistently
+    // needs longer than finding project names does (prices are sparser,
+    // so the model reformulates its search more) — this task is staggered
+    // onto its own day (0080's seed / the manual staggering done live
+    // this session) so it no longer shares one cron invocation's 60s
+    // budget with the project scan, and can afford real headroom here.
+    webSearch: { maxUses: 2, timeoutMs: 45_000 },
   });
   console.log(`[${TASK_KEY}] web-search model call: ${Date.now() - t0}ms`);
 
