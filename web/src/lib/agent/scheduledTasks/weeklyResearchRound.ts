@@ -24,7 +24,7 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
   const { downloadRelatedPdds } = await import("../../tools/downloadRelatedPdds");
   const { ingestRelatedPddPrecedents } = await import("../../tools/ingestRelatedPddPrecedents");
   const { draftPddChapterContent } = await import("../../tools/draftPddChapterContent");
-  const { listPddSectionStatus } = await import("../../pdd/sectionStatus");
+  const { listPddSectionStatus, chapterTitleForSectionIndex } = await import("../../pdd/sectionStatus");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
 
   const registrySearch = await searchVerraRegistry(ctx, { methodology: "VM0042", limit: 20 });
@@ -68,13 +68,23 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
     paragraphs.push("No new VM0042 registry entries since the last weekly sweep — nothing new to bring in as a related project.");
   }
 
-  // Redraft any chapter that has real content to write, so a newly
-  // ingested precedent (or anything else pending) actually reaches the
-  // PDD rather than sitting only in the search corpus.
+  // Redraft only chapters that actually have a pending section — draftPddChapterContent
+  // re-drafts every non-answered, non-skipped row it's given, including ones
+  // already 'drafted' with nothing new to say, so handing it every chapter
+  // unconditionally means re-running an LLM call per section every single
+  // week for no reason (and risks the cron route's own time budget). A
+  // chapter with nothing pending has nothing this week's sweep could add.
   let redraftedCount = 0;
   const sectionStatus = await listPddSectionStatus(query, TARGET_PROJECT_ID);
   if (sectionStatus) {
-    const chapterTitles = sectionStatus.rows.filter((r) => r.sectionLevel === 1).map((r) => r.sectionTitle);
+    const chaptersWithPending = new Set(
+      sectionStatus.rows.filter((r) => r.sectionLevel > 1 && r.status === "pending").map((r) =>
+        chapterTitleForSectionIndex(sectionStatus.rows, r.sectionIndex),
+      ),
+    );
+    const chapterTitles = sectionStatus.rows
+      .filter((r) => r.sectionLevel === 1 && chaptersWithPending.has(r.sectionTitle))
+      .map((r) => r.sectionTitle);
     if (chapterTitles.length) {
       const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles });
       if (draftResult.ok) {
@@ -93,6 +103,8 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
       } else {
         paragraphs.push(`Could not run the drafting pass: ${draftResult.error}`);
       }
+    } else {
+      paragraphs.push("No chapter has a pending section this week — nothing for the drafting pass to do.");
     }
   }
 

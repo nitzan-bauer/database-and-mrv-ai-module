@@ -21,17 +21,20 @@ function makePool(): Pool {
     );
   }
   const { connectionString, ssl } = dbConnection(DATABASE_URL);
-  const pool = new Pool({
+  return new Pool({
     connectionString,
     ssl,
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    // Set at connection startup, not via a query after — a query fired
+    // from pool.on("connect") without being awaited races the first real
+    // query on that same connection (confirmed live: a real
+    // "Calling client.query() when the client is already executing a
+    // query" deprecation warning, reproducible on demand), and could
+    // start reading the wrong search_path under load.
+    options: "-c search_path=mrv,public",
   });
-  pool.on("connect", (client) => {
-    client.query("SET search_path TO mrv, public").catch(() => {});
-  });
-  return pool;
 }
 
 export function getPool(): Pool {

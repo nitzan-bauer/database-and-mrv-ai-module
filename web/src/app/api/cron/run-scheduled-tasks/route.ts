@@ -3,6 +3,12 @@ import { SCHEDULED_TASK_REGISTRY } from "@/lib/agent/scheduledTaskRegistry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// The Vercel Hobby ceiling — without this the platform default (10s) cuts
+// a handler off mid-request. Confirmed live this session: the first real
+// run got through search_verra_registry and was killed partway through
+// the drafting pass that followed, with no error ever written back
+// because the whole function was terminated, not thrown into.
+export const maxDuration = 60;
 
 /**
  * The one entry point every agent's recurring task runs through
@@ -16,7 +22,16 @@ export const dynamic = "force-dynamic";
  * principle as runPddGeneratorPipeline.ts's own step-by-step guards) —
  * one broken task's Google auth failure or a thrown handler must never
  * stop the rest of the day's due tasks from running.
+ *
+ * Even with maxDuration raised, several heavy handlers (each doing a
+ * handful of sequential LLM calls) can still add up to more than one
+ * invocation's budget when several are due the same day. A row this
+ * invocation doesn't get to is simply left with its next_run_at
+ * unchanged — still due, so the next cron tick (or a manual "Run now")
+ * picks it up rather than the whole request dying mid-task with nothing
+ * recorded for the tasks after it.
  */
+const TIME_BUDGET_MS = 50_000; // leaves ~10s headroom under the 60s cap for the final DB writes + response
 function advanceNextRun(current: Date, frequency: string): Date {
   const next = new Date(current);
   if (frequency === "monthly") {
@@ -46,6 +61,8 @@ export async function GET(req: Request) {
   }>(`SELECT task_id, agent_id, task_key, frequency, next_run_at FROM mrv.scheduled_tasks WHERE enabled AND next_run_at <= now()`);
 
   const results: Array<{ taskKey: string; status: string; detail: string }> = [];
+  const deferred: string[] = [];
+  const startedAt = Date.now();
 
   // The one real connected Workspace identity in this system today —
   // every scheduled task authenticates to Google as Nitzan, the same
@@ -53,6 +70,11 @@ export async function GET(req: Request) {
   const serviceEmail = process.env.CRON_GOOGLE_ACCOUNT_EMAIL?.trim() || "nitzan@carbonature.io";
 
   for (const row of due) {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) {
+      deferred.push(row.task_key);
+      continue; // next_run_at untouched — this row is still due on the next invocation
+    }
+
     let status: "ok" | "error" | "no_handler" = "no_handler";
     let detail = `no handler registered for "${row.task_key}"`;
 
@@ -90,5 +112,5 @@ export async function GET(req: Request) {
     results.push({ taskKey: row.task_key, status, detail });
   }
 
-  return NextResponse.json({ checked: due.length, results });
+  return NextResponse.json({ checked: due.length, results, deferred });
 }
