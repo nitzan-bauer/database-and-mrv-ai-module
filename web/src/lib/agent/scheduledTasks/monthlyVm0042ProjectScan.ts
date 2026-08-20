@@ -12,16 +12,21 @@ const SYSTEM_PROMPT =
   "regenerative-agriculture projects that have issued credits under any other registry (e.g. Gold Standard, " +
   "Puro.earth, a national registry). For each project you actually find, with a real source, report: " +
   "registry (the real registry name), methodology (the real methodology code, or null if not VM0042), " +
-  "project_name, location (if the source states one), credits_issued_note (whatever the source itself says " +
-  "about issued quantity/date, verbatim — never compute, estimate, or round a figure yourself), and " +
-  "source_url (the real page you found this on). Return ONLY a JSON object, no prose, no markdown fences: " +
-  '{"projects":[{"registry":string,"methodology":string|null,"project_name":string,"location":string|null,' +
-  '"credits_issued_note":string,"source_url":string}]}. Only include a project you found a real, checkable ' +
-  "source for — never invent a project, a figure, or a URL. If you find nothing solid, return an empty array.";
+  "issuer_name (the company/entity the source names as having issued or developed the credits — e.g. " +
+  '"Boomitra", "Agreena", the project proponent — never the abstract project title itself), project_name, ' +
+  "location (if the source states one), credits_issued_note (whatever the source itself says about issued " +
+  "quantity/date, verbatim — never compute, estimate, or round a figure yourself), and source_url (the real " +
+  "page you found this on). Return ONLY a JSON object, no prose, no markdown fences: " +
+  '{"projects":[{"registry":string,"methodology":string|null,"issuer_name":string,"project_name":string,' +
+  '"location":string|null,"credits_issued_note":string,"source_url":string}]}. Only include a project you ' +
+  "found a real, checkable source for — never invent a project, an issuer, a figure, or a URL. If you can't " +
+  "tell who the real issuer is, use the registry name as issuer_name rather than guessing a company. If you " +
+  "find nothing solid, return an empty array.";
 
 interface ScannedProject {
   registry: string;
   methodology: string | null;
+  issuer_name: string;
   project_name: string;
   location: string | null;
   credits_issued_note: string;
@@ -71,17 +76,23 @@ export async function runMonthlyVm0042ProjectScan(ctx: ToolContext): Promise<Sch
     paragraphs.push("This month's search found no checkable, sourced project to add.");
   } else {
     for (const p of found) {
+      // DO UPDATE, guarded to only fire when the issuer name is missing —
+      // a genuinely new project always inserts; a project seen again just
+      // backfills issuer_name if an earlier scan (before 0081) left it
+      // null, rather than either duplicating the row or freezing it
+      // forever at whatever the first scan happened to capture.
       const result = await query<{ scan_project_id: string }>(
-        `INSERT INTO mrv.market_scan_projects (registry, methodology, project_name, location, credits_issued_note, source_url)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (registry, project_name) DO NOTHING
+        `INSERT INTO mrv.market_scan_projects (registry, methodology, issuer_name, project_name, location, credits_issued_note, source_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (registry, project_name) DO UPDATE SET issuer_name = excluded.issuer_name
+           WHERE mrv.market_scan_projects.issuer_name IS NULL
          RETURNING scan_project_id`,
-        [p.registry, p.methodology, p.project_name, p.location, p.credits_issued_note, p.source_url],
+        [p.registry, p.methodology, p.issuer_name, p.project_name, p.location, p.credits_issued_note, p.source_url],
       );
       if (result.length) {
         inserted++;
         paragraphs.push(
-          `New: "${p.project_name}" (${p.registry}${p.methodology ? `, ${p.methodology}` : ""}) — ${p.credits_issued_note}. Source: ${p.source_url}`,
+          `New: "${p.issuer_name}" — ${p.project_name} (${p.registry}${p.methodology ? `, ${p.methodology}` : ""}) — ${p.credits_issued_note}. Source: ${p.source_url}`,
         );
       }
     }

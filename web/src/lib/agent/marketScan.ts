@@ -3,6 +3,7 @@ import "server-only";
 export interface MarketScanProject {
   registry: string;
   methodology: string | null;
+  issuerName: string | null;
   projectName: string;
   location: string | null;
   creditsIssuedNote: string;
@@ -26,13 +27,14 @@ export async function listMarketScanProjects(limit = 20): Promise<MarketScanProj
   const rows = await query<{
     registry: string;
     methodology: string | null;
+    issuer_name: string | null;
     project_name: string;
     location: string | null;
     credits_issued_note: string;
     source_url: string;
     discovered_at: string;
   }>(
-    `SELECT registry, methodology, project_name, location, credits_issued_note, source_url, discovered_at::text
+    `SELECT registry, methodology, issuer_name, project_name, location, credits_issued_note, source_url, discovered_at::text
        FROM mrv.market_scan_projects
       ORDER BY discovered_at DESC
       LIMIT $1`,
@@ -41,6 +43,7 @@ export async function listMarketScanProjects(limit = 20): Promise<MarketScanProj
   return rows.map((r) => ({
     registry: r.registry,
     methodology: r.methodology,
+    issuerName: r.issuer_name,
     projectName: r.project_name,
     location: r.location,
     creditsIssuedNote: r.credits_issued_note,

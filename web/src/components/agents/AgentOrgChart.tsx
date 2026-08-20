@@ -106,7 +106,7 @@ export function AgentBlock({
   const content = (
     <>
       <div className="flex items-start gap-3">
-        <AgentAvatar hue={agent.avatarHue} size={wide ? 46 : 38} />
+        <AgentAvatar agentId={agent.agentId} hue={agent.avatarHue} size={wide ? 46 : 38} />
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="truncate font-bold text-pine-700">{agent.displayName}</span>
@@ -173,7 +173,7 @@ export function AgentModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 border-b border-line p-5">
-          <AgentAvatar hue={agent.avatarHue} size={48} />
+          <AgentAvatar agentId={agent.agentId} hue={agent.avatarHue} size={48} />
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-bold text-pine-700">{agent.displayName}</h2>
             <p className="text-[13px] text-muted">{agent.title}</p>

@@ -1,22 +1,57 @@
 import { pddReadiness } from "@/lib/data";
+import type { ToolResult } from "@/lib/tools/context";
+import type { ProjectStatus } from "@/lib/tools/submitProjectStatus";
+import type { SubmittedProjectStatus } from "@/lib/tools/submitProjectStatus";
+import type { SyncedPddGoogleDoc } from "@/lib/tools/syncPddGoogleDoc";
+import type { UpdatedPddSeedAnswer } from "@/lib/tools/updatePddSeedAnswer";
+import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipeline";
 import { ChapterReadinessBars } from "./ChapterReadinessBars";
 import { ReadinessGauge } from "./ReadinessGauge";
+import { SeedQuestionnaireBlock } from "./SeedQuestionnaireBlock";
+import { ProjectStatusPanel } from "./ProjectStatusPanel";
+import { GoogleDocPanel } from "./GoogleDocPanel";
+
+type SaveAnswerAction = (input: { projectId: string; questionKey: string; answerText: string }) => Promise<ToolResult<UpdatedPddSeedAnswer>>;
+type RunGeneratorAction = (input: { projectId: string }) => Promise<ToolResult<PddGeneratorPipelineResult>>;
+type SubmitStatusAction = (input: { projectId: string; status: ProjectStatus }) => Promise<ToolResult<SubmittedProjectStatus>>;
+type SyncGoogleDocAction = (input: { projectId: string }) => Promise<ToolResult<SyncedPddGoogleDoc>>;
 
 /**
- * Section 1 (Nitzan's own spec) for Rebeka's own page: the PDD-readiness
- * picture that already exists on the main /agents dashboard, pulled out
- * onto her page as its own real, DB-backed view — not a second, invented
- * one. Same figures the main dashboard's "PDD readiness — Rebeka" section
- * reads, same X/Y-count discipline (a count over real rows, never a status
- * field that can drift).
+ * Section 1 (Nitzan's own spec) for Rebeka's own page — and, per his
+ * follow-up ("all the PDD-related blocks move to Rebeka's screen,
+ * including the readiness clock at the top"), now the ONLY place any of
+ * this lives: the readiness gauge, the per-chapter bars, the SEED
+ * questionnaire, the farm-level readiness list, the project-status panel
+ * and the Google Doc sync — all of it pulled off the main department
+ * dashboard, which no longer shows any PDD content at all.
  */
-export async function RebekaDashboard({ projectId }: { projectId: string }) {
+export async function RebekaDashboard({
+  projectId,
+  currentStatus,
+  googleDocUrl,
+  pddGeneratorLockedAt,
+  saveAnswerAction,
+  runGeneratorAction,
+  submitStatusAction,
+  syncGoogleDocAction,
+}: {
+  projectId: string;
+  currentStatus: ProjectStatus;
+  googleDocUrl: string | null;
+  pddGeneratorLockedAt: string | null;
+  saveAnswerAction: SaveAnswerAction;
+  runGeneratorAction: RunGeneratorAction;
+  submitStatusAction: SubmitStatusAction;
+  syncGoogleDocAction: SyncGoogleDocAction;
+}) {
   const { query } = await import("@/lib/db");
   const { listPddSectionStatus, summarizeByChapter } = await import("@/lib/pdd/sectionStatus");
+  const { listSeedAnswers } = await import("@/lib/pdd/seedAnswers");
 
-  const [readiness, questionnaire] = await Promise.all([
+  const [readiness, questionnaire, seedState] = await Promise.all([
     pddReadiness(projectId),
     listPddSectionStatus(query, projectId),
+    listSeedAnswers(query, projectId),
   ]);
 
   const answered = questionnaire?.rows.filter((r) => r.status === "answered").length ?? 0;
@@ -28,18 +63,21 @@ export async function RebekaDashboard({ projectId }: { projectId: string }) {
     <section>
       <div className="mb-1 flex items-center justify-between">
         <h2 className="text-base font-bold text-pine-700">Rebeka&apos;s dashboard — PDD readiness</h2>
-        <a
-          href={`/pdd-development?project=${encodeURIComponent(projectId)}`}
-          className="rounded-md border border-line px-2.5 py-1 text-[12px] font-semibold text-pine-700 hover:bg-cream"
-        >
-          Open PDD Development →
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/pdd/${encodeURIComponent(projectId)}/export`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-pine-600 bg-white px-3 py-1.5 text-[12px] font-bold text-pine-700 hover:bg-pine-50"
+          >
+            Download Drafted PDD
+          </a>
+          <a
+            href={`/pdd-development?project=${encodeURIComponent(projectId)}`}
+            className="rounded-md border border-line px-2.5 py-1 text-[12px] font-semibold text-pine-700 hover:bg-cream"
+          >
+            Open PDD Development →
+          </a>
+        </div>
       </div>
-      <p className="mb-3 max-w-3xl text-[13px] text-muted">
-        The small set of things Rebeka is responsible for regardless of template version: described
-        farms, clean boundaries, a defined baseline, an evaluated cycle — each figure a count over
-        real rows, not a status a person has to remember to update.
-      </p>
 
       <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
         {questionnaire && (
@@ -54,8 +92,39 @@ export async function RebekaDashboard({ projectId }: { projectId: string }) {
         />
       </div>
 
-      {readiness.items.length > 0 && (
-        <div className="mt-3 overflow-hidden rounded-xl border border-line bg-white">
+      <div className="mt-4">
+        <SeedQuestionnaireBlock
+          projectId={projectId}
+          projectName={seedState.projectName}
+          rows={seedState.rows}
+          autoFacts={seedState.autoFacts}
+          pendingCount={seedState.pendingCount}
+          lockedAt={pddGeneratorLockedAt}
+          saveAnswerAction={saveAnswerAction}
+          runGeneratorAction={runGeneratorAction}
+        />
+      </div>
+
+      <p className="mt-4 mb-3 max-w-3xl text-[13px] text-muted">
+        Not a check against the wording of any one template — that would mean assuming what an
+        arbitrary section title requires, which is exactly what storing the template as data was
+        meant to avoid. This is the small set of things Rebeka is responsible for regardless of
+        template version: described farms, clean boundaries, a defined baseline, an evaluated
+        cycle.
+      </p>
+      {readiness.template && (
+        <p className="mb-3 font-mono text-[11px] text-faint">
+          template on file: {readiness.template.name} {readiness.template.version} ·{" "}
+          {readiness.template.sectionCount} sections · registered{" "}
+          {new Date(readiness.template.registeredAt).toLocaleDateString("en-GB", { dateStyle: "medium" })}
+        </p>
+      )}
+      {readiness.items.length === 0 ? (
+        <div className="rounded-xl border border-line bg-white p-5">
+          <p className="text-[13px] font-semibold text-pine-700">No farms in this project yet.</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-line bg-white">
           {readiness.items.map((it, i) => {
             const complete = it.total > 0 && it.ready === it.total;
             return (
@@ -77,6 +146,11 @@ export async function RebekaDashboard({ projectId }: { projectId: string }) {
           })}
         </div>
       )}
+
+      <div className="mt-3 space-y-3">
+        <ProjectStatusPanel projectId={projectId} currentStatus={currentStatus} action={submitStatusAction} />
+        <GoogleDocPanel projectId={projectId} googleDocUrl={googleDocUrl} action={syncGoogleDocAction} />
+      </div>
     </section>
   );
 }

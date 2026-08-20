@@ -32,24 +32,27 @@ export function MarketScanSection({
           {projects.length === 0 ? (
             <EmptyCard text="No scan has run yet — this fills in once John's monthly project scan runs." />
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {projects.map((p) => (
                 <a
                   key={`${p.registry}-${p.projectName}`}
                   href={p.sourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block rounded-xl border border-line bg-white p-3 transition-colors hover:border-pine-300 hover:bg-pine-50/40"
+                  className="block rounded-lg border border-line bg-white px-3 py-2 transition-colors hover:border-pine-300 hover:bg-pine-50/40"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[12.5px] font-semibold text-pine-700">{p.projectName}</span>
-                    <span className="shrink-0 rounded-full bg-cream px-2 py-0.5 font-mono text-[10px] text-pine-700">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-[12.5px] font-bold text-pine-700">
+                      {p.issuerName ?? p.registry}
+                      {p.location && <span className="font-normal text-faint"> — {p.location}</span>}
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-faint">
                       {p.registry}
                       {p.methodology ? ` · ${p.methodology}` : ""}
                     </span>
                   </div>
-                  {p.location && <p className="mt-0.5 text-[11px] text-faint">{p.location}</p>}
-                  <p className="mt-1 text-[11.5px] text-ink">{p.creditsIssuedNote}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted">{p.projectName}</p>
+                  <p className="mt-0.5 line-clamp-1 text-[11px] text-ink">{p.creditsIssuedNote}</p>
                 </a>
               ))}
             </div>

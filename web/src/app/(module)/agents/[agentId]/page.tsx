@@ -3,12 +3,62 @@ import { auth } from "@/auth";
 import { getAgent, listProjects, resolveActiveProject } from "@/lib/data";
 import { DATA_MODE } from "@/lib/env";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
+import type { ToolResult } from "@/lib/tools/context";
+import type { ProjectStatus, SubmittedProjectStatus } from "@/lib/tools/submitProjectStatus";
+import type { SyncedPddGoogleDoc } from "@/lib/tools/syncPddGoogleDoc";
+import type { UpdatedPddSeedAnswer } from "@/lib/tools/updatePddSeedAnswer";
+import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipeline";
 import { SingleAgentHeader } from "@/components/agents/SingleAgentHeader";
 import { RebekaDashboard } from "@/components/agents/RebekaDashboard";
 import { ComingSoonDashboard } from "@/components/agents/ComingSoonDashboard";
 import { AgentFeedSection } from "@/components/agents/AgentFeedSection";
 
 export const dynamic = "force-dynamic";
+
+/** Save one SEED-questionnaire answer, as the signed-in person. */
+async function updateSeedAnswerAction(input: {
+  projectId: string;
+  questionKey: string;
+  answerText: string;
+}): Promise<ToolResult<UpdatedPddSeedAnswer>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { updatePddSeedAnswer } = await import("@/lib/tools/updatePddSeedAnswer");
+  return updatePddSeedAnswer({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
+
+/** Run the full PDD Generator pipeline as the signed-in person. */
+async function runPddGeneratorAction(input: { projectId: string }): Promise<ToolResult<PddGeneratorPipelineResult>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { runPddGeneratorPipeline } = await import("@/lib/tools/runPddGeneratorPipeline");
+  return runPddGeneratorPipeline(
+    { actor: session?.user?.email ?? "unknown", actorKind: "human", googleAccessToken: session?.googleAccessToken },
+    input,
+  );
+}
+
+/** Advance the project's declared VM0042 pipeline status as the signed-in person. */
+async function submitProjectStatusAction(input: {
+  projectId: string;
+  status: ProjectStatus;
+}): Promise<ToolResult<SubmittedProjectStatus>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { submitProjectStatus } = await import("@/lib/tools/submitProjectStatus");
+  return submitProjectStatus({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
+}
+
+/** Create or update the project's live Google Doc, as the signed-in person's own Drive access. */
+async function syncPddGoogleDocAction(input: { projectId: string }): Promise<ToolResult<SyncedPddGoogleDoc>> {
+  "use server";
+  const session = await auth().catch(() => null);
+  const { syncPddGoogleDoc } = await import("@/lib/tools/syncPddGoogleDoc");
+  return syncPddGoogleDoc(
+    { actor: session?.user?.email ?? "unknown", actorKind: "human", googleAccessToken: session?.googleAccessToken },
+    input,
+  );
+}
 
 /**
  * An agent's own page (Nitzan's own spec) — every agent except John, who
@@ -77,7 +127,16 @@ export default async function AgentDetailPage({
       <SingleAgentHeader agent={agent} connections={connections} askAgent={askAgent} />
 
       {agent.agentId === "rebeka" ? (
-        <RebekaDashboard projectId={project.projectId} />
+        <RebekaDashboard
+          projectId={project.projectId}
+          currentStatus={project.status}
+          googleDocUrl={project.googleDocUrl}
+          pddGeneratorLockedAt={project.pddGeneratorLockedAt}
+          saveAnswerAction={updateSeedAnswerAction}
+          runGeneratorAction={runPddGeneratorAction}
+          submitStatusAction={submitProjectStatusAction}
+          syncGoogleDocAction={syncPddGoogleDocAction}
+        />
       ) : (
         <ComingSoonDashboard agentName={agent.displayName} />
       )}
