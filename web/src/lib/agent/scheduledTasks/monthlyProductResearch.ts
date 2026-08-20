@@ -89,7 +89,7 @@ export async function runMonthlyProductResearch(ctx: ToolContext): Promise<Sched
     const activityRow = sectionStatus.rows.find((r) => /project activit/i.test(r.sectionTitle));
     const chapterTitle = activityRow ? chapterTitleForSectionIndex(sectionStatus.rows, activityRow.sectionIndex) : null;
     if (chapterTitle) {
-      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles: [chapterTitle] });
+      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles: [chapterTitle], maxSections: 4 });
       if (draftResult.ok) {
         const draftedTitles = draftResult.data.sections.filter((s) => s.outcome === "drafted").map((s) => s.sectionTitle);
         redrafted = draftedTitles.length > 0;

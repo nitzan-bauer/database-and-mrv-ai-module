@@ -86,7 +86,7 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
       .filter((r) => r.sectionLevel === 1 && chaptersWithPending.has(r.sectionTitle))
       .map((r) => r.sectionTitle);
     if (chapterTitles.length) {
-      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles });
+      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles, maxSections: 5 });
       if (draftResult.ok) {
         redraftedCount = draftResult.data.sections.filter((s) => s.outcome === "drafted").length;
         if (redraftedCount) {

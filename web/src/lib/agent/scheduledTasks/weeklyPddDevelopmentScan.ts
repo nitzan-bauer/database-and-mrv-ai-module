@@ -56,7 +56,7 @@ export async function runWeeklyPddDevelopmentScan(ctx: ToolContext): Promise<Sch
     ];
 
     if (chapterTitles.length) {
-      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles });
+      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles, maxSections: 5 });
       if (draftResult.ok) {
         const drafted = draftResult.data.sections.filter((s) => s.outcome === "drafted");
         redraftedCount = drafted.length;

@@ -31,7 +31,7 @@ export const maxDuration = 60;
  * picks it up rather than the whole request dying mid-task with nothing
  * recorded for the tasks after it.
  */
-const TIME_BUDGET_MS = 50_000; // leaves ~10s headroom under the 60s cap for the final DB writes + response
+const TIME_BUDGET_MS = 40_000; // leaves real headroom under the 60s hard cap — a single heavy task can still add several more seconds after this check passes
 function advanceNextRun(current: Date, frequency: string): Date {
   const next = new Date(current);
   if (frequency === "monthly") {

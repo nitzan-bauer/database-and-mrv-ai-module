@@ -78,7 +78,7 @@ const FOLLOWUP_SYSTEM_PROMPT =
  */
 export async function draftPddChapterContent(
   ctx: ToolContext,
-  input: { projectId: string; chapterTitles: string[] },
+  input: { projectId: string; chapterTitles: string[]; maxSections?: number },
 ): Promise<ToolResult<DraftPddChapterContentResult>> {
   const guard = requireDbMode("draftPddChapterContent");
   if (guard) return guard;
@@ -164,8 +164,20 @@ export async function draftPddChapterContent(
   }
 
   const sections: DraftedSectionOutcome[] = [];
+  // Each drafted section costs one sequential LLM call, which on a real
+  // template with many pending sections at once can run well past a
+  // serverless function's time budget — confirmed live: an unattended
+  // scheduled task with no cap ran into Vercel's hard 60s
+  // FUNCTION_INVOCATION_TIMEOUT before finishing a single chapter pass.
+  // Interactive callers (the PDD Generator, manual drafting from /agents)
+  // leave maxSections unset and get the old unlimited behavior — a person
+  // watching the request is a different situation than an unattended cron
+  // invocation with a hard ceiling. A section this call doesn't reach is
+  // simply left 'pending', unchanged, for the next call to pick up.
+  const maxSections = input.maxSections;
+  let draftedThisCall = 0;
 
-  for (const range of chapterRanges) {
+  outer: for (const range of chapterRanges) {
     if (range.start === -1) {
       sections.push({ sectionIndex: -1, sectionTitle: range.title, outcome: "error", detail: "no such chapter in the registered template" });
       continue;
@@ -174,6 +186,8 @@ export async function draftPddChapterContent(
 
     for (const row of chapterRows) {
       if (row.sectionLevel === 1) continue; // the chapter header itself carries no content requirement
+
+      if (maxSections !== undefined && draftedThisCall >= maxSections) break outer;
 
       if (row.status === "answered") {
         sections.push({ sectionIndex: row.sectionIndex, sectionTitle: row.sectionTitle, outcome: "kept_answered" });
@@ -230,6 +244,7 @@ export async function draftPddChapterContent(
           [text, ctx.actor, row.statusId],
         );
         sections.push({ sectionIndex: row.sectionIndex, sectionTitle: row.sectionTitle, outcome: "drafted" });
+        draftedThisCall++;
       } catch (e) {
         sections.push({ sectionIndex: row.sectionIndex, sectionTitle: row.sectionTitle, outcome: "error", detail: e instanceof Error ? e.message : String(e) });
       }

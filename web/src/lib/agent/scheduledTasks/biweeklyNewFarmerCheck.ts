@@ -83,7 +83,7 @@ export async function runBiweeklyNewFarmerCheck(ctx: ToolContext): Promise<Sched
         ? chapterTitleForSectionIndex(sectionStatus.rows, participantsRow.sectionIndex)
         : null;
       if (chapterTitle) {
-        const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles: [chapterTitle] });
+        const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles: [chapterTitle], maxSections: 4 });
         if (draftResult.ok) {
           const drafted = draftResult.data.sections.filter((s) => s.outcome === "drafted");
           redrafted = drafted.length > 0;
