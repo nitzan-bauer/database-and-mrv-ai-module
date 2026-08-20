@@ -8,6 +8,7 @@ import type { ProjectStatus, SubmittedProjectStatus } from "@/lib/tools/submitPr
 import type { SyncedPddGoogleDoc } from "@/lib/tools/syncPddGoogleDoc";
 import type { UpdatedPddSeedAnswer } from "@/lib/tools/updatePddSeedAnswer";
 import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipeline";
+import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { SingleAgentHeader } from "@/components/agents/SingleAgentHeader";
 import { RebekaDashboard } from "@/components/agents/RebekaDashboard";
 import { ComingSoonDashboard } from "@/components/agents/ComingSoonDashboard";
@@ -123,6 +124,10 @@ export default async function AgentDetailPage({
         </a>{" "}
         / {agent.displayName}
       </nav>
+
+      {agent.agentId === "rebeka" && (
+        <ProjectSwitcher projects={allProjects} activeProjectId={project.projectId} basePath={`/agents/${agent.agentId}`} />
+      )}
 
       <SingleAgentHeader agent={agent} connections={connections} askAgent={askAgent} />
 

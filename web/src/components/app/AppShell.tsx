@@ -36,8 +36,8 @@ export function AppShell({
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex items-center gap-6">
             <Link href="/projects" className="flex items-center gap-2.5" aria-label="CarboNature MRV">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-pine-700 ring-1 ring-white/10">
-                <IconMark size={22} />
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white p-1 ring-1 ring-white/10">
+                <IconMark size={28} />
               </span>
               <span className="hidden flex-col leading-tight sm:flex">
                 <span className="text-[13.5px] font-bold text-white">CarboNature</span>
