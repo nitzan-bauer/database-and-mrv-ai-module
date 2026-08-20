@@ -6,7 +6,7 @@ import { TARGET_PROJECT_ID } from "./constants";
 export const TASK_KEY = "rebeka_monthly_product_research";
 
 const PRODUCT_PAGE_URL = "https://carbonature.io/projects/carbonature-farming-e-africa/";
-const MAX_PRODUCT_PAGES = 8;
+const MAX_PRODUCT_PAGES = 5;
 
 const SYNTHESIS_SYSTEM_PROMPT =
   "You are Rebeka, CarboNature's Validation Manager AI agent. You've just read the manufacturer product pages " +
@@ -34,7 +34,9 @@ export async function runMonthlyProductResearch(ctx: ToolContext): Promise<Sched
   const { getConfiguredProvider } = await import("../../agent/provider");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
 
+  const t0 = Date.now();
   const projectPage = await fetchPublicUrl(ctx, { url: PRODUCT_PAGE_URL });
+  console.log(`[${TASK_KEY}] fetch project page: ${Date.now() - t0}ms`);
   if (!projectPage.ok) {
     return { ok: false, detail: `monthly product research: could not fetch the project page — ${projectPage.error}` };
   }
@@ -57,11 +59,19 @@ export async function runMonthlyProductResearch(ctx: ToolContext): Promise<Sched
     return outcome;
   }
 
+  // Fetched in parallel, not sequentially — fetchPublicUrl already caps
+  // each individual fetch at 10s, but confirmed live: 8 sequential calls
+  // to real manufacturer sites (some slow, at least one unresponsive)
+  // added up to a full FUNCTION_INVOCATION_TIMEOUT with nothing recorded
+  // for this task at all. In parallel, the whole step is bounded by the
+  // single slowest page, not the sum of all of them.
+  const t1 = Date.now();
+  const pageResults = await Promise.all(externalLinks.map((link) => fetchPublicUrl(ctx, { url: link })));
+  console.log(`[${TASK_KEY}] parallel fetch ${externalLinks.length} product pages: ${Date.now() - t1}ms`);
   const fetched: Array<{ url: string; title: string | null; textExcerpt: string }> = [];
-  for (const link of externalLinks) {
-    const page = await fetchPublicUrl(ctx, { url: link });
-    if (page.ok) fetched.push({ url: link, title: page.data.title, textExcerpt: page.data.textExcerpt });
-  }
+  pageResults.forEach((page, i) => {
+    if (page.ok) fetched.push({ url: externalLinks[i], title: page.data.title, textExcerpt: page.data.textExcerpt });
+  });
 
   const paragraphs: string[] = [
     `Read ${fetched.length} of ${externalLinks.length} manufacturer product page(s) linked from the project page.`,
@@ -72,11 +82,13 @@ export async function runMonthlyProductResearch(ctx: ToolContext): Promise<Sched
     const sourceBlock = fetched
       .map((f, i) => `[${i + 1}] ${f.title ?? f.url} (${f.url})\n${f.textExcerpt.slice(0, 1500)}`)
       .join("\n\n");
+    const t2 = Date.now();
     const resp = await provider.complete({
       system: SYNTHESIS_SYSTEM_PROMPT,
       userMessage: `Product pages read this month:\n\n${sourceBlock}`,
       tools: [],
     });
+    console.log(`[${TASK_KEY}] synthesis model call: ${Date.now() - t2}ms`);
     const memo = resp.kind === "text" ? resp.text.trim() : "";
     if (memo) paragraphs.push(memo);
   }
