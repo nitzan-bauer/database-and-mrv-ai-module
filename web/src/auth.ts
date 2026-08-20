@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { decode as defaultDecode } from "next-auth/jwt";
 import type { JWT } from "next-auth/jwt";
 
 /**
@@ -104,7 +105,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               // both apply) so re-checking which account is in use is not lost.
               access_type: "offline",
               prompt: "select_account consent",
-              scope: "openid email profile https://www.googleapis.com/auth/drive",
+              // gmail.send added for the PDD Generator pipeline (sync_pdd_google_doc's
+              // sibling — the pipeline emails the exported PDF to whoever ran it).
+              // Anyone signed in before this needs to sign out and back in, same as
+              // every earlier scope addition here — Google does not retroactively
+              // grant a scope to an existing session's token.
+              scope:
+                "openid email profile https://www.googleapis.com/auth/drive " +
+                "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send " +
+                "https://www.googleapis.com/auth/calendar",
             },
           },
         }),
@@ -157,6 +166,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.googleAccessToken = account.access_token;
         token.googleRefreshToken = account.refresh_token;
         token.googleAccessTokenExpires = account.expires_at ? account.expires_at * 1000 : undefined;
+
+        // Persist it (0072) so an unattended cron run can mint its own
+        // access token later — same non-fatal-on-failure stance as
+        // ensureUser above: a DB hiccup here must not block sign-in.
+        if (token.email && account.refresh_token) {
+          try {
+            const { query } = await import("./lib/db");
+            const { persistGoogleRefreshToken } = await import("./lib/google/serviceAuth");
+            await persistGoogleRefreshToken(query, token.email as string, account.refresh_token);
+          } catch (e) {
+            console.warn(`[auth] could not persist the Google refresh token: ${e instanceof Error ? e.message : e}`);
+          }
+        }
+
         return token;
       }
 
@@ -183,6 +206,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
   session: { strategy: "jwt", maxAge: 12 * 60 * 60 }, // a working day
   trustHost: true,
+
+  jwt: {
+    /**
+     * A session cookie signed with a different AUTH_SECRET than the one
+     * currently loaded — left over from an earlier dev run, a restarted
+     * server, or a secret rotation — makes the default decode throw
+     * JWTSessionError. Uncaught, that crashes every page that calls
+     * auth(), including the login page itself, into a confusing 404
+     * ("that plot, work order or page does not exist") instead of just
+     * prompting a fresh sign-in. A cookie that cannot be decoded is
+     * exactly a session that doesn't exist — treat it as null, not a
+     * server error.
+     */
+    async decode(params) {
+      try {
+        return await defaultDecode(params);
+      } catch {
+        return null;
+      }
+    },
+  },
 });
 
 export { ALLOWED_DOMAIN };
