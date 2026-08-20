@@ -92,7 +92,7 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
     console.log(`[${TASK_KEY}] chapters with pending sections: ${chapterTitles.length}`);
     if (chapterTitles.length) {
       const t2 = Date.now();
-      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles, maxSections: 5 });
+      const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles, maxSections: 3 });
       console.log(`[${TASK_KEY}] draftPddChapterContent: ${Date.now() - t2}ms`);
       if (draftResult.ok) {
         redraftedCount = draftResult.data.sections.filter((s) => s.outcome === "drafted").length;
