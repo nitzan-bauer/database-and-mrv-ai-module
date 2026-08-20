@@ -8,10 +8,28 @@ export interface FetchedPublicUrl {
   textExcerpt: string;
   truncated: boolean;
   fetchedAt: string;
+  /** Distinct absolute https:// links found on the page (href targets), capped at MAX_LINKS — empty for a non-HTML response. */
+  links: string[];
 }
 
 const MAX_CHARS = 6000;
+const MAX_LINKS = 40;
 const FETCH_TIMEOUT_MS = 10_000;
+
+/** Distinct absolute https:// hrefs found in raw HTML, resolved against `base` — no <a> tag parsing library for a shape this simple. */
+function extractLinks(html: string, base: URL): string[] {
+  const seen = new Set<string>();
+  for (const m of html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["']/gi)) {
+    try {
+      const resolved = new URL(m[1], base);
+      if (resolved.protocol === "https:") seen.add(resolved.toString());
+    } catch {
+      // a malformed href on the page — skip it, not worth failing the whole fetch over
+    }
+    if (seen.size >= MAX_LINKS) break;
+  }
+  return [...seen];
+}
 
 // Verra's own registry and site are public domain — no API key or account
 // needed to browse a project or read a methodology update (confirmed
@@ -77,9 +95,11 @@ export async function fetchPublicUrl(
 
   let title: string | null = null;
   let text = raw;
+  let links: string[] = [];
   if (contentType.includes("html") || /^\s*<!doctype html/i.test(raw)) {
     const titleMatch = raw.match(/<title[^>]*>([^<]*)<\/title>/i);
     title = titleMatch ? titleMatch[1].trim() : null;
+    links = extractLinks(raw, parsed);
     text = raw
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -99,6 +119,7 @@ export async function fetchPublicUrl(
     textExcerpt,
     truncated,
     fetchedAt: new Date().toISOString(),
+    links,
   };
 
   await audit(ctx, "fetch_public_url", null, {
