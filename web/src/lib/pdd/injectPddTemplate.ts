@@ -1,6 +1,7 @@
 import "server-only";
 import { readZip } from "../ingest/zip";
 import { createZip } from "../kml/zipWriter";
+import { SECTION_STRUCTURED_FIELDS, type StructuredFieldDef } from "./structuredFields";
 
 /**
  * Fill in the REAL Verra template file — not a document rebuilt from
@@ -346,6 +347,95 @@ function flipSecondCheckboxAfterAnchor(xml: string, anchorText: string, checkedG
   return xml.slice(0, second.index) + flipped + xml.slice(second.index + second[0].length);
 }
 
+/**
+ * Sets one Yes/No content control to checked or unchecked, targeted by
+ * its own stable `<w:id>` — confirmed real and unique per checkbox in the
+ * registered template (word/document.xml), not a positional guess the
+ * way flipSecondCheckboxAfterAnchor still has to make for sections
+ * without a structuredFields.ts entry. Fixes both halves of the
+ * control's state: the visible glyph run (☐/☒) AND the underlying
+ * `w14:checked` attribute Word itself uses — flipSecondCheckboxAfter
+ * Anchor only ever touched the glyph, leaving the control's own logical
+ * state stale.
+ */
+function setCheckboxById(xml: string, checkboxId: string, checked: boolean): string {
+  const idIdx = xml.indexOf(`<w:id w:val="${checkboxId}"`);
+  if (idIdx === -1) return xml;
+  const sdtStart = xml.lastIndexOf("<w:sdt>", idIdx);
+  const sdtEndTag = xml.indexOf("</w:sdt>", idIdx);
+  if (sdtStart === -1 || sdtEndTag === -1) return xml;
+  const sdtEnd = sdtEndTag + "</w:sdt>".length;
+  let block = xml.slice(sdtStart, sdtEnd);
+  const glyph = checked ? "☒" : "☐";
+  block = block.replace(/<w:t>[☐☒]<\/w:t>/, `<w:t>${glyph}</w:t>`);
+  block = block.replace(/<w14:checked w14:val="[01]" \/>/, `<w14:checked w14:val="${checked ? "1" : "0"}" />`);
+  return xml.slice(0, sdtStart) + block + xml.slice(sdtEnd);
+}
+
+/**
+ * Finds the `<w:tbl>` immediately preceding a given checkbox's `<w:id>`
+ * — used instead of fillTableAfterAnchor's own text-anchor search
+ * because this section's own heading and lead-in prose are run-
+ * fragmented throughout (Word's spell-check artifacts) and a plain
+ * `indexOf` on either never matches. The checkbox id is never
+ * fragmented (it's an attribute, not run text), and by the template's
+ * own construction the section's table always sits directly before its
+ * first checkbox pair — real, confirmed against the actual template
+ * XML, not assumed.
+ */
+function fillTableBeforeCheckboxId(xml: string, checkboxId: string, valuesByLabel: Record<string, string>): string {
+  const idIdx = xml.indexOf(`<w:id w:val="${checkboxId}"`);
+  if (idIdx === -1) return xml;
+  const tblEnd = xml.lastIndexOf("</w:tbl>", idIdx);
+  if (tblEnd === -1) return xml;
+  const tblEndIdx = tblEnd + "</w:tbl>".length;
+  const tblStart = xml.lastIndexOf("<w:tbl>", tblEnd);
+  if (tblStart === -1) return xml;
+  return xml.slice(0, tblStart) + fillTableRowsByLabel(xml.slice(tblStart, tblEndIdx), valuesByLabel) + xml.slice(tblEndIdx);
+}
+
+/**
+ * Applies one section's saved structured-field values (0082, Nitzan's
+ * own request: a real table + checkboxes need real per-field values, not
+ * one prose blob) into the real template — date fields into their own
+ * table row (via the same fillTableRowsByLabel every other 2-column
+ * table on this document already uses), Yes/No fields by flipping the
+ * exact checkbox the person selected and explicitly leaving its sibling
+ * unchecked. A field with no saved value yet is left exactly as Verra
+ * wrote it (DD-MMM-YYYY placeholder, both boxes unchecked) — never
+ * guessed.
+ */
+function applyStructuredFieldsForSection(
+  xml: string,
+  sectionIndex: number,
+  values: Record<string, string | null> | undefined,
+  fieldDefs: StructuredFieldDef[],
+): string {
+  if (!fieldDefs.length) return xml;
+  let out = xml;
+
+  const dateLabels: Record<string, string> = {};
+  for (const f of fieldDefs) {
+    if (f.type === "date_text" && f.tableRowLabel && values?.[f.key]) {
+      dateLabels[f.tableRowLabel] = values[f.key]!;
+    }
+  }
+  const firstYesNo = fieldDefs.find((f) => f.type === "yes_no" && f.checkboxIds);
+  if (Object.keys(dateLabels).length && firstYesNo?.checkboxIds) {
+    out = fillTableBeforeCheckboxId(out, firstYesNo.checkboxIds.yes, dateLabels);
+  }
+
+  for (const f of fieldDefs) {
+    if (f.type !== "yes_no" || !f.checkboxIds) continue;
+    const answer = values?.[f.key];
+    if (answer !== "yes" && answer !== "no") continue; // unanswered — leave both boxes unchecked
+    out = setCheckboxById(out, f.checkboxIds.yes, answer === "yes");
+    out = setCheckboxById(out, f.checkboxIds.no, answer === "no");
+  }
+
+  return out;
+}
+
 export interface GhgReductionRow {
   startDisplay: string;
   endDisplay: string;
@@ -447,6 +537,7 @@ function applyStructuralCellFixes(
   xml: string,
   orgProfile: OrgProfileFacts | null,
   ghgReductions: GhgReductionRow[] | null,
+  structuredValuesBySection: Record<number, Record<string, string | null>> = {},
 ): string {
   let out = xml.replace(
     /(Method applied<\/w:t><\/w:r><\/w:p><\/w:tc><w:tc>(?:(?!<\/w:tc>)[\s\S])*?<\/w:pPr>)[\s\S]*?(<\/w:p><\/w:tc><\/w:tr><\/w:tbl>)/,
@@ -489,12 +580,19 @@ function applyStructuralCellFixes(
   out = flipSecondCheckboxAfterAnchor(out, "Capacity Limit Eligibility");
 
   // Eligibility of Projects Registered with Other GHG Programs (section
-  // 7) needs no equivalent insertion here: its own checkbox paragraphs
-  // now survive via forceKeepCheckboxParagraph above, and this project's
-  // real, human-confirmed answer (mrv.pdd_section_status, status
-  // 'answered') already states plainly that no other GHG program
-  // registration exists — that drafted prose renders at the end of the
-  // section on its own, nothing to add or guess here.
+  // 7, 0082): its own checkbox paragraphs already survive via
+  // forceKeepCheckboxParagraph above — this fills in whatever real
+  // table-cell dates and Yes/No answers have actually been saved
+  // (mrv.pdd_section_structured_fields), by section_index, so more
+  // sections adopt this the moment they get their own structuredFields.ts entry.
+  for (const [sectionIndexStr, fieldDefs] of Object.entries(SECTION_STRUCTURED_FIELDS)) {
+    out = applyStructuredFieldsForSection(
+      out,
+      Number(sectionIndexStr),
+      structuredValuesBySection[Number(sectionIndexStr)],
+      fieldDefs,
+    );
+  }
 
   if (ghgReductions && ghgReductions.length) {
     const anchor = "Summary of Estimated Reductions and Removals";
@@ -603,6 +701,7 @@ export async function buildPddDocxFromTemplate(
   coverPage: CoverPageFacts,
   orgProfile: OrgProfileFacts | null = null,
   ghgReductions: GhgReductionRow[] | null = null,
+  structuredValuesBySection: Record<number, Record<string, string | null>> = {},
 ): Promise<Buffer> {
   const entries = readZip(templateBuffer);
   const docEntry = entries.find((e) => e.name === "word/document.xml");
@@ -777,7 +876,12 @@ export async function buildPddDocxFromTemplate(
     // and lands when the next heading triggers flushPending().
   }
 
-  const newDocXml = applyStructuralCellFixes(stripOrphanedBookmarks(out.join("")), orgProfile, ghgReductions);
+  const newDocXml = applyStructuralCellFixes(
+    stripOrphanedBookmarks(out.join("")),
+    orgProfile,
+    ghgReductions,
+    structuredValuesBySection,
+  );
   const newRelsXml = relsXml.replace(
     "</Relationships>",
     `<Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/carbonature-logo.png" Id="${logoRelId}" /></Relationships>`,

@@ -18,6 +18,7 @@ async function updateSectionAction(input: {
   inputText?: string;
   reviewComment?: string;
   devApproved?: boolean;
+  structuredField?: { fieldKey: string; fieldValue: string | null };
 }): Promise<ToolResult<UpdatedPddSectionStatus>> {
   "use server";
   const session = await auth().catch(() => null);
@@ -65,6 +66,7 @@ export default async function PddDevelopmentPage({
   const { listPddSectionStatus, computeSectionNumbers } = await import("@/lib/pdd/sectionStatus");
   const { extractNeedsMarkers } = await import("@/lib/pdd/injectPddTemplate");
   const { getGhgReductionRows } = await import("@/lib/pdd/ghgReductionEstimates");
+  const { SECTION_STRUCTURED_FIELDS, listStructuredFieldValues } = await import("@/lib/pdd/structuredFields");
   const { query } = await import("@/lib/db");
 
   const { project: requestedProjectId } = await searchParams;
@@ -111,6 +113,8 @@ export default async function PddDevelopmentPage({
         (p) => p.sectionIndex === r.sectionIndex - 1 && p.sectionTitle.startsWith("Estimated GHG Emission Reductions"),
       ),
   );
+  const structuredValuesBySection = await listStructuredFieldValues(query, project.projectId);
+
   let ghgTableBySection: Record<number, Awaited<ReturnType<typeof getGhgReductionRows>>> | undefined;
   if (ghgTableSection) {
     const proj = await query<{ crediting_start: string | Date | null; crediting_end: string | Date | null }>(
@@ -160,6 +164,8 @@ export default async function PddDevelopmentPage({
             sectionNumbers={sectionNumbers}
             missingInputsBySection={missingInputsBySection}
             ghgTableBySection={ghgTableBySection}
+            structuredFieldsBySection={SECTION_STRUCTURED_FIELDS}
+            structuredValuesBySection={structuredValuesBySection}
             action={updateSectionAction}
             defaultOpen={i === 0}
           />

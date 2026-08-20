@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DevelopmentSectionCard, type GhgTableRowView } from "./DevelopmentSectionCard";
 import type { PddSectionStatusRow } from "@/lib/pdd/sectionStatus";
+import type { StructuredFieldDef } from "@/lib/pdd/structuredFields";
 import type { ToolResult } from "@/lib/tools/context";
 import type { UpdatedPddSectionStatus } from "@/lib/tools/updatePddSectionStatus";
 
@@ -14,6 +15,7 @@ type UpdateAction = (input: {
   inputText?: string;
   reviewComment?: string;
   devApproved?: boolean;
+  structuredField?: { fieldKey: string; fieldValue: string | null };
 }) => Promise<ToolResult<UpdatedPddSectionStatus>>;
 
 /** One chapter — a dropdown whose title is the chapter name, opening to its sections' 4-window review cards. */
@@ -26,6 +28,8 @@ export function DevelopmentChapterBlock({
   sectionNumbers,
   missingInputsBySection,
   ghgTableBySection,
+  structuredFieldsBySection,
+  structuredValuesBySection,
   action,
   defaultOpen = false,
 }: {
@@ -37,6 +41,8 @@ export function DevelopmentChapterBlock({
   sectionNumbers?: Record<number, string>;
   missingInputsBySection: Record<number, string[]>;
   ghgTableBySection?: Record<number, GhgTableRowView[]>;
+  structuredFieldsBySection?: Record<number, StructuredFieldDef[]>;
+  structuredValuesBySection?: Record<number, Record<string, string | null>>;
   action: UpdateAction;
   defaultOpen?: boolean;
 }) {
@@ -79,6 +85,8 @@ export function DevelopmentChapterBlock({
               reviewComment={s.reviewComment}
               devApproved={s.devApproved}
               ghgTable={ghgTableBySection?.[s.sectionIndex]}
+              structuredFields={structuredFieldsBySection?.[s.sectionIndex]}
+              structuredValues={structuredValuesBySection?.[s.sectionIndex]}
               action={action}
             />
           ))}

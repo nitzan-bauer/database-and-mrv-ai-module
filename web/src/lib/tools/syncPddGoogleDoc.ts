@@ -218,6 +218,9 @@ export async function syncPddGoogleDoc(
     ? await getGhgReductionRows(query, input.projectId, toUtcDateOnly(project.crediting_start), toUtcDateOnly(project.crediting_end))
     : null;
 
+  const { listStructuredFieldValues } = await import("../pdd/structuredFields");
+  const structuredValuesBySection = await listStructuredFieldValues(query, input.projectId);
+
   const annex = extractAnnexSection(drafted.data.content);
   let docxBuffer: Buffer;
   try {
@@ -229,6 +232,7 @@ export async function syncPddGoogleDoc(
       coverPage,
       orgProfile,
       ghgReductions,
+      structuredValuesBySection,
     );
   } catch (e) {
     return fail(`syncPddGoogleDoc: could not fill in the template — ${e instanceof Error ? e.message : e}.`);

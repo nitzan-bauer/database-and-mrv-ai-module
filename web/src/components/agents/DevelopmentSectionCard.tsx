@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import type { ToolResult } from "@/lib/tools/context";
 import type { UpdatedPddSectionStatus } from "@/lib/tools/updatePddSectionStatus";
+import type { StructuredFieldDef } from "@/lib/pdd/structuredFields";
 
 type UpdateAction = (input: {
   projectId: string;
@@ -12,6 +13,7 @@ type UpdateAction = (input: {
   inputText?: string;
   reviewComment?: string;
   devApproved?: boolean;
+  structuredField?: { fieldKey: string; fieldValue: string | null };
 }) => Promise<ToolResult<UpdatedPddSectionStatus>>;
 
 /** One real row of the Estimated GHG Emission Reductions and Removals table — same shape getGhgReductionRows returns. */
@@ -45,6 +47,8 @@ export function DevelopmentSectionCard({
   reviewComment: initialReviewComment,
   devApproved: initialDevApproved,
   ghgTable,
+  structuredFields,
+  structuredValues,
   action,
 }: {
   projectId: string;
@@ -68,6 +72,15 @@ export function DevelopmentSectionCard({
    * shown here and what ends up in the PDD can never drift apart.
    */
   ghgTable?: GhgTableRowView[];
+  /**
+   * 0082 — when this section's real content is a Word table + Yes/No
+   * checkboxes rather than prose (structuredFields.ts's config), Rebeka's
+   * answer renders as an editable form (a date field per table row, a
+   * Yes/No toggle per question) instead of a prose box — the same values
+   * injectPddTemplate.ts writes into those exact table cells/checkboxes.
+   */
+  structuredFields?: StructuredFieldDef[];
+  structuredValues?: Record<string, string | null>;
   action: UpdateAction;
 }) {
   const [inputText, setInputText] = useState(initialInputText ?? "");
@@ -137,8 +150,18 @@ export function DevelopmentSectionCard({
         <div className="rounded-md border border-line bg-cream/40 p-2">
           <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-faint">
             Rebeka&apos;s answer{ghgTable && " — real data, not written by Rebeka"}
+            {structuredFields && structuredFields.length > 0 && " — table & checkboxes"}
           </p>
-          {ghgTable ? (
+          {structuredFields && structuredFields.length > 0 ? (
+            <StructuredFieldsForm
+              projectId={projectId}
+              templateId={templateId}
+              sectionIndex={sectionIndex}
+              fields={structuredFields}
+              values={structuredValues ?? {}}
+              action={action}
+            />
+          ) : ghgTable ? (
             <div className="max-h-56 overflow-auto">
               <table className="w-full text-[11px]">
                 <thead>
@@ -223,6 +246,90 @@ export function DevelopmentSectionCard({
         </div>
       </div>
       {pending && <p className="mt-1 text-[10.5px] text-faint">saving…</p>}
+    </div>
+  );
+}
+
+/**
+ * The editable form for a section whose real content is a Word table +
+ * Yes/No checkboxes (structuredFields.ts) — a date field per table row,
+ * a Yes/No toggle per question. Each field saves independently
+ * (structuredField on the same updatePddSectionStatus action every other
+ * field on this card already uses) so one field's save never blocks or
+ * clobbers another's.
+ */
+function StructuredFieldsForm({
+  projectId,
+  templateId,
+  sectionIndex,
+  fields,
+  values,
+  action,
+}: {
+  projectId: string;
+  templateId: string;
+  sectionIndex: number;
+  fields: StructuredFieldDef[];
+  values: Record<string, string | null>;
+  action: UpdateAction;
+}) {
+  const [local, setLocal] = useState<Record<string, string | null>>(values);
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+
+  function save(fieldKey: string, fieldValue: string | null) {
+    setSaving((s) => ({ ...s, [fieldKey]: true }));
+    action({ projectId, templateId, sectionIndex, structuredField: { fieldKey, fieldValue } }).finally(() => {
+      setSaving((s) => ({ ...s, [fieldKey]: false }));
+      setDirty((d) => ({ ...d, [fieldKey]: false }));
+    });
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {fields.map((f) => (
+        <div key={f.key}>
+          <p className="text-[11px] leading-snug text-pine-700">{f.label}</p>
+          {f.type === "date_text" ? (
+            <input
+              type="text"
+              value={local[f.key] ?? ""}
+              placeholder="DD-MMM-YYYY"
+              onChange={(e) => {
+                setLocal((v) => ({ ...v, [f.key]: e.target.value }));
+                setDirty((d) => ({ ...d, [f.key]: true }));
+              }}
+              onBlur={() => {
+                if (dirty[f.key]) save(f.key, local[f.key]?.trim() || null);
+              }}
+              className="mt-1 w-full rounded-md border border-line bg-white px-2 py-1 font-mono text-[12px]"
+            />
+          ) : (
+            <div className="mt-1 flex gap-1.5">
+              {(["yes", "no"] as const).map((opt) => {
+                const selected = local[f.key] === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => {
+                      setLocal((v) => ({ ...v, [f.key]: opt }));
+                      save(f.key, opt);
+                    }}
+                    className={
+                      "rounded-md border px-2.5 py-1 text-[11.5px] font-semibold capitalize " +
+                      (selected ? "border-sage-300 bg-sage-50 text-sage-700" : "border-line text-muted hover:bg-cream")
+                    }
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {saving[f.key] && <p className="mt-0.5 text-[10px] text-faint">saving…</p>}
+        </div>
+      ))}
     </div>
   );
 }

@@ -35,6 +35,14 @@ export async function updatePddSectionStatus(
     reviewComment?: string;
     /** PDD Development interface (0067): approve this section's drafted answer. Omit to leave unchanged. */
     devApproved?: boolean;
+    /**
+     * 0082 — one named table-cell/checkbox value for a section that has a
+     * structured-field config (src/lib/pdd/structuredFields.ts), e.g.
+     * {fieldKey: "initial_crediting_start", fieldValue: "15-Mar-2025"}.
+     * Independent of status/inputText — a structured section's "answer"
+     * is these named fields, not a prose blob.
+     */
+    structuredField?: { fieldKey: string; fieldValue: string | null };
   },
 ): Promise<ToolResult<UpdatedPddSectionStatus>> {
   const guard = requireDbMode("updatePddSectionStatus");
@@ -42,8 +50,8 @@ export async function updatePddSectionStatus(
 
   if (ctx.actorKind !== "human") {
     return fail(
-      "updatePddSectionStatus: input_text/review_comment/dev_approved are a human's own confirmed word — an agent cannot " +
-        "write them, under any status. Use draft_pdd_chapter_content to propose drafted_text instead.",
+      "updatePddSectionStatus: input_text/review_comment/dev_approved/structuredField are a human's own confirmed " +
+        "word — an agent cannot write them, under any status. Use draft_pdd_chapter_content to propose drafted_text instead.",
     );
   }
 
@@ -53,8 +61,13 @@ export async function updatePddSectionStatus(
   if (input.status !== undefined && !["pending", "answered", "skipped"].includes(input.status)) {
     return fail("updatePddSectionStatus: status must be pending, answered, or skipped.");
   }
-  if (input.status === undefined && input.reviewComment === undefined && input.devApproved === undefined) {
-    return fail("updatePddSectionStatus: nothing to update — pass status, reviewComment, or devApproved.");
+  if (
+    input.status === undefined &&
+    input.reviewComment === undefined &&
+    input.devApproved === undefined &&
+    input.structuredField === undefined
+  ) {
+    return fail("updatePddSectionStatus: nothing to update — pass status, reviewComment, devApproved, or structuredField.");
   }
 
   // Only the fields actually passed get written — status/inputText (the SEED
@@ -92,12 +105,23 @@ export async function updatePddSectionStatus(
   );
   if (!rows.length) return fail("updatePddSectionStatus: no such section — it may need seeding first (open the questionnaire page once).");
 
+  if (input.structuredField) {
+    const { saveStructuredFieldValue } = await import("../pdd/structuredFields");
+    await saveStructuredFieldValue(query, {
+      statusId: rows[0].status_id,
+      fieldKey: input.structuredField.fieldKey,
+      fieldValue: input.structuredField.fieldValue,
+      updatedBy: ctx.actor,
+    });
+  }
+
   await audit(ctx, "update_pdd_section_status", { type: "pdd_section_status", id: rows[0].status_id }, {
     projectId: input.projectId,
     sectionIndex: input.sectionIndex,
     status: input.status,
     reviewCommentChanged: input.reviewComment !== undefined,
     devApprovedChanged: input.devApproved !== undefined,
+    structuredFieldKey: input.structuredField?.fieldKey ?? null,
   });
 
   // The generic learning-signal table (0078) alongside the existing

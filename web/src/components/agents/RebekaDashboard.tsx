@@ -79,13 +79,16 @@ export async function RebekaDashboard({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
+      <div className="max-w-xs">
         {questionnaire && (
           <ReadinessGauge
+            projectName={seedState.projectName ?? "This project"}
             pct={pct}
             label={`${answered}/${questionnaire.rows.length} confirmed` + (drafted ? ` · ${drafted} AI-drafted` : "")}
           />
         )}
+      </div>
+      <div className="mt-3">
         <ChapterReadinessBars
           chapters={chapterReadiness}
           overall={questionnaire ? { total: questionnaire.rows.length, answered, drafted } : undefined}

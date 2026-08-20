@@ -1,5 +1,6 @@
 import "server-only";
 import { audit, checkPolicy, fail, ok, requireDbMode, type ToolContext, type ToolResult } from "./context";
+import { structuredFieldsForSection, proposeStructuredFieldValue } from "../pdd/structuredFields";
 
 interface TemplateSection {
   level: number;
@@ -93,8 +94,8 @@ export async function draftPddChapterContent(
   const { listPddSectionStatus } = await import("../pdd/sectionStatus");
   const { getConfiguredProvider } = await import("../agent/provider");
 
-  const projects = await query<{ name: string; methodology: string; country: string }>(
-    `SELECT name, methodology, country FROM mrv.projects WHERE project_id = $1`,
+  const projects = await query<{ name: string; methodology: string; country: string; crediting_start: string | Date | null }>(
+    `SELECT name, methodology, country, crediting_start FROM mrv.projects WHERE project_id = $1`,
     [input.projectId],
   );
   if (!projects.length) return fail("draftPddChapterContent: no such project.");
@@ -203,6 +204,34 @@ export async function draftPddChapterContent(
 
     for (const row of chapterRows) {
       if (row.sectionLevel === 1) continue; // the chapter header itself carries no content requirement
+
+      // 0082 — a section's structured (table-cell/checkbox) fields are
+      // independent of its prose status: propose whatever Rebeka can
+      // honestly ground in real, already-known project data, regardless
+      // of whether the prose below is answered/skipped/drafted. Today
+      // that's exactly one field (the crediting period's own start date,
+      // already recorded on mrv.projects) — never a guess at facts only
+      // a person knows (whether this project was ever registered with
+      // another GHG program).
+      const fieldDefs = structuredFieldsForSection(row.sectionIndex);
+      if (fieldDefs.length && project.crediting_start) {
+        try {
+          const startField = fieldDefs.find((f) => f.key === "initial_crediting_start");
+          if (startField) {
+            const d = project.crediting_start instanceof Date ? project.crediting_start : new Date(`${String(project.crediting_start).slice(0, 10)}T00:00:00Z`);
+            const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const display = `${String(d.getUTCDate()).padStart(2, "0")}-${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
+            await proposeStructuredFieldValue(query, {
+              statusId: row.statusId,
+              fieldKey: startField.key,
+              fieldValue: display,
+              proposedBy: ctx.actor,
+            });
+          }
+        } catch {
+          // Best-effort — never blocks this section's own prose drafting below.
+        }
+      }
 
       if (maxSections !== undefined && draftedThisCall >= maxSections) break outer;
 

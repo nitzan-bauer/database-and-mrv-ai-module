@@ -148,6 +148,9 @@ export async function buildProjectDraftDocx(ctx: ToolContext, projectId: string)
     ? await getGhgReductionRows(query, projectId, toUtcDateOnly(project.crediting_start), toUtcDateOnly(project.crediting_end))
     : null;
 
+  const { listStructuredFieldValues } = await import("./structuredFields");
+  const structuredValuesBySection = await listStructuredFieldValues(query, projectId);
+
   const annex = extractAnnexSection(drafted.data.content);
   const buffer = await buildPddDocxFromTemplate(
     templateBuffer,
@@ -157,6 +160,7 @@ export async function buildProjectDraftDocx(ctx: ToolContext, projectId: string)
     coverPage,
     orgProfile,
     ghgReductions,
+    structuredValuesBySection,
   );
 
   const safeName = project.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "");
