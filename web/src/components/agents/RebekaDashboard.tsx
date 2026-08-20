@@ -75,10 +75,12 @@ export async function RebekaDashboard({
       <div className="max-w-sm rounded-xl border border-line bg-white p-4">
         <h3 className="mb-3 truncate text-[13px] font-bold text-pine-700">{seedState.projectName ?? "This project"}</h3>
         {questionnaire && (
-          <ReadinessGauge
-            pct={pct}
-            label={`${answered}/${questionnaire.rows.length} confirmed` + (drafted ? ` · ${drafted} AI-drafted` : "")}
-          />
+          <div className="flex justify-center">
+            <ReadinessGauge
+              pct={pct}
+              label={`${answered}/${questionnaire.rows.length} confirmed` + (drafted ? ` · ${drafted} AI-drafted` : "")}
+            />
+          </div>
         )}
         <div className="mt-3">
           <ChapterReadinessBars
