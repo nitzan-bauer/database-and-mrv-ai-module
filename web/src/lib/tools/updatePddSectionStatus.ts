@@ -100,6 +100,21 @@ export async function updatePddSectionStatus(
     devApprovedChanged: input.devApproved !== undefined,
   });
 
+  // The generic learning-signal table (0078) alongside the existing
+  // dev_approved flag — approving a drafted section is drafting's own
+  // real approval signal, and this is what lets a future "is Rebeka's
+  // drafting actually improving" query see it, not just this one flag.
+  if (input.devApproved === true) {
+    const { recordAgentFeedback } = await import("./recordAgentFeedback");
+    await recordAgentFeedback(ctx, {
+      agentId: "rebeka",
+      actionName: "draft_pdd_chapter_content",
+      targetType: "pdd_section_status",
+      targetId: rows[0].status_id,
+      verdict: "approved",
+    });
+  }
+
   return ok({
     statusId: rows[0].status_id,
     sectionIndex: input.sectionIndex,

@@ -140,6 +140,7 @@ export async function checkPolicy(
   // policy is far more likely to be an action nobody has reviewed than one
   // that was decided to be unrestricted.
   if (!rows.length) {
+    await auditRefusal(ctx, action, `no policy recorded for "${action}"`);
     return {
       allowed: false,
       reason: `No policy is recorded for "${action}", so it cannot run unattended. Add one in Admin.`,
@@ -149,6 +150,7 @@ export async function checkPolicy(
   const { mode, note } = rows[0];
   if (mode === "auto" || ctx.confirmed) return { allowed: true };
 
+  await auditRefusal(ctx, action, `policy is "${mode}", not auto or confirmed`);
   return {
     allowed: false,
     reason:
@@ -184,6 +186,20 @@ export async function audit(
       JSON.stringify({ ...payload, actorKind: ctx.actorKind }),
     ],
   );
+}
+
+/**
+ * Records a policy refusal — the one failure signal every tool shares,
+ * since almost every tool's first move is checkPolicy(). Before this,
+ * mrv.audit_log only ever recorded successes (every call sat right
+ * before an ok() return), so "how often does an agent hit a policy
+ * wall" was not a computable number. Ad-hoc validation failures inside
+ * individual tools (bad input, no such project) are a separate,
+ * per-tool concern and are not captured here — this covers the one
+ * failure mode every tool goes through the same choke point for.
+ */
+async function auditRefusal(ctx: ToolContext, action: ActionName, reason: string): Promise<void> {
+  await audit(ctx, action, null, { outcome: "refused", reason });
 }
 
 /** Tools write; fixtures are a fixed demo set with nothing to write to. */
