@@ -11,6 +11,8 @@ import type { SubmittedProjectStatus, ProjectStatus } from "@/lib/tools/submitPr
 import { GoogleDocPanel } from "@/components/agents/GoogleDocPanel";
 import type { SyncedPddGoogleDoc } from "@/lib/tools/syncPddGoogleDoc";
 import { ReadinessGauge } from "@/components/agents/ReadinessGauge";
+import { MarketScanSection } from "@/components/agents/MarketScanSection";
+import { listMarketScanDeals, listMarketScanProjects } from "@/lib/agent/marketScan";
 import { SeedQuestionnaireBlock } from "@/components/agents/SeedQuestionnaireBlock";
 import type { UpdatedPddSeedAnswer } from "@/lib/tools/updatePddSeedAnswer";
 import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipeline";
@@ -100,11 +102,13 @@ export default async function AgentsPage({
   const { project: requestedProjectId } = await searchParams;
   const allProjects = await listProjects();
   const project = resolveActiveProject(allProjects, requestedProjectId);
-  const [agents, pipeline, audit, readiness] = await Promise.all([
+  const [agents, pipeline, audit, readiness, marketProjects, marketDeals] = await Promise.all([
     listAgents(),
     creditPipeline(),
     listAuditLog(200),
     pddReadiness(project.projectId),
+    listMarketScanProjects(),
+    listMarketScanDeals(),
   ]);
 
   // The questionnaire's own answered/total — a second, independent
@@ -128,54 +132,8 @@ export default async function AgentsPage({
   const agentActions = audit.filter((e) => actorIds.has(e.actor)).slice(0, 12);
   const byActor = new Map(agents.map((a) => [a.actorId, a]));
 
-  const hasModelKey = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
-
-  // Connections are reported as they actually are, per agent — not one
-  // uniform list. A tool existing in the registry is not the same as an
-  // agent holding it, so "connected" here always means this specific
-  // agent's own tools array includes something that reaches that system.
-  const dbConn = {
-    name: "Project database (mrv on RDS)",
-    status: "connected" as const,
-    detail: "read and write",
-  };
-  const DRIVE_TOOLS = ["link_farm_drive_folder", "list_farm_drive_documents", "centralize_farm_document", "unlink_farm_drive_folder"];
-  const CALENDAR_TOOLS = ["check_calendar_availability", "schedule_calendar_event"];
-  const CRM_TOOLS = [
-    "record_lead", "update_lead_stage", "add_follow_up", "draft_outreach_message",
-    "crm_hygiene", "farmer_funnel", "buyer_funnel",
-  ];
-  const modelConn = hasModelKey
-    ? { name: "Model runtime", status: "connected" as const, detail: process.env.AGENT_MODEL_ID?.trim() || "claude-sonnet-5" }
-    : { name: "Model runtime", status: "not configured" as const, detail: "no ANTHROPIC_API_KEY" };
-
-  const connections: Record<string, Array<{ name: string; status: "connected" | "not configured"; detail: string }>> =
-    Object.fromEntries(
-      agents.map((a) => {
-        const holds = (names: string[]) => names.some((n) => a.tools.includes(n));
-        const rows: Array<{ name: string; status: "connected" | "not configured"; detail: string }> = [
-          a.tools.length ? dbConn : { ...dbConn, detail: "read only — no tools held" },
-        ];
-
-        if (holds(CRM_TOOLS)) {
-          rows.push({ name: "CRM database (crm schema, shared RDS)", status: "connected", detail: "read and write" });
-        }
-        if (holds(DRIVE_TOOLS)) {
-          rows.push({ name: "Google Drive", status: "connected", detail: "as the signed-in person, via their own OAuth session" });
-        }
-        if (holds(CALENDAR_TOOLS)) {
-          rows.push({ name: "Google Calendar", status: "connected", detail: "as the signed-in person, via their own OAuth session" });
-        }
-        if (a.tools.includes("list_recent_mail")) {
-          rows.push({ name: "Gmail", status: "connected", detail: "read-only, as the signed-in person" });
-        }
-        if (a.tools.includes("fetch_public_url")) {
-          rows.push({ name: "Verra registry", status: "connected", detail: "public — no credentials needed" });
-        }
-        rows.push(modelConn);
-        return [a.agentId, rows];
-      }),
-    );
+  const { buildAgentConnections } = await import("@/lib/agent/agentConnections");
+  const connections = buildAgentConnections(agents);
 
   /**
    * Ask an agent to do something, through the same runtime a real
@@ -245,6 +203,8 @@ export default async function AgentsPage({
         <h2 className="mb-3 text-base font-bold text-pine-700">The department</h2>
         <AgentOrgChart agents={agents} connections={connections} askAgent={askAgent} />
       </section>
+
+      <MarketScanSection projects={marketProjects} deals={marketDeals} />
 
       <section>
         <h2 className="mb-1 text-base font-bold text-pine-700">Credit pipeline</h2>

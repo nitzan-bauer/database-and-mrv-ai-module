@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { AgentRecord } from "@/lib/data";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
+import { AgentAvatar } from "./AgentAvatar";
 
 /** External systems each agent is defined to reach, and whether it is wired. */
 interface Connection {
@@ -53,7 +55,7 @@ export function AgentOrgChart({
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {reports.map((a) => (
-          <AgentBlock key={a.agentId} agent={a} onOpen={() => setOpen(a)} />
+          <AgentBlock key={a.agentId} agent={a} href={`/agents/${a.agentId}`} />
         ))}
       </div>
 
@@ -74,7 +76,7 @@ export function AgentOrgChart({
   );
 }
 
-function Dot({ on = false }: { on?: boolean }) {
+export function Dot({ on = false }: { on?: boolean }) {
   return (
     <span
       className={"inline-block h-2 w-2 rounded-full align-middle " + (on ? "bg-sage-500" : "bg-line")}
@@ -82,45 +84,29 @@ function Dot({ on = false }: { on?: boolean }) {
   );
 }
 
-function Avatar({ agent, size = 40 }: { agent: AgentRecord; size?: number }) {
-  const initials = agent.displayName.slice(0, 1);
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-full font-bold text-white"
-      style={{
-        width: size,
-        height: size,
-        fontSize: size * 0.42,
-        background: `linear-gradient(140deg, hsl(${agent.avatarHue} 42% 46%), hsl(${agent.avatarHue} 38% 32%))`,
-      }}
-      aria-hidden
-    >
-      {initials}
-    </span>
-  );
-}
-
-function AgentBlock({
+/**
+ * Either a modal-opening button (John, on the main page — he has no page of
+ * his own to go to) or a link to that agent's own page (everyone else, on
+ * the main page — first click navigates, per spec). `SingleAgentHeader`
+ * below reuses this in its third mode: on an agent's own page, this same
+ * block always opens the modal, since there's nowhere further to navigate.
+ */
+export function AgentBlock({
   agent,
   wide = false,
   onOpen,
+  href,
 }: {
   agent: AgentRecord;
   wide?: boolean;
-  onOpen: () => void;
+  onOpen?: () => void;
+  href?: string;
 }) {
   const acted = agent.actionCount > 0;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={
-        "rounded-xl border border-line bg-white p-4 text-left transition-colors hover:border-pine-300 hover:bg-pine-50/40 " +
-        (wide ? "w-full max-w-sm" : "")
-      }
-    >
+  const content = (
+    <>
       <div className="flex items-start gap-3">
-        <Avatar agent={agent} size={wide ? 46 : 38} />
+        <AgentAvatar hue={agent.avatarHue} size={wide ? 46 : 38} />
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="truncate font-bold text-pine-700">{agent.displayName}</span>
@@ -145,12 +131,28 @@ function AgentBlock({
       </div>
 
       <p className="mt-2 line-clamp-2 text-[11.5px] leading-snug text-faint">{agent.owns}</p>
+    </>
+  );
+  const className =
+    "block rounded-xl border border-line bg-white p-4 text-left transition-colors hover:border-pine-300 hover:bg-pine-50/40 " +
+    (wide ? "w-full max-w-sm" : "");
+
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onOpen} className={className}>
+      {content}
     </button>
   );
 }
 
 /** The three sections the specification asks for — prompt, tools, skills — plus a fourth: actually asking it something. */
-function AgentModal({
+export function AgentModal({
   agent,
   connections,
   askAgent,
@@ -171,7 +173,7 @@ function AgentModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 border-b border-line p-5">
-          <Avatar agent={agent} size={48} />
+          <AgentAvatar hue={agent.avatarHue} size={48} />
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-bold text-pine-700">{agent.displayName}</h2>
             <p className="text-[13px] text-muted">{agent.title}</p>

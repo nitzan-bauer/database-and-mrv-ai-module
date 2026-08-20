@@ -37,7 +37,20 @@ export type ProviderResponse =
 export interface ModelProvider {
   /** Identifies what actually answered — shown in the UI so a response is never presented as more than it is. */
   readonly id: string;
-  complete(args: { system: string; userMessage: string; tools: ToolSchema[] }): Promise<ProviderResponse>;
+  complete(args: {
+    system: string;
+    userMessage: string;
+    tools: ToolSchema[];
+    /**
+     * Anthropic's own hosted web-search tool (Nitzan's own instruction:
+     * broad-web-search capability should be available to every agent, not
+     * just the one task it was first built for) — the model decides on its
+     * own whether and how many times to search, up to maxUses, and the
+     * server executes each search itself. Ignored by providers that can't
+     * offer it (no-key stand-in included) rather than erroring.
+     */
+    webSearch?: { maxUses?: number; timeoutMs?: number };
+  }): Promise<ProviderResponse>;
 }
 
 /**

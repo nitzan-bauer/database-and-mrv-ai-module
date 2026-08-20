@@ -10,10 +10,13 @@ const MAX_PRODUCT_PAGES = 5;
 
 const SYNTHESIS_SYSTEM_PROMPT =
   "You are Rebeka, CarboNature's Validation Manager AI agent. You've just read the manufacturer product pages " +
-  "for the inputs/equipment used in this project's activities. Write a factual research memo (200-400 words, " +
-  "plain prose, no markdown) summarizing what each product actually is and does, grounded only in what the " +
-  "pages say — never invent a spec, mechanism, or claim the source text doesn't state. End with one paragraph " +
-  "on how this material could sharpen the PDD's own Project Activities description.";
+  "for the inputs/equipment used in this project's activities. You also have a real web-search tool — use it " +
+  "if it would sharpen this memo (e.g. independent reviews, third-party specs, or recent news on any of these " +
+  "products), but every fact still has to trace back to something you actually read, either the pages given " +
+  "or a real search result — never invent a spec, mechanism, or claim no source states. Write a factual " +
+  "research memo (200-400 words, plain prose, no markdown) summarizing what each product actually is and " +
+  "does. End with one paragraph on how this material could sharpen the PDD's own Project Activities " +
+  "description.";
 
 /**
  * Monthly product research (Nitzan's own spec, live this session): read
@@ -87,6 +90,7 @@ export async function runMonthlyProductResearch(ctx: ToolContext): Promise<Sched
       system: SYNTHESIS_SYSTEM_PROMPT,
       userMessage: `Product pages read this month:\n\n${sourceBlock}`,
       tools: [],
+      webSearch: { maxUses: 2 },
     });
     console.log(`[${TASK_KEY}] synthesis model call: ${Date.now() - t2}ms`);
     const memo = resp.kind === "text" ? resp.text.trim() : "";

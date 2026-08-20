@@ -28,9 +28,17 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
   return {
     id: `anthropic:${model}`,
 
-    async complete({ system, userMessage, tools }) {
+    async complete({ system, userMessage, tools, webSearch }) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), COMPLETE_TIMEOUT_MS);
+      // A web-search turn needs the server time to actually run the
+      // search(es) before it can answer — the flat 15s budget everything
+      // else on this call uses would cut a real search off mid-flight. But
+      // an unattended scheduled task sharing one 60s serverless invocation
+      // with other due tasks (src/app/api/cron/run-scheduled-tasks/route.ts)
+      // can't afford a generous default either, so this only extends as
+      // far as the caller explicitly asks for — default stays modest.
+      const timeoutMs = webSearch ? (webSearch.timeoutMs ?? 20_000) : COMPLETE_TIMEOUT_MS;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let res: Response;
       try {
         res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -43,19 +51,24 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
           },
           body: JSON.stringify({
             model,
-            max_tokens: 1536,
+            max_tokens: webSearch ? 3072 : 1536,
             system,
             messages: [{ role: "user", content: userMessage }],
-            tools: tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.inputSchema,
-            })),
+            tools: [
+              ...tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.inputSchema,
+              })),
+              ...(webSearch
+                ? [{ type: "web_search_20250305", name: "web_search", max_uses: webSearch.maxUses ?? 5 }]
+                : []),
+            ],
           }),
         });
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") {
-          throw new Error(`Anthropic API call timed out after ${COMPLETE_TIMEOUT_MS}ms`);
+          throw new Error(`Anthropic API call timed out after ${timeoutMs}ms`);
         }
         throw e;
       } finally {

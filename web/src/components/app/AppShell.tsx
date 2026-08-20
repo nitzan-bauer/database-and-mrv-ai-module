@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Logo } from "@/components/brand/Logo";
+import { IconMark } from "@/components/brand/Logo";
 import { DATA_MODE } from "@/lib/env";
 
 const NAV = [
@@ -32,16 +32,24 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur">
+      <header className="sticky top-0 z-40 bg-pine-900">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex items-center gap-6">
-            <Logo width={150} href="/projects" priority />
+            <Link href="/projects" className="flex items-center gap-2.5" aria-label="CarboNature MRV">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-pine-700 ring-1 ring-white/10">
+                <IconMark size={22} />
+              </span>
+              <span className="hidden flex-col leading-tight sm:flex">
+                <span className="text-[13.5px] font-bold text-white">CarboNature</span>
+                <span className="font-mono text-[10px] text-sage-300">AI-MRV Module</span>
+              </span>
+            </Link>
             <nav className="hidden items-center gap-1 md:flex">
               {NAV.map((n) => (
                 <Link
                   key={n.href}
                   href={n.href}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-pine-50 hover:text-pine-700"
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-pine-100/80 transition-colors hover:bg-white/10 hover:text-white"
                 >
                   {n.label}
                 </Link>
@@ -51,10 +59,10 @@ export function AppShell({
           <div className="flex items-center gap-3">
             <DataModeBadge />
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-pine-700">{userName}</p>
-              <p className="text-xs text-muted">{userEmail ?? "Super Admin"}</p>
+              <p className="text-sm font-semibold text-white">{userName}</p>
+              <p className="text-xs text-pine-100/70">{userEmail ?? "Super Admin"}</p>
             </div>
-            <span className="rounded-full bg-sage-100 px-2.5 py-1 text-xs font-medium text-sage-700">
+            <span className="rounded-full bg-sage-400/20 px-2.5 py-1 text-xs font-medium text-sage-300">
               Active
             </span>
             {authenticated && <SignOutButton />}
@@ -84,7 +92,7 @@ function SignOutButton() {
     >
       <button
         type="submit"
-        className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-cream hover:text-pine-700"
+        className="rounded-lg border border-white/15 px-2.5 py-1 text-xs font-medium text-pine-100/80 transition-colors hover:bg-white/10 hover:text-white"
       >
         Sign out
       </button>
