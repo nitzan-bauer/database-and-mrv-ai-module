@@ -72,14 +72,9 @@ export async function finishScheduledTask(
     return { ok: false, detail: `${input.subject} — recorded, but no Google access token to send the email.` };
   }
 
-  const orgProfiles = await query<{
-    legal_name: string;
-    address: string;
-    contact_name: string;
-    contact_title: string;
-    contact_email: string;
-    contact_phone: string;
-  }>(`SELECT legal_name, address, contact_name, contact_title, contact_email, contact_phone FROM mrv.org_profile LIMIT 1`);
+  const orgProfiles = await query<{ legal_name: string; address: string; tax_id: string | null }>(
+    `SELECT legal_name, address, tax_id FROM mrv.org_profile LIMIT 1`,
+  );
   if (!orgProfiles.length) {
     return { ok: false, detail: `${input.subject} — recorded, but mrv.org_profile has no row to letterhead the PDF from.` };
   }
@@ -89,15 +84,13 @@ export async function finishScheduledTask(
     const { buildLetterheadPdf } = await import("./letterheadPdf");
     const pdfBuffer = await buildLetterheadPdf({
       title: input.subject,
+      subtitle: "CarboNature MRV — Automated Report",
       bodyParagraphs: input.bodyParagraphs,
       generatedAt: new Date(),
       org: {
         legalName: org.legal_name,
         address: org.address,
-        contactName: org.contact_name,
-        contactTitle: org.contact_title,
-        contactEmail: org.contact_email,
-        contactPhone: org.contact_phone,
+        taxId: org.tax_id ?? "",
       },
     });
 
