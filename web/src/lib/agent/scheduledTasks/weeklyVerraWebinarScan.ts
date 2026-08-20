@@ -11,15 +11,22 @@ const MAX_CALENDAR_EVENTS = 3;
 
 const EXTRACTION_SYSTEM_PROMPT =
   "You extract structured event data from raw webpage text. You will be given the text of Verra's public " +
-  'events page and webinar-recordings page. Return ONLY a JSON object, no prose, no markdown fences: ' +
-  '{"upcoming":[{"title":string,"date":string,"url":string}],"recordings":[{"title":string,"date":string,' +
-  '"description":string}]}. "date" should be whatever date text the page itself gives (do not compute or ' +
-  "guess a date). Only include entries that are clearly webinars or virtual training sessions, not in-person-" +
-  "only conferences. If a list is empty, return an empty array for it — never invent an entry.";
+  'events page and webinar-recordings page, and today\'s date. Return ONLY a JSON object, no prose, no ' +
+  'markdown fences: {"upcoming":[{"title":string,"date":string,"isoDate":string|null,"url":string}],' +
+  '"recordings":[{"title":string,"date":string,"description":string}]}. "date" should be whatever date text ' +
+  'the page itself gives verbatim, e.g. "August 25 @ 10:00 am - 11:30 am EDT" (do not compute or guess — ' +
+  'this field is for display only). "isoDate" is your own best-effort normalization of that same date to ' +
+  'strict "YYYY-MM-DD" (date only, ignore the time-of-day and timezone). Verra\'s events page never states ' +
+  "the year, so infer it using today's date as the reference point: an upcoming-events listing describes " +
+  "future sessions, so if the month/day given has already passed this year, it means next year, not this " +
+  'year. If you cannot confidently determine a specific calendar date, set isoDate to null — never guess. ' +
+  "Only include entries that are clearly webinars or virtual training sessions, not in-person-only " +
+  "conferences. If a list is empty, return an empty array for it — never invent an entry.";
 
 interface ExtractedEvent {
   title: string;
   date: string;
+  isoDate?: string | null;
   url?: string;
 }
 interface ExtractedRecording {
@@ -36,6 +43,17 @@ function parseExtraction(text: string): { upcoming: ExtractedEvent[]; recordings
   } catch {
     return { upcoming: [], recordings: [] };
   }
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The model's own normalized isoDate, never the raw display text — native `Date` parsing of Verra's own
+ * format ("August 25 @ 10:00 am - 11:30 am EDT") either fails outright or, worse, silently succeeds with
+ * the wrong year (JS defaults a yearless date string to 2001). */
+function resolveEventDate(ev: ExtractedEvent): Date | null {
+  if (!ev.isoDate || !ISO_DATE_RE.test(ev.isoDate)) return null;
+  const d = new Date(`${ev.isoDate}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -67,9 +85,11 @@ export async function runWeeklyVerraWebinarScan(ctx: ToolContext): Promise<Sched
   }
 
   const provider = await getConfiguredProvider();
+  const todayIso = new Date().toISOString().slice(0, 10);
   const resp = await provider.complete({
     system: EXTRACTION_SYSTEM_PROMPT,
     userMessage:
+      `Today's date: ${todayIso}\n\n` +
       `Events page (${EVENTS_URL}):\n${eventsPage.ok ? eventsPage.data.textExcerpt : "(fetch failed)"}\n\n` +
       `Recordings page (${RECORDINGS_URL}):\n${recordingsPage.ok ? recordingsPage.data.textExcerpt : "(fetch failed)"}`,
     tools: [],
@@ -83,9 +103,8 @@ export async function runWeeklyVerraWebinarScan(ctx: ToolContext): Promise<Sched
     paragraphs.push(`Upcoming webinar/virtual session(s) found on Verra's events page:`);
     let created = 0;
     for (const ev of extracted.upcoming.slice(0, MAX_CALENDAR_EVENTS)) {
-      const parsedDate = new Date(ev.date);
-      const hasRealDate = !Number.isNaN(parsedDate.getTime());
-      if (!hasRealDate || !ctx.googleAccessToken) {
+      const parsedDate = resolveEventDate(ev);
+      if (!parsedDate || !ctx.googleAccessToken) {
         paragraphs.push(`- "${ev.title}" (${ev.date}) — could not parse a date to add a calendar reminder for this one.`);
         continue;
       }
