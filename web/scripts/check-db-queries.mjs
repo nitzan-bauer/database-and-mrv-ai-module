@@ -53,11 +53,15 @@ for (const m of migrationSql.matchAll(
   }
 }
 
-// columns added later
-for (const m of migrationSql.matchAll(
-  /ALTER TABLE mrv\.(\w+)\s+ADD COLUMN (?:IF NOT EXISTS )?(\w+)/gi,
-)) {
-  addColumn(m[1], m[2]);
+// columns added later — one ALTER TABLE can carry several comma-separated
+// ADD COLUMN clauses (e.g. 0025 adds `skills` and `planned_skills` in the
+// same statement), so each statement's whole body is scanned for every
+// ADD COLUMN within it, not just the one right after ALTER TABLE.
+for (const stmt of migrationSql.matchAll(/ALTER TABLE mrv\.(\w+)\s+([\s\S]*?);/gi)) {
+  const [, table, body] = stmt;
+  for (const col of body.matchAll(/ADD COLUMN (?:IF NOT EXISTS )?(\w+)/gi)) {
+    addColumn(table, col[1]);
+  }
 }
 
 // views the app may read
