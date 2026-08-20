@@ -59,7 +59,7 @@ export async function runMonthlyVm0042ProjectScan(ctx: ToolContext): Promise<Sch
       `Today's date: ${new Date().toISOString().slice(0, 10)}. Search for VM0042 (any registry) and ` +
       `non-Verra regenerative-agriculture projects that have issued carbon credits in roughly the last 3 years.`,
     tools: [],
-    webSearch: { maxUses: 2, timeoutMs: 25_000 },
+    webSearch: { maxUses: 2, timeoutMs: 30_000 },
   });
   console.log(`[${TASK_KEY}] web-search model call: ${Date.now() - t0}ms`);
 

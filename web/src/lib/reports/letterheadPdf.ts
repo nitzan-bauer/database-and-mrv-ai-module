@@ -27,6 +27,23 @@ const ASSETS_DIR = path.join(process.cwd(), "src", "lib", "reports", "assets");
 const LOGO_PATH = path.join(ASSETS_DIR, "carbonature-logo.png");
 const WATERMARK_PATH = path.join(ASSETS_DIR, "carbonature-watermark.png");
 
+const SUBSCRIPT_DIGITS: Record<string, string> = {
+  "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9",
+};
+const SUPERSCRIPT_DIGITS: Record<string, string> = {
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+};
+
+/**
+ * Report bodies now regularly carry real web-search text (John's market
+ * scans, Rebeka's product research) rather than only this codebase's own
+ * controlled strings — confirmed live: "tCO₂e" in a real search result
+ * broke email delivery outright, `WinAnsi cannot encode "₂"` thrown deep
+ * inside pdf-lib with no partial send. Subscript/superscript digits (CO₂,
+ * m²) get a real substitution since they're common in this domain; a
+ * final catch-all replaces anything else outside WinAnsi's range with
+ * "?" rather than ever letting one stray character sink a whole report.
+ */
 function wa(s: string): string {
   return s
     .replace(/[—–]/g, "-")
@@ -35,7 +52,10 @@ function wa(s: string): string {
     .replace(/…/g, "...")
     .replace(/≥/g, ">=")
     .replace(/≤/g, "<=")
-    .replace(/→/g, "->");
+    .replace(/→/g, "->")
+    .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (c) => SUBSCRIPT_DIGITS[c])
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (c) => SUPERSCRIPT_DIGITS[c])
+    .replace(/[^\x00-\xFF]/g, "?");
 }
 
 export interface LetterheadOrgProfile {

@@ -57,7 +57,7 @@ export async function runMonthlyCreditMarketScan(ctx: ToolContext): Promise<Sche
       `Today's date: ${new Date().toISOString().slice(0, 10)}. Search for recent VM0042 and non-Verra ` +
       `regenerative-agriculture carbon-credit deals and prices.`,
     tools: [],
-    webSearch: { maxUses: 2, timeoutMs: 25_000 },
+    webSearch: { maxUses: 2, timeoutMs: 30_000 },
   });
   console.log(`[${TASK_KEY}] web-search model call: ${Date.now() - t0}ms`);
 
