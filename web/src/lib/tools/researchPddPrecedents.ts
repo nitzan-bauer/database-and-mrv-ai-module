@@ -146,8 +146,8 @@ export async function researchPddPrecedents(
               ts_headline('english', extracted_text, plainto_tsquery('english', $1),
                 'MaxFragments=1, MaxWords=100, MinWords=30') AS excerpt
          FROM mrv.pdd_precedents
-        WHERE to_tsvector('english', extracted_text) @@ plainto_tsquery('english', $1)
-        ORDER BY ts_rank_cd(to_tsvector('english', extracted_text), plainto_tsquery('english', $1)) DESC
+        WHERE tsv @@ plainto_tsquery('english', $1)
+        ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $1)) DESC
         LIMIT $2`,
       [input.query.trim(), limit],
     );

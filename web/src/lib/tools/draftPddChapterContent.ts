@@ -211,8 +211,8 @@ export async function draftPddChapterContent(
                   ts_headline('english', extracted_text, plainto_tsquery('english', $1),
                     'MaxFragments=2, MaxWords=60, MinWords=20') AS excerpt
              FROM mrv.pdd_precedents
-            WHERE to_tsvector('english', extracted_text) @@ plainto_tsquery('english', $1)
-            ORDER BY ts_rank_cd(to_tsvector('english', extracted_text), plainto_tsquery('english', $1)) DESC
+            WHERE tsv @@ plainto_tsquery('english', $1)
+            ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', $1)) DESC
             LIMIT 2`,
           [row.sectionTitle],
         );
