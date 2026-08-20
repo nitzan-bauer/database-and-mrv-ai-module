@@ -11,6 +11,10 @@
  * renders that same aggregate as a bar — thicker and in the brand
  * primary (pine), not the chapter rows' sage, so it reads as the one
  * that sums up the rest rather than one more row in the list.
+ *
+ * Bare — no card, no heading of its own. This and the gauge above it are
+ * one unit (Nitzan's own follow-up), titled once with the project's own
+ * name by the parent (RebekaDashboard), not a full-width card of its own.
  */
 export function ChapterReadinessBars({
   chapters,
@@ -25,8 +29,7 @@ export function ChapterReadinessBars({
   const overallDraftedPct = overall?.total ? Math.round((overall.drafted / overall.total) * 100) : 0;
 
   return (
-    <div className="rounded-xl border border-line bg-white p-4">
-      <h3 className="mb-3 text-[13px] font-bold text-pine-700">PDD readiness by chapter</h3>
+    <div>
       <div className="space-y-2.5">
         {chapters.map((c) => {
           const answeredPct = c.total ? Math.round((c.answered / c.total) * 100) : 0;

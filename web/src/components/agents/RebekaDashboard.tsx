@@ -2,19 +2,16 @@ import { pddReadiness } from "@/lib/data";
 import type { ToolResult } from "@/lib/tools/context";
 import type { ProjectStatus } from "@/lib/tools/submitProjectStatus";
 import type { SubmittedProjectStatus } from "@/lib/tools/submitProjectStatus";
-import type { SyncedPddGoogleDoc } from "@/lib/tools/syncPddGoogleDoc";
 import type { UpdatedPddSeedAnswer } from "@/lib/tools/updatePddSeedAnswer";
 import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipeline";
 import { ChapterReadinessBars } from "./ChapterReadinessBars";
 import { ReadinessGauge } from "./ReadinessGauge";
 import { SeedQuestionnaireBlock } from "./SeedQuestionnaireBlock";
 import { ProjectStatusPanel } from "./ProjectStatusPanel";
-import { GoogleDocPanel } from "./GoogleDocPanel";
 
 type SaveAnswerAction = (input: { projectId: string; questionKey: string; answerText: string }) => Promise<ToolResult<UpdatedPddSeedAnswer>>;
 type RunGeneratorAction = (input: { projectId: string }) => Promise<ToolResult<PddGeneratorPipelineResult>>;
 type SubmitStatusAction = (input: { projectId: string; status: ProjectStatus }) => Promise<ToolResult<SubmittedProjectStatus>>;
-type SyncGoogleDocAction = (input: { projectId: string }) => Promise<ToolResult<SyncedPddGoogleDoc>>;
 
 /**
  * Section 1 (Nitzan's own spec) for Rebeka's own page — and, per his
@@ -28,21 +25,17 @@ type SyncGoogleDocAction = (input: { projectId: string }) => Promise<ToolResult<
 export async function RebekaDashboard({
   projectId,
   currentStatus,
-  googleDocUrl,
   pddGeneratorLockedAt,
   saveAnswerAction,
   runGeneratorAction,
   submitStatusAction,
-  syncGoogleDocAction,
 }: {
   projectId: string;
   currentStatus: ProjectStatus;
-  googleDocUrl: string | null;
   pddGeneratorLockedAt: string | null;
   saveAnswerAction: SaveAnswerAction;
   runGeneratorAction: RunGeneratorAction;
   submitStatusAction: SubmitStatusAction;
-  syncGoogleDocAction: SyncGoogleDocAction;
 }) {
   const { query } = await import("@/lib/db");
   const { listPddSectionStatus, summarizeByChapter } = await import("@/lib/pdd/sectionStatus");
@@ -79,20 +72,20 @@ export async function RebekaDashboard({
         </div>
       </div>
 
-      <div className="max-w-xs">
+      <div className="max-w-sm rounded-xl border border-line bg-white p-4">
+        <h3 className="mb-3 truncate text-[13px] font-bold text-pine-700">{seedState.projectName ?? "This project"}</h3>
         {questionnaire && (
           <ReadinessGauge
-            projectName={seedState.projectName ?? "This project"}
             pct={pct}
             label={`${answered}/${questionnaire.rows.length} confirmed` + (drafted ? ` · ${drafted} AI-drafted` : "")}
           />
         )}
-      </div>
-      <div className="mt-3">
-        <ChapterReadinessBars
-          chapters={chapterReadiness}
-          overall={questionnaire ? { total: questionnaire.rows.length, answered, drafted } : undefined}
-        />
+        <div className="mt-3">
+          <ChapterReadinessBars
+            chapters={chapterReadiness}
+            overall={questionnaire ? { total: questionnaire.rows.length, answered, drafted } : undefined}
+          />
+        </div>
       </div>
 
       <div className="mt-4">
@@ -150,9 +143,8 @@ export async function RebekaDashboard({
         </div>
       )}
 
-      <div className="mt-3 space-y-3">
+      <div className="mt-3">
         <ProjectStatusPanel projectId={projectId} currentStatus={currentStatus} action={submitStatusAction} />
-        <GoogleDocPanel projectId={projectId} googleDocUrl={googleDocUrl} action={syncGoogleDocAction} />
       </div>
     </section>
   );

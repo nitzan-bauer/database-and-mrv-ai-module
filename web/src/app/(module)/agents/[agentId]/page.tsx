@@ -5,7 +5,6 @@ import { DATA_MODE } from "@/lib/env";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
 import type { ToolResult } from "@/lib/tools/context";
 import type { ProjectStatus, SubmittedProjectStatus } from "@/lib/tools/submitProjectStatus";
-import type { SyncedPddGoogleDoc } from "@/lib/tools/syncPddGoogleDoc";
 import type { UpdatedPddSeedAnswer } from "@/lib/tools/updatePddSeedAnswer";
 import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipeline";
 import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
@@ -48,17 +47,6 @@ async function submitProjectStatusAction(input: {
   const session = await auth().catch(() => null);
   const { submitProjectStatus } = await import("@/lib/tools/submitProjectStatus");
   return submitProjectStatus({ actor: session?.user?.email ?? "unknown", actorKind: "human" }, input);
-}
-
-/** Create or update the project's live Google Doc, as the signed-in person's own Drive access. */
-async function syncPddGoogleDocAction(input: { projectId: string }): Promise<ToolResult<SyncedPddGoogleDoc>> {
-  "use server";
-  const session = await auth().catch(() => null);
-  const { syncPddGoogleDoc } = await import("@/lib/tools/syncPddGoogleDoc");
-  return syncPddGoogleDoc(
-    { actor: session?.user?.email ?? "unknown", actorKind: "human", googleAccessToken: session?.googleAccessToken },
-    input,
-  );
 }
 
 /**
@@ -135,12 +123,10 @@ export default async function AgentDetailPage({
         <RebekaDashboard
           projectId={project.projectId}
           currentStatus={project.status}
-          googleDocUrl={project.googleDocUrl}
           pddGeneratorLockedAt={project.pddGeneratorLockedAt}
           saveAnswerAction={updateSeedAnswerAction}
           runGeneratorAction={runPddGeneratorAction}
           submitStatusAction={submitProjectStatusAction}
-          syncGoogleDocAction={syncPddGoogleDocAction}
         />
       ) : (
         <ComingSoonDashboard agentName={agent.displayName} />
