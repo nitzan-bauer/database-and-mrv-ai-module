@@ -24,27 +24,33 @@ export async function listAgentLearningStats(
   query: <T extends Record<string, unknown> = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>,
   weeks = 8,
 ): Promise<AgentWeekStats[]> {
+  // week_start cast to ::text explicitly — node-postgres returns a bare
+  // `date` column as a native JS Date object, not a string, despite the
+  // query<> annotation claiming otherwise (the same real gotcha already
+  // hit once this session with a timestamptz column — confirmed live
+  // here too: rendering the un-cast Date directly in the Admin page
+  // crashed with "Objects are not valid as a React child").
   const actionRows = await query<{ agent_id: string; week_start: string; action_count: string; refused_count: string }>(
     `SELECT actor AS agent_id,
-            date_trunc('week', ts)::date AS week_start,
+            (date_trunc('week', ts)::date)::text AS week_start,
             count(*)::text AS action_count,
             count(*) FILTER (WHERE payload->>'outcome' = 'refused')::text AS refused_count
        FROM mrv.audit_log
       WHERE actor IN (SELECT agent_id FROM mrv.agents)
         AND ts > now() - ($1 || ' weeks')::interval
-      GROUP BY actor, week_start
-      ORDER BY week_start`,
+      GROUP BY actor, date_trunc('week', ts)
+      ORDER BY 2`,
     [String(weeks)],
   );
 
   const feedbackRows = await query<{ agent_id: string; week_start: string; verdict: string; n: string }>(
     `SELECT agent_id,
-            date_trunc('week', created_at)::date AS week_start,
+            (date_trunc('week', created_at)::date)::text AS week_start,
             verdict,
             count(*)::text AS n
        FROM mrv.agent_feedback
       WHERE created_at > now() - ($1 || ' weeks')::interval
-      GROUP BY agent_id, week_start, verdict`,
+      GROUP BY agent_id, date_trunc('week', created_at), verdict`,
     [String(weeks)],
   );
 
