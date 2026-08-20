@@ -27,7 +27,9 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
   const { listPddSectionStatus, chapterTitleForSectionIndex } = await import("../../pdd/sectionStatus");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
 
+  const t0 = Date.now();
   const registrySearch = await searchVerraRegistry(ctx, { methodology: "VM0042", limit: 20 });
+  console.log(`[${TASK_KEY}] searchVerraRegistry: ${Date.now() - t0}ms`);
   if (!registrySearch.ok) {
     return { ok: false, detail: `weekly research round: search_verra_registry failed — ${registrySearch.error}` };
   }
@@ -75,7 +77,9 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
   // week for no reason (and risks the cron route's own time budget). A
   // chapter with nothing pending has nothing this week's sweep could add.
   let redraftedCount = 0;
+  const t1 = Date.now();
   const sectionStatus = await listPddSectionStatus(query, TARGET_PROJECT_ID);
+  console.log(`[${TASK_KEY}] listPddSectionStatus: ${Date.now() - t1}ms (${sectionStatus?.rows.length ?? 0} rows)`);
   if (sectionStatus) {
     const chaptersWithPending = new Set(
       sectionStatus.rows.filter((r) => r.sectionLevel > 1 && r.status === "pending").map((r) =>
@@ -85,8 +89,11 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
     const chapterTitles = sectionStatus.rows
       .filter((r) => r.sectionLevel === 1 && chaptersWithPending.has(r.sectionTitle))
       .map((r) => r.sectionTitle);
+    console.log(`[${TASK_KEY}] chapters with pending sections: ${chapterTitles.length}`);
     if (chapterTitles.length) {
+      const t2 = Date.now();
       const draftResult = await draftPddChapterContent(ctx, { projectId: TARGET_PROJECT_ID, chapterTitles, maxSections: 5 });
+      console.log(`[${TASK_KEY}] draftPddChapterContent: ${Date.now() - t2}ms`);
       if (draftResult.ok) {
         redraftedCount = draftResult.data.sections.filter((s) => s.outcome === "drafted").length;
         if (redraftedCount) {
@@ -108,6 +115,7 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
     }
   }
 
+  const t3 = Date.now();
   const outcome = await finishScheduledTask(ctx, {
     taskKey: TASK_KEY,
     projectId: TARGET_PROJECT_ID,
@@ -115,6 +123,7 @@ export async function runWeeklyResearchRound(ctx: ToolContext): Promise<Schedule
     bodyParagraphs: paragraphs,
     memoryKind: "weekly_research_round",
   });
+  console.log(`[${TASK_KEY}] finishScheduledTask: ${Date.now() - t3}ms`);
 
   return {
     ok: outcome.ok,

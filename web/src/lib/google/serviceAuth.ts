@@ -42,16 +42,24 @@ export async function getServiceGoogleAccessToken(query: Query, email: string): 
   if (!refreshToken) return null;
 
   try {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: process.env.AUTH_GOOGLE_ID ?? "",
-        client_secret: process.env.AUTH_GOOGLE_SECRET ?? "",
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let res: Response;
+    try {
+      res = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: process.env.AUTH_GOOGLE_ID ?? "",
+          client_secret: process.env.AUTH_GOOGLE_SECRET ?? "",
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+        }),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     const data = (await res.json()) as { access_token?: string; refresh_token?: string };
     if (!res.ok || !data.access_token) return null;
 

@@ -81,13 +81,18 @@ export async function GET(req: Request) {
     const handler = SCHEDULED_TASK_REGISTRY[row.task_key];
     if (handler) {
       try {
+        const tokenStart = Date.now();
         const googleAccessToken = (await getServiceGoogleAccessToken(query, serviceEmail)) ?? undefined;
+        console.log(`[cron] ${row.task_key}: got access token in ${Date.now() - tokenStart}ms (present: ${Boolean(googleAccessToken)})`);
+        const handlerStart = Date.now();
         const outcome = await handler({ actor: "cron", actorKind: "agent", googleAccessToken });
+        console.log(`[cron] ${row.task_key}: handler finished in ${Date.now() - handlerStart}ms`);
         status = outcome.ok ? "ok" : "error";
         detail = outcome.detail;
       } catch (e) {
         status = "error";
         detail = e instanceof Error ? e.message : String(e);
+        console.log(`[cron] ${row.task_key}: handler threw — ${detail}`);
       }
     }
 
