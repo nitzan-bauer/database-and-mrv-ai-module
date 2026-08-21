@@ -29,7 +29,13 @@ interface ScannedDeal {
 
 function parseDeals(text: string): ScannedDeal[] {
   try {
-    const cleaned = text.replace(/^```(json)?/i, "").replace(/```$/, "").trim();
+    // .trim() BEFORE stripping fences: the strip regexes are anchored to
+    // the literal string start/end (no `m` flag), so a stray leading
+    // newline or trailing space around the ``` fence — routine model
+    // output noise — silently defeated them, JSON.parse then threw, and
+    // the catch below returned [], indistinguishable from a genuine
+    // "found nothing this month."
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
     const parsed = JSON.parse(cleaned) as { deals?: ScannedDeal[] };
     return parsed.deals ?? [];
   } catch {

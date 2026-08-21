@@ -2,6 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { Encodings } from "@pdf-lib/standard-fonts";
 
 /**
  * A byte-for-byte-faithful reproduction of CarboNature's real letterhead
@@ -41,8 +42,19 @@ const SUPERSCRIPT_DIGITS: Record<string, string> = {
  * broke email delivery outright, `WinAnsi cannot encode "₂"` thrown deep
  * inside pdf-lib with no partial send. Subscript/superscript digits (CO₂,
  * m²) get a real substitution since they're common in this domain; a
- * final catch-all replaces anything else outside WinAnsi's range with
- * "?" rather than ever letting one stray character sink a whole report.
+ * final catch-all replaces anything else WinAnsi can't encode with "?"
+ * rather than ever letting one stray character sink a whole report.
+ *
+ * That catch-all used to be a blanket `[^\x00-\xFF]` — codepoint > 255 —
+ * which is NOT the same thing as "outside WinAnsi." WinAnsi (cp1252)
+ * repurposes the 0x80-0x9F control-code gap for real printable characters
+ * at codepoints > 0xFF: €(20AC), ™(2122), •(2022), Œ/œ(152/153),
+ * Š/š(160/161), Ž/ž(17D/17E), and more. The old regex nuked every one of
+ * these into "?", concretely turning real EUR prices in John's
+ * market-scan reports into garbage. `canEncodeUnicodeCodePoint` is
+ * pdf-lib's own WinAnsi table — asking it directly is the actual
+ * contract, not the Latin-1 byte range this font encoding happens to
+ * mostly overlap with.
  */
 function wa(s: string): string {
   return s
@@ -55,7 +67,7 @@ function wa(s: string): string {
     .replace(/→/g, "->")
     .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (c) => SUBSCRIPT_DIGITS[c])
     .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (c) => SUPERSCRIPT_DIGITS[c])
-    .replace(/[^\x00-\xFF]/g, "?");
+    .replace(/[\s\S]/gu, (c) => (Encodings.WinAnsi.canEncodeUnicodeCodePoint(c.codePointAt(0)!) ? c : "?"));
 }
 
 export interface LetterheadOrgProfile {
@@ -64,17 +76,46 @@ export interface LetterheadOrgProfile {
   taxId: string;
 }
 
+// A word that alone is wider than maxWidth (a long "Source: https://..."
+// URL in John's market-scan reports is the real case that hits this) never
+// fits no matter how empty `current` is — without this, the normal
+// word-wrap loop below just lets it run off the page edge forever, since
+// its only wrap point is "start a new line first," which doesn't help a
+// single overlong token. Split it character-by-character into as many
+// max-width chunks as it takes.
+function forceBreakWord(font: PDFFont, word: string, size: number, maxWidth: number): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  for (const ch of word) {
+    const candidate = current + ch;
+    if (font.widthOfTextAtSize(candidate, size) > maxWidth && current) {
+      chunks.push(current);
+      current = ch;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 function wrapLines(font: PDFFont, text: string, size: number, maxWidth: number): string[] {
   const words = wa(text).split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = "";
   for (const w of words) {
     const candidate = current ? `${current} ${w}` : w;
-    if (font.widthOfTextAtSize(candidate, size) > maxWidth && current) {
-      lines.push(current);
-      current = w;
-    } else {
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
       current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    if (font.widthOfTextAtSize(w, size) > maxWidth) {
+      const pieces = forceBreakWord(font, w, size, maxWidth);
+      lines.push(...pieces.slice(0, -1));
+      current = pieces[pieces.length - 1] ?? "";
+    } else {
+      current = w;
     }
   }
   if (current) lines.push(current);

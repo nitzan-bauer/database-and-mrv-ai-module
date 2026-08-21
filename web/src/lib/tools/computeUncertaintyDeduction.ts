@@ -57,7 +57,21 @@ export async function computeUncertaintyDeduction(
     [run_id],
   );
 
-  const usable = rows.filter((r) => r.area_ha != null && r.var_model != null && r.var_sampling != null);
+  // mrv.strata.area_ha has no NOT NULL/CHECK(area_ha > 0) constraint (unlike
+  // mrv.activity_data.area_ha, which does) — a stratum with a zero or
+  // negative area is bad data, not a legitimate "no area recorded" case
+  // like a null. Filtering only `!= null` let one through into the
+  // area-weighted sums below, where it could drag totalArea to <= 0 and
+  // silently trip equation74's own area=1 substitution — masking bad
+  // input as a plausible-looking deduction instead of failing loudly.
+  const withVariance = rows.filter((r) => r.area_ha != null && r.var_model != null && r.var_sampling != null);
+  const badArea = withVariance.filter((r) => !(Number(r.area_ha) > 0));
+  if (badArea.length) {
+    return fail(
+      `computeUncertaintyDeduction: ${badArea.length} stratum/strata for this run have a zero or negative area_ha — fix the strata data before scoring.`,
+    );
+  }
+  const usable = withVariance;
   if (!usable.length) {
     return fail(
       "computeUncertaintyDeduction: that run has no results with area and variance recorded yet — cannot score.",

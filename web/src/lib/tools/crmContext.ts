@@ -38,7 +38,11 @@ export async function checkCrmPolicy(
   }
 
   const { mode, note } = rows[0];
-  if (mode === "auto" || ctx.confirmed) return { allowed: true };
+  // See context.ts's checkPolicy for why this can't be `mode === "auto" ||
+  // ctx.confirmed`: that would let a per-call confirmation reactivate an
+  // action a manager set to 'off', not just one set to 'confirm'.
+  if (mode === "auto") return { allowed: true };
+  if (mode === "confirm" && ctx.confirmed) return { allowed: true };
 
   return {
     allowed: false,

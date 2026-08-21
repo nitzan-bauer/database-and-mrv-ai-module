@@ -106,7 +106,7 @@ export async function compileEligibilityEvidencePack(
 
   let folderId: string;
   try {
-    folderId = await ensureProjectDriveFolder(query, ctx.googleAccessToken, input.projectId, project.name);
+    folderId = await ensureProjectDriveFolder(ctx.googleAccessToken, input.projectId, project.name);
   } catch (e) {
     return fail(`compileEligibilityEvidencePack: could not create the project's Drive folder — ${e instanceof Error ? e.message : e}.`);
   }

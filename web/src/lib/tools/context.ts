@@ -148,7 +148,16 @@ export async function checkPolicy(
   }
 
   const { mode, note } = rows[0];
-  if (mode === "auto" || ctx.confirmed) return { allowed: true };
+  // ctx.confirmed only means "a human clicked confirm on THIS specific
+  // call" (see the comment above) — it can only stand in for mode
+  // 'confirm's own approval step. It must never also wave through mode
+  // 'off', which means the action is disabled outright, not "disabled
+  // unless someone confirms." No live code path sets ctx.confirmed today,
+  // so this was unreachable — but a future "approve and retry" UI wiring
+  // ctx.confirmed through would otherwise silently reactivate an action
+  // a manager had deliberately turned off.
+  if (mode === "auto") return { allowed: true };
+  if (mode === "confirm" && ctx.confirmed) return { allowed: true };
 
   await auditRefusal(ctx, action, `policy is "${mode}", not auto or confirmed`);
   return {

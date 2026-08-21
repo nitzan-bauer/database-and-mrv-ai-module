@@ -31,7 +31,21 @@ export const maxDuration = 60;
  * picks it up rather than the whole request dying mid-task with nothing
  * recorded for the tasks after it.
  */
-const TIME_BUDGET_MS = 40_000; // leaves real headroom under the 60s hard cap — a single heavy task can still add several more seconds after this check passes
+// This only gates STARTING another task — it can't interrupt one already
+// running — so it has to leave enough of the 60s hard cap for the
+// single worst-case handler that starts right at the edge of the budget.
+// Measured worst case, not guessed: John's monthly market-scan handlers
+// call the model with webSearch (timeoutMs up to 30_000, anthropicProvider.ts)
+// then, via finalizeScheduledTaskRun, recordLesson's own completion call
+// (COMPLETE_TIMEOUT_MS = 15_000) — up to ~45s in model calls alone before
+// counting the Google-token fetch and DB round trips around them. 40_000
+// left only 20s of runway for that, so a task starting late in the window
+// could push the whole invocation past 60s and get killed by Vercel
+// mid-handler with nothing recorded — the exact silent-failure mode
+// maxDuration was raised to fix in the first place. 10s leaves ~50s of
+// runway, comfortably covering the ~45s worst case with margin for
+// per-task DB/auth overhead.
+const TIME_BUDGET_MS = 10_000;
 function advanceNextRun(current: Date, frequency: string): Date {
   const next = new Date(current);
   if (frequency === "monthly") {

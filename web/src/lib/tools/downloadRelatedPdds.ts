@@ -54,7 +54,7 @@ export async function downloadRelatedPdds(
 
   let projectFolderId: string;
   try {
-    projectFolderId = await ensureProjectDriveFolder(query, ctx.googleAccessToken, input.projectId, projects[0].name);
+    projectFolderId = await ensureProjectDriveFolder(ctx.googleAccessToken, input.projectId, projects[0].name);
   } catch (e) {
     return fail(`downloadRelatedPdds: could not reach the project's Drive folder — ${e instanceof Error ? e.message : e}.`);
   }

@@ -69,7 +69,7 @@ export async function ingestRelatedPddPrecedents(
 
   let relatedFolderId: string;
   try {
-    const projectFolderId = await ensureProjectDriveFolder(query, ctx.googleAccessToken, input.projectId, projects[0].name);
+    const projectFolderId = await ensureProjectDriveFolder(ctx.googleAccessToken, input.projectId, projects[0].name);
     relatedFolderId = await ensureSubfolder(ctx.googleAccessToken, projectFolderId, "RELATED PDDS");
   } catch (e) {
     return fail(`ingestRelatedPddPrecedents: could not reach the RELATED PDDS folder — ${e instanceof Error ? e.message : e}.`);

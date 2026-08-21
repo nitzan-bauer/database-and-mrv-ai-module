@@ -82,8 +82,17 @@ export interface UncertaintyResult {
  * a reduction that cannot be distinguished from nothing cannot be claimed.
  */
 export function equation74(i: UncertaintyInputs): UncertaintyResult {
+  // A zero/negative area is bad input, not a "no area yet" case with a
+  // sane default — silently substituting 1 here previously let a bad
+  // zero-area stratum (mrv.strata.area_ha has no CHECK > 0) understate a
+  // real Eq. 74 deduction with no trace of what happened. Callers must
+  // validate area at their own boundary (see computeUncertaintyDeduction.ts);
+  // this throws rather than guessing.
+  if (!(i.areaHa > 0)) {
+    throw new Error(`equation74: areaHa must be > 0, got ${i.areaHa}.`);
+  }
   const t = tValue667(i.degreesOfFreedom ?? Number.POSITIVE_INFINITY);
-  const area = i.areaHa > 0 ? i.areaHa : 1;
+  const area = i.areaHa;
 
   // The one detail that separates the two paths.
   const varMean =

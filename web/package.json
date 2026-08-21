@@ -21,6 +21,7 @@
     "agent:key:voyage": "node scripts/set-voyage-key.mjs"
   },
   "dependencies": {
+    "@pdf-lib/standard-fonts": "^1.0.0",
     "@turf/area": "^7.3.5",
     "docx": "^9.7.1",
     "mapbox-gl": "^3.24.1",

@@ -37,7 +37,9 @@ interface ExtractedRecording {
 
 function parseExtraction(text: string): { upcoming: ExtractedEvent[]; recordings: ExtractedRecording[] } {
   try {
-    const cleaned = text.replace(/^```(json)?/i, "").replace(/```$/, "").trim();
+    // .trim() BEFORE stripping fences — see monthlyCreditMarketScan.ts's
+    // parseDeals for why the anchored strip regexes need pre-trimmed input.
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
     const parsed = JSON.parse(cleaned) as { upcoming?: ExtractedEvent[]; recordings?: ExtractedRecording[] };
     return { upcoming: parsed.upcoming ?? [], recordings: parsed.recordings ?? [] };
   } catch {
