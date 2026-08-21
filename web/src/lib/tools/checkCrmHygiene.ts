@@ -28,15 +28,13 @@ export interface CrmHygieneResult {
  *   - INCOMPLETE: no email and no phone recorded — there is no way to
  *     actually reach this contact.
  */
-export async function checkCrmHygiene(
-  ctx: ToolContext,
-  input: { staleDays?: number } = {},
-): Promise<ToolResult<CrmHygieneResult>> {
-  const policy = await checkCrmPolicy("crm_hygiene", ctx);
-  if (!policy.allowed) return fail(policy.reason!, true);
-
-  const staleDays = input.staleDays ?? 14;
-  if (!(staleDays > 0)) return fail("checkCrmHygiene: staleDays must be a positive number.");
+/**
+ * Exported separately from the audited tool below so a passive dashboard
+ * read (Ron's own page) can show the same real flags without writing an
+ * audit_log row per page view — same split as funnelStageCounts.
+ */
+export async function computeCrmHygieneIssues(staleDays = 14): Promise<CrmHygieneResult> {
+  if (!(staleDays > 0)) throw new Error("computeCrmHygieneIssues: staleDays must be a positive number.");
 
   const { crmQuery } = await import("../crmDb");
 
@@ -52,7 +50,7 @@ export async function checkCrmHygiene(
     `SELECT lead_id, full_name, email, phone, lead_type, current_stage, updated_at::text AS updated_at
        FROM crm.leads`,
   );
-  if (!leads.length) return ok({ leadsChecked: 0, issues: [] });
+  if (!leads.length) return { leadsChecked: 0, issues: [] };
 
   const lastStageByType = new Map<string, string>();
   const stageRows = await crmQuery<{ lead_type: string; name: string }>(
@@ -110,12 +108,28 @@ export async function checkCrmHygiene(
     }
   }
 
+  return { leadsChecked: leads.length, issues };
+}
+
+/** Jennifer's audited crm_hygiene tool — computes via computeCrmHygieneIssues, then policy-checks and audits. */
+export async function checkCrmHygiene(
+  ctx: ToolContext,
+  input: { staleDays?: number } = {},
+): Promise<ToolResult<CrmHygieneResult>> {
+  const policy = await checkCrmPolicy("crm_hygiene", ctx);
+  if (!policy.allowed) return fail(policy.reason!, true);
+
+  const staleDays = input.staleDays ?? 14;
+  if (!(staleDays > 0)) return fail("checkCrmHygiene: staleDays must be a positive number.");
+
+  const result = await computeCrmHygieneIssues(staleDays);
+
   await crmAudit(ctx, "crm_hygiene", null, {
-    leadsChecked: leads.length,
+    leadsChecked: result.leadsChecked,
     staleDays,
-    issuesFound: issues.length,
-    issues: issues.map((i) => ({ leadId: i.leadId, code: i.code })),
+    issuesFound: result.issues.length,
+    issues: result.issues.map((i) => ({ leadId: i.leadId, code: i.code })),
   });
 
-  return ok({ leadsChecked: leads.length, issues });
+  return ok(result);
 }

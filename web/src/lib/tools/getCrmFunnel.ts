@@ -26,7 +26,14 @@ export interface CrmFunnelResult {
  * this stage's count over the previous stage's count (which would read as
  * a drop even when leads have moved further down the funnel, not lost).
  */
-async function funnelStageCounts(leadType: "farmer" | "credit_buyer"): Promise<CrmFunnelResult> {
+/**
+ * Exported (not just used internally by the two audited tools below) so a
+ * passive dashboard read — Ron's own page — can show the same real
+ * numbers without generating an audit_log row per page view, the same
+ * "read-only display vs. audited agent action" split @/lib/data already
+ * draws for mrv.* (e.g. creditPipeline(), pddReadiness()).
+ */
+export async function funnelStageCounts(leadType: "farmer" | "credit_buyer"): Promise<CrmFunnelResult> {
   const { crmQuery } = await import("../crmDb");
 
   const stages = await crmQuery<{ name: string; sort_order: number }>(

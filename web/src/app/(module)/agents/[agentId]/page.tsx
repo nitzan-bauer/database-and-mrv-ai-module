@@ -10,6 +10,7 @@ import type { PddGeneratorPipelineResult } from "@/lib/tools/runPddGeneratorPipe
 import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { SingleAgentHeader } from "@/components/agents/SingleAgentHeader";
 import { RebekaDashboard } from "@/components/agents/RebekaDashboard";
+import { RonDashboard } from "@/components/agents/RonDashboard";
 import { ComingSoonDashboard } from "@/components/agents/ComingSoonDashboard";
 import { AgentFeedSection } from "@/components/agents/AgentFeedSection";
 
@@ -128,6 +129,8 @@ export default async function AgentDetailPage({
           runGeneratorAction={runPddGeneratorAction}
           submitStatusAction={submitProjectStatusAction}
         />
+      ) : agent.agentId === "ron" ? (
+        <RonDashboard />
       ) : (
         <ComingSoonDashboard agentName={agent.displayName} />
       )}
