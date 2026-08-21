@@ -11,6 +11,7 @@ import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { SingleAgentHeader } from "@/components/agents/SingleAgentHeader";
 import { RebekaDashboard } from "@/components/agents/RebekaDashboard";
 import { RonDashboard } from "@/components/agents/RonDashboard";
+import { JenniferDashboard } from "@/components/agents/JenniferDashboard";
 import { ComingSoonDashboard } from "@/components/agents/ComingSoonDashboard";
 import { AgentFeedSection } from "@/components/agents/AgentFeedSection";
 
@@ -131,6 +132,8 @@ export default async function AgentDetailPage({
         />
       ) : agent.agentId === "ron" ? (
         <RonDashboard />
+      ) : agent.agentId === "jennifer" ? (
+        <JenniferDashboard />
       ) : (
         <ComingSoonDashboard agentName={agent.displayName} />
       )}
