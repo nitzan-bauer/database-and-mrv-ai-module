@@ -23,3 +23,5 @@ terraform.tfvars
 *.tfstate.*
 crash.log
 *.tfplan
+
+.vercel

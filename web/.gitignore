@@ -43,3 +43,5 @@ yarn-error.log*
 
 # local scratch: ad-hoc tsc output used when unit-checking modules
 /.tsbuild
+
+.vercel
