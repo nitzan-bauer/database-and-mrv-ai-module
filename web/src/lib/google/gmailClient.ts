@@ -106,10 +106,19 @@ export async function sendGmailMessage(
     subject: string;
     bodyText: string;
     attachment?: { fileName: string; mimeType: string; content: Buffer };
+    /**
+     * Send as this address instead of the account's own primary address —
+     * only takes effect if it's a verified "send mail as" alias on the
+     * authenticated account (see agentEmailAliases.ts); otherwise Gmail
+     * silently rewrites this back to the primary address rather than
+     * erroring, so a missing alias fails safe, not loud.
+     */
+    from?: string;
   },
 ): Promise<{ id: string }> {
   const boundary = "mrv-mime-" + Math.random().toString(36).slice(2);
   const parts: string[] = [
+    ...(input.from ? [`From: ${input.from}`] : []),
     `To: ${input.to}`,
     `Subject: ${encodeHeaderText(input.subject)}`,
     "MIME-Version: 1.0",

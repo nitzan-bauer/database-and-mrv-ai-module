@@ -95,8 +95,10 @@ export async function finishScheduledTask(
     });
 
     const { sendGmailMessage } = await import("../google/gmailClient");
+    const { agentSenderEmail } = await import("../agent/agentEmailAliases");
     await sendGmailMessage(ctx.googleAccessToken, {
       to: "nitzan@carbonature.io",
+      from: agentSenderEmail(agentId),
       subject: input.subject,
       bodyText,
       attachment: {

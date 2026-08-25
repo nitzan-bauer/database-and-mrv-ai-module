@@ -184,8 +184,10 @@ export async function runPddGeneratorPipeline(
         const to = input.notifyEmail?.trim() || DEFAULT_NOTIFY_EMAIL;
         if (to.includes("@")) {
           const { sendGmailMessage } = await import("../google/gmailClient");
+          const { agentSenderEmail } = await import("../agent/agentEmailAliases");
           await sendGmailMessage(ctx.googleAccessToken, {
             to,
+            from: agentSenderEmail(ctx.actor),
             subject: `PDD draft ready for review — ${project.name}`,
             bodyText:
               `The PDD Generator pipeline ran for ${project.name}.\n\n` +
