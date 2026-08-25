@@ -31,6 +31,17 @@ jobs:
           sudo apt-get install -y -qq ffmpeg
           pip install -U yt-dlp
 
+      # Optional, not required to run the scan: if a YT_COOKIES secret ever
+      # gets added (see the step-by-step instructions the scan itself emails
+      # when YouTube blocks a download as a bot), this writes it out so
+      # scripts/webinar-recording-scan.mjs picks it up automatically via
+      # YT_COOKIES_PATH — no further workflow change needed at that point.
+      - name: Write YouTube cookies, if provided
+        if: ${{ secrets.YT_COOKIES != '' }}
+        run: printf '%s' "$YT_COOKIES" > /tmp/yt-cookies.txt
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+
       - name: Run scan
         working-directory: web
         env:

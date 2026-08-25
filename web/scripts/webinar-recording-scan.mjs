@@ -167,13 +167,52 @@ async function resolveVideoUrl(pageUrl) {
   return null;
 }
 
+// If Nitzan ever adds a YT_COOKIES GitHub secret (see describeYtDlpFailure's
+// own instructions below), the workflow writes it here and this picks it up
+// automatically — no further code change needed on his end.
+const YT_COOKIES_PATH = process.env.YT_COOKIES_PATH || (existsSync("/tmp/yt-cookies.txt") ? "/tmp/yt-cookies.txt" : null);
+
+/**
+ * Turns yt-dlp's raw failure output into something Nitzan can actually act
+ * on. Confirmed live 2026-08-25: without a specific, actionable message per
+ * failure, a real failure either sat silently in the DB or arrived as an
+ * opaque "Command failed: yt-dlp ..." with no indication of what to do.
+ */
+function describeYtDlpFailure(output) {
+  if (/Sign in to confirm you.?re not a bot/i.test(output)) {
+    return (
+      "YouTube blocked this download with \"Sign in to confirm you're not a bot\" — GitHub Actions runners " +
+      "share IP ranges YouTube flags as automated traffic. This is not a bug in the pipeline; it is YouTube's " +
+      "own anti-scraping defense, and it may or may not happen again next time the same recording is retried.\n\n" +
+      "The only real fix is giving yt-dlp browser cookies from a signed-in YouTube account:\n" +
+      "1. Install a browser extension such as \"Get cookies.txt LOCALLY\" in Chrome or Firefox.\n" +
+      "2. Sign in to youtube.com in that browser.\n" +
+      "3. Use the extension to export cookies for youtube.com as a cookies.txt file.\n" +
+      "4. Run: gh secret set YT_COOKIES -R nitzan-bauer/database-and-mrv-ai-module < cookies.txt\n" +
+      "5. Ask Claude Code to wire that secret into .github/workflows/webinar-recording-scan.yml — the scan " +
+      "script already reads it automatically from /tmp/yt-cookies.txt if present, so no further code change " +
+      "is needed beyond that wiring.\n\n" +
+      "These cookies typically expire after a few months and need to be re-exported then. Until this is set " +
+      "up, YouTube-hosted recordings may keep failing the same way — nothing else in the pipeline is broken."
+    );
+  }
+  return `yt-dlp failed:\n${output.slice(0, 1500)}`;
+}
+
 function downloadAudio(videoUrl) {
   if (existsSync(AUDIO_PATH)) unlinkSync(AUDIO_PATH);
-  execFileSync(
-    "yt-dlp",
-    ["-x", "--audio-format", "mp3", "--audio-quality", "5", "-o", AUDIO_PATH.replace(/\.mp3$/, ".%(ext)s"), videoUrl],
-    { stdio: "inherit" },
-  );
+  const args = ["-x", "--audio-format", "mp3", "--audio-quality", "5"];
+  if (YT_COOKIES_PATH) args.push("--cookies", YT_COOKIES_PATH);
+  args.push("-o", AUDIO_PATH.replace(/\.mp3$/, ".%(ext)s"), videoUrl);
+  try {
+    // Captured (not "inherit") so a real failure's actual reason can be
+    // read back and turned into guidance, not just logged and lost.
+    execFileSync("yt-dlp", args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+  } catch (e) {
+    const output = `${e.stdout ?? ""}${e.stderr ?? ""}` || e.message;
+    console.error(output);
+    throw new Error(describeYtDlpFailure(output));
+  }
   if (!existsSync(AUDIO_PATH)) throw new Error("yt-dlp did not produce an mp3 file");
 }
 
@@ -243,18 +282,27 @@ async function main() {
     try {
       const videoUrl = await resolveVideoUrl(c.pageUrl);
       if (!videoUrl) {
-        await reportToMrv({ subject: c.title, skippedReason: `Could not resolve a video URL for "${c.title}" from ${c.pageUrl}` });
+        await reportToMrv({
+          subject: c.title,
+          skippedReason:
+            `Found this VM0042/ALM recording but could not find a video link for it on ${c.pageUrl ?? "Verra's recordings page"} ` +
+            "— Verra's page layout may have changed. Worth a look if this keeps happening.",
+          notifyOnSkip: true,
+        });
         continue;
       }
       downloadAudio(videoUrl);
       ensureUnderUploadLimit();
       const transcript = await transcribe();
       const paragraphs = await summarize(transcript);
-      if (!paragraphs.length) throw new Error("summary produced no paragraphs");
+      if (!paragraphs.length) throw new Error("summary produced no paragraphs — the transcript may have been empty or unreadable");
       await reportToMrv({ subject: c.title, bodyParagraphs: paragraphs, sourceUrl: c.pageUrl ?? videoUrl });
     } catch (e) {
       console.error(`Failed on "${c.title}":`, e.message);
-      await reportToMrv({ subject: c.title, skippedReason: `Processing failed: ${e.message}` }).catch(() => {});
+      // notifyOnSkip: true — a real failure on an in-scope recording, not the
+      // routine weekly "nothing new" outcome, so it goes through the actual
+      // email path (see the endpoint) instead of a silent DB-only row.
+      await reportToMrv({ subject: c.title, skippedReason: e.message, notifyOnSkip: true }).catch(() => {});
     } finally {
       if (existsSync(AUDIO_PATH)) unlinkSync(AUDIO_PATH);
     }

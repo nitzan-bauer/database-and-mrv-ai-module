@@ -29,8 +29,17 @@ interface RequestBody {
   bodyParagraphs: string[];
   /** The recording page or video URL the summary was produced from. */
   sourceUrl?: string;
-  /** Set by the routine when it decided the recording was NOT VM0042/ALM and skipped summarizing it. */
+  /** Set by the routine when it decided the recording was NOT VM0042/ALM and skipped summarizing it, or when a candidate genuinely failed to process. */
   skippedReason?: string;
+  /**
+   * True only for a skippedReason that Nitzan should actually see — a real
+   * processing failure on an in-scope recording (unresolved video URL,
+   * download error, transcription error), not the routine weekly no-op of
+   * "nothing new this week." Without this distinction every skip would
+   * either spam an email for a normal empty week, or every real failure
+   * would sit silently in the DB where nobody would think to look for it.
+   */
+  notifyOnSkip?: boolean;
 }
 
 /**
@@ -88,10 +97,14 @@ export async function POST(req: Request) {
 
   const taskKey = "rebeka_webinar_recording_summary";
 
-  // The routine screened the recording itself and found it out of scope
-  // (not VM0042/ALM) — record that it ran and why, but there is nothing
-  // worth emailing.
-  if (body.skippedReason) {
+  // A routine no-op ("nothing new/relevant this week") is recorded but not
+  // emailed — that's the expected outcome most weeks and would just be
+  // noise. A real per-candidate failure (notifyOnSkip) is worth Nitzan
+  // actually seeing, so it goes through the normal email path below
+  // instead of a silent DB-only row (confirmed live 2026-08-25: without
+  // this, a real failure — e.g. YouTube blocking the download — sat in
+  // the database with nothing ever surfacing it to him).
+  if (body.skippedReason && !body.notifyOnSkip) {
     const { query } = await import("@/lib/db");
     await query(
       `INSERT INTO mrv.scheduled_task_reports (task_key, project_id, subject, body_text, emailed)
@@ -99,6 +112,27 @@ export async function POST(req: Request) {
       [taskKey, TARGET_PROJECT_ID, body.subject, body.skippedReason],
     );
     return NextResponse.json({ ok: true, detail: `Recorded, not emailed — ${body.skippedReason}` });
+  }
+
+  if (body.skippedReason && body.notifyOnSkip) {
+    const { query } = await import("@/lib/db");
+    const { getServiceGoogleAccessToken } = await import("@/lib/google/serviceAuth");
+    const { finishScheduledTask } = await import("@/lib/reports/scheduledTaskReport");
+    const serviceEmail = process.env.CRON_GOOGLE_ACCOUNT_EMAIL?.trim() || "nitzan@carbonature.io";
+    const googleAccessToken = (await getServiceGoogleAccessToken(query, serviceEmail)) ?? undefined;
+
+    const outcome = await finishScheduledTask(
+      { actor: "rebeka", actorKind: "agent", googleAccessToken },
+      {
+        taskKey,
+        projectId: TARGET_PROJECT_ID,
+        subject: `Action needed — ${body.subject}`,
+        bodyParagraphs: [body.skippedReason],
+        memoryKind: "verra_webinar_transcript_summary",
+        agentId: "rebeka",
+      },
+    );
+    return NextResponse.json(outcome, { status: outcome.ok ? 200 : 502 });
   }
 
   if (!body.bodyParagraphs?.length) {
