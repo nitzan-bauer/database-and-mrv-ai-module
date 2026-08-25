@@ -110,13 +110,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               // gmail.settings.basic added for per-agent send-as signatures
               // (agentEmailAliases.ts) — managing a sendAs alias's signature
               // needs this scope; gmail.send alone cannot touch it.
+              // gmail.settings.sharing is a SEPARATE, more specific scope
+              // Google requires on top of settings.basic specifically for
+              // modifying a non-primary sendAs address (confirmed live:
+              // settings.basic alone got "Missing required scope ...sharing
+              // for modifying non-primary SendAs" from the API itself).
               // Anyone signed in before this needs to sign out and back in, same as
               // every earlier scope addition here — Google does not retroactively
               // grant a scope to an existing session's token.
               scope:
                 "openid email profile https://www.googleapis.com/auth/drive " +
                 "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send " +
-                "https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/calendar",
+                "https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/gmail.settings.sharing " +
+                "https://www.googleapis.com/auth/calendar",
             },
           },
         }),
