@@ -48,9 +48,15 @@ export async function GET(req: Request) {
   }
 
   const { query } = await import("@/lib/db");
+  // emailed = true only, deliberately — a skip/failure record (unresolved
+  // video URL, download error, etc.) must NOT count as "already done", or
+  // one transient failure permanently blocks ever retrying that recording.
+  // Confirmed live 2026-08-25: without this filter, a resolve-URL failure
+  // on the routine's first run made the very next run's dedupe check treat
+  // the same still-unsummarized recording as already handled.
   const rows = await query<{ subject: string; body_text: string; created_at: string }>(
     `SELECT subject, body_text, created_at FROM mrv.scheduled_task_reports
-      WHERE task_key = 'rebeka_webinar_recording_summary' AND created_at > now() - interval '90 days'
+      WHERE task_key = 'rebeka_webinar_recording_summary' AND emailed = true AND created_at > now() - interval '90 days'
       ORDER BY created_at DESC LIMIT 20`,
   );
   return NextResponse.json({
