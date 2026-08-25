@@ -36,9 +36,10 @@ jobs:
       # when YouTube blocks a download as a bot), this writes it out so
       # scripts/webinar-recording-scan.mjs picks it up automatically via
       # YT_COOKIES_PATH — no further workflow change needed at that point.
+      # GitHub Actions won't allow `secrets` directly inside a step's `if:` —
+      # always run the step, but no-op when the secret hasn't been set.
       - name: Write YouTube cookies, if provided
-        if: ${{ secrets.YT_COOKIES != '' }}
-        run: printf '%s' "$YT_COOKIES" > /tmp/yt-cookies.txt
+        run: '[ -n "$YT_COOKIES" ] && printf "%s" "$YT_COOKIES" > /tmp/yt-cookies.txt || echo "no YT_COOKIES secret set — skipping"'
         env:
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
 
