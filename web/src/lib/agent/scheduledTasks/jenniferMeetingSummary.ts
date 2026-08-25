@@ -32,7 +32,7 @@ export const TASK_KEY = "jennifer_weekly_meeting_summary";
 
 const MEETING_KEY = "weekly_work_meeting";
 const NOTIFY_TO = "nitzan@carbonature.io, elad@carbonature.io";
-const SCHEDULE_LOOKAHEAD_DAYS = 3; // schedule the bot up to this many days before the meeting
+const SCHEDULE_LOOKAHEAD_DAYS = 7; // covers a full week's cadence — the daily cron always finds the upcoming Monday even if a run or two is missed
 const MAX_UPLOAD_BYTES = 24 * 1024 * 1024; // Groq's 25MB cap, with headroom
 
 type CycleRow = {
