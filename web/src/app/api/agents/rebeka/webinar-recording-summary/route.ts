@@ -33,6 +33,35 @@ interface RequestBody {
   skippedReason?: string;
 }
 
+/**
+ * Lets the routine dedupe before spending a Groq transcription call: Verra's
+ * recordings page is a rolling list, so without this the routine would
+ * re-summarize (and re-email) the same past recording on every weekly run.
+ * Returns the last 90 days of subjects/URLs this endpoint already recorded
+ * for the routine to compare against, not a full transcript re-fetch.
+ */
+export async function GET(req: Request) {
+  const auth = req.headers.get("authorization");
+  const expected = process.env.EXTERNAL_AGENT_SECRET;
+  if (!expected || auth !== `Bearer ${expected}`) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const { query } = await import("@/lib/db");
+  const rows = await query<{ subject: string; body_text: string; created_at: string }>(
+    `SELECT subject, body_text, created_at FROM mrv.scheduled_task_reports
+      WHERE task_key = 'rebeka_webinar_recording_summary' AND created_at > now() - interval '90 days'
+      ORDER BY created_at DESC LIMIT 20`,
+  );
+  return NextResponse.json({
+    alreadyProcessed: rows.map((r) => ({
+      subject: r.subject,
+      createdAt: r.created_at,
+      sourceUrl: /Source recording: (\S+)/.exec(r.body_text)?.[1] ?? null,
+    })),
+  });
+}
+
 export async function POST(req: Request) {
   const auth = req.headers.get("authorization");
   const expected = process.env.EXTERNAL_AGENT_SECRET;
