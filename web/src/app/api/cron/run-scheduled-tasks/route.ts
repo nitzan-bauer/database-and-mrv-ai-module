@@ -50,6 +50,8 @@ function advanceNextRun(current: Date, frequency: string): Date {
   const next = new Date(current);
   if (frequency === "monthly") {
     next.setUTCMonth(next.getUTCMonth() + 1);
+  } else if (frequency === "daily") {
+    next.setUTCDate(next.getUTCDate() + 1);
   } else {
     next.setUTCDate(next.getUTCDate() + (frequency === "biweekly" ? 14 : 7));
   }

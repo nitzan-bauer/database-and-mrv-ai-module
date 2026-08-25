@@ -74,6 +74,94 @@ export async function listRecentInboxMessages(accessToken: string, maxResults = 
   return summaries;
 }
 
+/**
+ * Real Gmail search (messages.list?q=...) — unlike listRecentInboxMessages
+ * (last N inbox messages, no filter), this targets a specific reply: a
+ * scheduled task watching for one person's response to one sent email
+ * needs precision, not "scan the last 15 and hope it's in there."
+ * Gmail's own search syntax (from:, subject:, after:, in:inbox, ...)
+ * applies directly to `query`.
+ */
+export async function searchGmailMessages(accessToken: string, query: string, maxResults = 10): Promise<GmailMessageSummary[]> {
+  const listRes = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&q=${encodeURIComponent(query)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!listRes.ok) {
+    const body = await listRes.text().catch(() => "");
+    throw new Error(`Gmail messages.list (search) returned ${listRes.status}: ${body}`);
+  }
+  const listData = (await listRes.json()) as { messages?: { id: string }[] };
+  const ids = (listData.messages ?? []).map((m) => m.id);
+
+  const summaries: GmailMessageSummary[] = [];
+  for (const id of ids) {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) continue;
+    const data = (await res.json()) as {
+      id: string;
+      snippet?: string;
+      payload?: { headers?: { name: string; value: string }[] };
+    };
+    const headers = data.payload?.headers ?? [];
+    const from = headers.find((h) => h.name === "From")?.value;
+    const subject = headers.find((h) => h.name === "Subject")?.value ?? null;
+    const dateHeader = headers.find((h) => h.name === "Date")?.value;
+    if (!from) continue;
+    summaries.push({
+      gmailId: data.id,
+      fromEmail: extractEmail(from),
+      fromName: extractName(from),
+      subject,
+      snippet: data.snippet ?? null,
+      receivedAt: dateHeader ? new Date(dateHeader).toISOString() : null,
+    });
+  }
+  return summaries;
+}
+
+/**
+ * The full plain-text body of one message — messages.get?format=full,
+ * walking `payload.parts` for the first text/plain part (falling back to
+ * a top-level text/plain body for a non-multipart message). Needed
+ * because GmailMessageSummary.snippet is Gmail's own truncated preview,
+ * not enough to reliably parse "approved" vs. a proposed new day/time
+ * out of a real reply.
+ */
+export async function getMessagePlainTextBody(accessToken: string, gmailId: string): Promise<string> {
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Gmail messages.get (full) returned ${res.status}`);
+  const data = (await res.json()) as {
+    payload?: {
+      mimeType?: string;
+      body?: { data?: string };
+      parts?: { mimeType?: string; body?: { data?: string }; parts?: unknown[] }[];
+    };
+  };
+
+  function decode(b64url: string): string {
+    return Buffer.from(b64url.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+  }
+
+  function findPlainText(part: { mimeType?: string; body?: { data?: string }; parts?: unknown[] } | undefined): string | null {
+    if (!part) return null;
+    if (part.mimeType === "text/plain" && part.body?.data) return decode(part.body.data);
+    for (const sub of (part.parts as typeof part[] | undefined) ?? []) {
+      const found = findPlainText(sub);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  if (data.payload?.mimeType === "text/plain" && data.payload.body?.data) return decode(data.payload.body.data);
+  return findPlainText(data.payload) ?? "";
+}
+
 function base64Url(input: Buffer): string {
   return input.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

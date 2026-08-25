@@ -90,22 +90,42 @@ export interface CreateEventInput {
   start: string;
   end: string;
   attendeeEmail?: string;
+  /** Additional attendees beyond attendeeEmail — merged into the same attendees list. Any address works, Workspace or not (e.g. a personal Gmail). */
+  attendeeEmails?: string[];
+  /**
+   * IANA zone (e.g. "Asia/Jerusalem") to pair with a LOCAL (no offset/Z)
+   * start/end dateTime. Required for a correctly-DST-aware recurring
+   * event — a fixed UTC instant would drift by an hour off "14:00 local"
+   * across an IDT/IST transition, which a bare RRULE cannot self-correct.
+   */
+  timeZone?: string;
+  /** RRULE/EXDATE strings, e.g. ["RRULE:FREQ=WEEKLY;COUNT=13"], for events.insert's own `recurrence` field. Omit for a one-off event. */
+  recurrence?: string[];
 }
 
-/** events.insert (developers.google.com/calendar/api/v3/reference/events/insert). */
+/**
+ * events.insert (developers.google.com/calendar/api/v3/reference/events/insert).
+ *
+ * `sendUpdates=all` is required whenever attendees are present — the API's
+ * own default does NOT email invitees on a plain insert, so an event
+ * created without it would silently never notify anyone it was invited.
+ */
 export async function createCalendarEvent(accessToken: string, input: CreateEventInput): Promise<string> {
-  const res = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+  const attendeeEmails = [...(input.attendeeEmail ? [input.attendeeEmail] : []), ...(input.attendeeEmails ?? [])];
+  const sendUpdates = attendeeEmails.length ? "?sendUpdates=all" : "";
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events${sendUpdates}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify({
       summary: input.summary,
       description: input.description,
-      start: { dateTime: input.start },
-      end: { dateTime: input.end },
-      attendees: input.attendeeEmail ? [{ email: input.attendeeEmail }] : undefined,
+      start: input.timeZone ? { dateTime: input.start, timeZone: input.timeZone } : { dateTime: input.start },
+      end: input.timeZone ? { dateTime: input.end, timeZone: input.timeZone } : { dateTime: input.end },
+      attendees: attendeeEmails.length ? attendeeEmails.map((email) => ({ email })) : undefined,
+      recurrence: input.recurrence,
     }),
   });
-  if (!res.ok) throw new Error(`Google Calendar events.insert returned ${res.status}`);
+  if (!res.ok) throw new Error(`Google Calendar events.insert returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as { id: string };
   return data.id;
 }

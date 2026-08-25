@@ -7,6 +7,7 @@ import { TASK_KEY as WEEKLY_VERRA_WEBINAR_SCAN_KEY, runWeeklyVerraWebinarScan } 
 import { TASK_KEY as BIWEEKLY_NEW_FARMER_CHECK_KEY, runBiweeklyNewFarmerCheck } from "./scheduledTasks/biweeklyNewFarmerCheck";
 import { TASK_KEY as MONTHLY_VM0042_PROJECT_SCAN_KEY, runMonthlyVm0042ProjectScan } from "./scheduledTasks/monthlyVm0042ProjectScan";
 import { TASK_KEY as MONTHLY_CREDIT_MARKET_SCAN_KEY, runMonthlyCreditMarketScan } from "./scheduledTasks/monthlyCreditMarketScan";
+import { TASK_KEY as JENNIFER_WEEKLY_MEETING_CYCLE_KEY, runJenniferWeeklyMeetingCycle } from "./scheduledTasks/jenniferWeeklyMeetingCycle";
 
 export interface ScheduledTaskOutcome {
   ok: boolean;
@@ -34,4 +35,5 @@ export const SCHEDULED_TASK_REGISTRY: Record<string, ScheduledTaskHandler> = {
   [BIWEEKLY_NEW_FARMER_CHECK_KEY]: runBiweeklyNewFarmerCheck,
   [MONTHLY_VM0042_PROJECT_SCAN_KEY]: runMonthlyVm0042ProjectScan,
   [MONTHLY_CREDIT_MARKET_SCAN_KEY]: runMonthlyCreditMarketScan,
+  [JENNIFER_WEEKLY_MEETING_CYCLE_KEY]: runJenniferWeeklyMeetingCycle,
 };
