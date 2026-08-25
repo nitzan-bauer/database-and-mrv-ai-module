@@ -2,6 +2,7 @@ import "server-only";
 import type { ToolContext } from "../../tools/context";
 import type { ScheduledTaskOutcome } from "../scheduledTaskRegistry";
 import { TARGET_PROJECT_ID } from "./constants";
+import { ymd, addDays, firstOccurrenceOnOrAfter, localDateTime } from "./dateHelpers";
 
 export const TASK_KEY = "jennifer_weekly_meeting_cycle";
 
@@ -49,31 +50,13 @@ type CycleRow = {
   renewal_email_subject: string | null;
 };
 
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-function addDays(d: Date, n: number): Date {
-  const out = new Date(d);
-  out.setUTCDate(out.getUTCDate() + n);
-  return out;
-}
-/** The first date on or after `from` (a UTC-midnight Date) that falls on `weekday` (0=Sun..6=Sat). */
-function firstOccurrenceOnOrAfter(from: Date, weekday: number): Date {
-  const diff = (weekday - from.getUTCDay() + 7) % 7;
-  return addDays(from, diff);
-}
-/** "YYYY-MM-DDTHH:MM:SS", paired with a timeZone field — Calendar API's own format for a civil-time recurring event that stays aligned across DST. */
-function localDateTime(date: Date, hour: number, minute: number): string {
-  return `${ymd(date)}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
-}
-
 async function createCycle(
   ctx: ToolContext,
   startDate: Date,
   weekday: number,
   hour: number,
   minute: number,
-): Promise<{ cycleId: string; cycleEndDate: string; eventId: string }> {
+): Promise<{ cycleId: string; cycleEndDate: string; eventId: string; meetLink: string | null }> {
   const { query } = await import("../../db");
   const { createCalendarEvent } = await import("../../google/calendarClient");
 
@@ -84,7 +67,11 @@ async function createCycle(
   const cycleEndDate = ymd(addDays(startDate, (OCCURRENCES - 1) * 7));
 
   if (!ctx.googleAccessToken) throw new Error("no Google access token — cannot create the calendar event");
-  const eventId = await createCalendarEvent(ctx.googleAccessToken, {
+  // requestMeetLink: jenniferMeetingSummary.ts's Recall.ai bot needs a real
+  // join URL — without this the event would have none, same gap the
+  // already-active cycle (created before this existed) has to self-heal
+  // via addMeetLinkToEvent on first need.
+  const { eventId, meetLink } = await createCalendarEvent(ctx.googleAccessToken, {
     summary: "CarboNature weekly work meeting",
     description: "Recurring weekly work meeting, auto-scheduled by Jennifer for the next ~3 months.",
     start,
@@ -92,13 +79,14 @@ async function createCycle(
     timeZone: TIME_ZONE,
     attendeeEmails: ATTENDEE_EMAILS,
     recurrence: [`RRULE:FREQ=WEEKLY;COUNT=${OCCURRENCES}`],
+    requestMeetLink: true,
   });
 
   const rows = await query<{ cycle_id: string }>(
     `INSERT INTO mrv.jennifer_meeting_cycles
        (meeting_key, summary, attendee_emails, weekday, start_hour, start_minute, duration_minutes,
-        calendar_event_id, cycle_start_date, cycle_end_date, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
+        calendar_event_id, meet_link, cycle_start_date, cycle_end_date, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active')
      RETURNING cycle_id`,
     [
       MEETING_KEY,
@@ -109,11 +97,12 @@ async function createCycle(
       minute,
       DURATION_MINUTES,
       eventId,
+      meetLink,
       ymd(startDate),
       cycleEndDate,
     ],
   );
-  return { cycleId: rows[0].cycle_id, cycleEndDate, eventId };
+  return { cycleId: rows[0].cycle_id, cycleEndDate, eventId, meetLink };
 }
 
 interface ReplyDecision {

@@ -101,6 +101,14 @@ export interface CreateEventInput {
   timeZone?: string;
   /** RRULE/EXDATE strings, e.g. ["RRULE:FREQ=WEEKLY;COUNT=13"], for events.insert's own `recurrence` field. Omit for a one-off event. */
   recurrence?: string[];
+  /** Ask Calendar to generate a real Google Meet link for this event (needed for jenniferMeetingSummary.ts's bot to have somewhere to join). */
+  requestMeetLink?: boolean;
+}
+
+export interface CreatedEvent {
+  eventId: string;
+  /** Only set when requestMeetLink was true. */
+  meetLink: string | null;
 }
 
 /**
@@ -110,10 +118,14 @@ export interface CreateEventInput {
  * own default does NOT email invitees on a plain insert, so an event
  * created without it would silently never notify anyone it was invited.
  */
-export async function createCalendarEvent(accessToken: string, input: CreateEventInput): Promise<string> {
+export async function createCalendarEvent(accessToken: string, input: CreateEventInput): Promise<CreatedEvent> {
   const attendeeEmails = [...(input.attendeeEmail ? [input.attendeeEmail] : []), ...(input.attendeeEmails ?? [])];
-  const sendUpdates = attendeeEmails.length ? "?sendUpdates=all" : "";
-  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events${sendUpdates}`, {
+  const params = new URLSearchParams();
+  if (attendeeEmails.length) params.set("sendUpdates", "all");
+  if (input.requestMeetLink) params.set("conferenceDataVersion", "1");
+  const qs = params.toString() ? `?${params.toString()}` : "";
+
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events${qs}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify({
@@ -123,9 +135,75 @@ export async function createCalendarEvent(accessToken: string, input: CreateEven
       end: input.timeZone ? { dateTime: input.end, timeZone: input.timeZone } : { dateTime: input.end },
       attendees: attendeeEmails.length ? attendeeEmails.map((email) => ({ email })) : undefined,
       recurrence: input.recurrence,
+      conferenceData: input.requestMeetLink
+        ? { createRequest: { requestId: `jennifer-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } }
+        : undefined,
     }),
   });
   if (!res.ok) throw new Error(`Google Calendar events.insert returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data = (await res.json()) as { id: string };
-  return data.id;
+  const data = (await res.json()) as { id: string; hangoutLink?: string };
+  return { eventId: data.id, meetLink: data.hangoutLink ?? null };
+}
+
+/**
+ * events.get, just enough to read back an existing event's Meet link
+ * (developers.google.com/calendar/api/v3/reference/events/get) — used to
+ * retrofit a Meet link onto an event that was created before this
+ * capability existed, without having to recreate the whole recurring series.
+ */
+export async function getCalendarEventMeetLink(accessToken: string, eventId: string): Promise<string | null> {
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Google Calendar events.get returned ${res.status}`);
+  const data = (await res.json()) as { hangoutLink?: string };
+  return data.hangoutLink ?? null;
+}
+
+/**
+ * events.patch, adding a Google Meet link to an event that doesn't have
+ * one yet (developers.google.com/calendar/api/v3/reference/events/patch) —
+ * the retrofit path for jenniferMeetingSummary.ts's first run, since the
+ * active weekly-meeting cycle was created (0083) before requestMeetLink
+ * existed.
+ */
+export async function addMeetLinkToEvent(accessToken: string, eventId: string): Promise<string> {
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}?conferenceDataVersion=1`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        conferenceData: { createRequest: { requestId: `jennifer-retrofit-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } },
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`Google Calendar events.patch (add Meet link) returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = (await res.json()) as { hangoutLink?: string };
+  if (!data.hangoutLink) throw new Error("events.patch succeeded but returned no hangoutLink");
+  return data.hangoutLink;
+}
+
+/**
+ * events.instances — the exact ISO 8601 start instant (already carrying
+ * the correct UTC offset, DST included) for one specific occurrence of a
+ * recurring event. Reading this back from Google rather than computing
+ * an IANA-zone offset by hand (e.g. Asia/Jerusalem's IST/IDT switch) is
+ * deliberate: Google has already resolved it correctly, and duplicating
+ * that logic client-side is exactly the kind of thing that's easy to get
+ * subtly wrong around a DST boundary.
+ */
+export async function getEventInstanceStart(accessToken: string, eventId: string, occurrenceDateYmd: string): Promise<string> {
+  const timeMin = `${occurrenceDateYmd}T00:00:00Z`;
+  const timeMax = `${occurrenceDateYmd}T23:59:59Z`;
+  const params = new URLSearchParams({ timeMin, timeMax });
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}/instances?${params}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`Google Calendar events.instances returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = (await res.json()) as { items?: { start?: { dateTime?: string } }[] };
+  const start = data.items?.[0]?.start?.dateTime;
+  if (!start) throw new Error(`no occurrence of event ${eventId} found on ${occurrenceDateYmd}`);
+  return start;
 }

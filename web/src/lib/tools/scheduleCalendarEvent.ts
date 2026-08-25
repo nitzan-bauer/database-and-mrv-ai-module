@@ -31,13 +31,13 @@ export async function scheduleCalendarEvent(
 
   let eventId: string;
   try {
-    eventId = await createCalendarEvent(ctx.googleAccessToken, {
+    ({ eventId } = await createCalendarEvent(ctx.googleAccessToken, {
       summary: input.summary,
       description: input.description,
       start: input.start,
       end: input.end,
       attendeeEmail: input.attendeeEmail,
-    });
+    }));
   } catch (e) {
     return fail(`scheduleCalendarEvent: ${e instanceof Error ? e.message : String(e)}`);
   }
