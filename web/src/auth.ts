@@ -107,13 +107,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               prompt: "select_account consent",
               // gmail.send added for the PDD Generator pipeline (sync_pdd_google_doc's
               // sibling — the pipeline emails the exported PDF to whoever ran it).
+              // gmail.settings.basic added for per-agent send-as signatures
+              // (agentEmailAliases.ts) — managing a sendAs alias's signature
+              // needs this scope; gmail.send alone cannot touch it.
               // Anyone signed in before this needs to sign out and back in, same as
               // every earlier scope addition here — Google does not retroactively
               // grant a scope to an existing session's token.
               scope:
                 "openid email profile https://www.googleapis.com/auth/drive " +
                 "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send " +
-                "https://www.googleapis.com/auth/calendar",
+                "https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/calendar",
             },
           },
         }),
