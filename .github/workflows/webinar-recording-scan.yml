@@ -1,0 +1,40 @@
+name: Weekly Verra webinar recording scan
+
+# Runs on GitHub's own runners, not an Anthropic cloud routine — confirmed
+# live 2026-08-25 that the cloud-routine sandbox's fixed network-egress
+# allowlist blocks verra.org, api.groq.com, and this repo's own Vercel API,
+# with no way to add exceptions. GitHub Actions has unrestricted egress.
+
+on:
+  schedule:
+    # Saturday 06:00 UTC = 09:00 Israel (IDT) — two days after the existing
+    # Thursday written-recap scan, giving Verra time to post the recording.
+    - cron: '0 6 * * 6'
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    name: Transcribe and summarize new VM0042/ALM recordings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install yt-dlp and ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          pip install -U yt-dlp
+
+      - name: Run scan
+        working-directory: web
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EXTERNAL_AGENT_SECRET: ${{ secrets.EXTERNAL_AGENT_SECRET }}
+        run: node scripts/webinar-recording-scan.mjs
