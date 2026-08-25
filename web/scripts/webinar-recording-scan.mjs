@@ -121,9 +121,18 @@ const EXTRACTION_SYSTEM =
 
 async function findCandidates() {
   const page = await fetchPage(RECORDINGS_URL);
+  // The page's nav/header/footer alone carries dozens of links before the
+  // actual recording list — a flat first-N cap cut off every real video
+  // link before Claude ever saw them (confirmed live 2026-08-25: a real,
+  // in-scope VM0042 recording came back with pageUrl:null because its
+  // youtu.be link sat past a 40-link cap). Recording links are always
+  // YouTube/Vimeo, so filter to those specifically instead of capping by
+  // position — keeps the list small without losing the links that matter.
+  const videoLinks = page.links.filter((l) => /youtube\.com|youtu\.be|vimeo\.com/.test(l));
   const raw = await callClaude(
     EXTRACTION_SYSTEM,
-    `Page text:\n${page.text}\n\nLinks found on the page:\n${page.links.slice(0, 40).join("\n")}`,
+    `Page text:\n${page.text}\n\nVideo links found on the page (match each candidate to the one whose ` +
+      `surrounding page text/title matches it — these are in the same order as the recordings listed above):\n${videoLinks.join("\n")}`,
   );
   try {
     const parsed = JSON.parse(stripFences(raw));
@@ -134,9 +143,15 @@ async function findCandidates() {
   }
 }
 
-/** Verra links to a page with an embedded player, not a raw video URL — resolve the actual YouTube/Vimeo link yt-dlp needs. */
+/**
+ * Verra's own recording links are usually direct YouTube/Vimeo URLs
+ * already (confirmed live 2026-08-25 on the real page) — only fall back
+ * to fetching the page and scraping an embed if pageUrl turns out to be
+ * a Verra sub-page instead.
+ */
 async function resolveVideoUrl(pageUrl) {
   if (!pageUrl) return null;
+  if (/youtube\.com\/watch|youtu\.be\/|vimeo\.com\/\d/.test(pageUrl)) return pageUrl;
   try {
     const page = await fetchPage(pageUrl);
     const embed = page.html.match(/(?:youtube\.com\/embed\/|youtu\.be\/|player\.vimeo\.com\/video\/)([\w-]+)/i);
