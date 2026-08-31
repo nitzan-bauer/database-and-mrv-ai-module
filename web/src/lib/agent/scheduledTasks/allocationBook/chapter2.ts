@@ -1,0 +1,219 @@
+import "server-only";
+import type { LetterheadTable } from "../../../reports/letterheadPdf";
+import type { PotentialData } from "./queries";
+
+function round(n: number): number {
+  return Math.round(n);
+}
+function fmt(n: number): string {
+  return round(n).toLocaleString("en-US");
+}
+function usd(n: number): string {
+  const v = round(n);
+  return v < 0 ? `-$${fmt(-v)}` : `$${fmt(v)}`;
+}
+/** Section 5.1's confirmed format (2026-08-31): "50% : 50%" (CN% : Farm%), never bare "50/50". */
+function splitLabel(farmerSharePct: number): string {
+  const cnPct = Math.round((1 - farmerSharePct) * 100);
+  const farmPct = Math.round(farmerSharePct * 100);
+  return `${cnPct}% : ${farmPct}%`;
+}
+
+export interface Chapter2Result {
+  farmsTable: LetterheadTable;
+  carboNatureTable: LetterheadTable;
+  reconciliationTable: LetterheadTable;
+  reconciliation: {
+    grossPotential: number;
+    farmNetTotal: number;
+    cnNetTotal: number;
+    buyerNetTotal: number;
+    totalNetAllocation: number;
+    reconciled: boolean;
+    discrepancy: number;
+  };
+}
+
+/**
+ * Chapter 2 — Potential Credit Allocation (Sections 5.1/5.2/5.3), per the
+ * approved spec (2026-08-31, Round 3, all 4 flagged decisions resolved):
+ *  - 5.1: Split column formatted "CN% : Farm%", units on every credit header.
+ *  - 5.2: same formatting; CarboNature's own Gross/Offset decomposed so
+ *    Gross - Offset = Net exactly (see the reconciling algebra in this
+ *    file's own comment on cnGrossShare/cnOffsetShare below).
+ *  - 5.3: an explicit Gross Potential row plus a RECONCILED/NOT RECONCILED
+ *    line — quantity only, never monetary value, per Nitzan's explicit
+ *    confirmation. The identity checked is exact by construction:
+ *    farmNet + cnNet + buyerNet == grossPotential always (proof: the
+ *    Agri-Inputs offset nets out of both sides' pre-split subtotal
+ *    identically to how it's later re-added via the Credit Buyers total,
+ *    and Project Funding's -P/+P cancel the same way) — a mismatch here
+ *    means a real bug upstream (a farm counted twice, a released row not
+ *    excluded), not an expected value-vs-quantity gap.
+ */
+export function buildChapter2(data: PotentialData, buyerGrandCredits: number, buyerGrandValue: number): Chapter2Result {
+  // ---------- 5.1 — Net Allocation to Farms ----------
+  const farmsTable: LetterheadTable = {
+    title: "5.1 — Net Allocation to Farms, by project",
+    fontSize: 7,
+    columns: [
+      { header: "Farm", width: 90 },
+      { header: "Area (ha)", width: 44, align: "right" },
+      { header: "Agri-Input", width: 60 },
+      { header: "Split (CN%:Farm%)", width: 68, align: "right" },
+      { header: "Gross (VCU)", width: 46, align: "right" },
+      { header: "Offset (VCU)", width: 48, align: "right" },
+      { header: "Net (VCU)", width: 46, align: "right" },
+    ],
+    rows: [],
+    boldRowIndexes: [],
+    spacerRowIndexes: [],
+    emphasisRowIndexes: [],
+  };
+  const BLANK7 = ["", "", "", "", "", "", ""];
+
+  // ---------- 5.2 — Net Allocation to CarboNature ----------
+  const cnTable: LetterheadTable = {
+    title: "5.2 — Net Allocation to CarboNature, by project",
+    fontSize: 7,
+    columns: [
+      { header: "Farm / Buyer", width: 140 },
+      { header: "Gross (VCU)", width: 60, align: "right" },
+      { header: "Agri-Inputs Offset (VCU)", width: 90, align: "right" },
+      { header: "Net (VCU)", width: 60, align: "right" },
+    ],
+    rows: [],
+    boldRowIndexes: [],
+    spacerRowIndexes: [],
+    emphasisRowIndexes: [],
+  };
+  const BLANK4 = ["", "", "", ""];
+
+  let farmNetTotal = 0;
+  let cnNetTotal = 0;
+
+  data.projectOrder.forEach((key, projectIdx) => {
+    const farmRows = data.byProject.get(key)!;
+    const projectLevel = data.projectLevelDeals.get(key);
+
+    if (projectIdx > 0) {
+      farmsTable.rows.push([...BLANK7]);
+      farmsTable.spacerRowIndexes!.push(farmsTable.rows.length - 1);
+      cnTable.rows.push([...BLANK4]);
+      cnTable.spacerRowIndexes!.push(cnTable.rows.length - 1);
+    }
+    farmsTable.rows.push([key.toUpperCase(), "", "", "", "", "", ""]);
+    farmsTable.boldRowIndexes!.push(farmsTable.rows.length - 1);
+    cnTable.rows.push([key.toUpperCase(), "", "", ""]);
+    cnTable.boldRowIndexes!.push(cnTable.rows.length - 1);
+
+    const farmSub = { area: 0, gross: 0, offset: 0, net: 0 };
+    const cnSub = { gross: 0, offset: 0, net: 0 };
+
+    for (const r of farmRows) {
+      farmsTable.rows.push([
+        r.includesTestData ? `${r.farmName} (TEST)` : r.farmName,
+        fmt(r.areaHa),
+        r.agriInputs ?? "-",
+        splitLabel(r.farmerSharePct),
+        fmt(r.farmPotential),
+        fmt(-r.buyerCredits),
+        fmt(r.farmCredits),
+      ]);
+      farmSub.area += r.areaHa;
+      farmSub.gross += r.farmPotential;
+      farmSub.offset += -r.buyerCredits;
+      farmSub.net += r.farmCredits;
+
+      // CarboNature's own Gross/Offset, decomposed so Gross - Offset = Net
+      // exactly (see this file's header comment) — cnCredits (r.cnCredits)
+      // is the real, already-computed net; this just shows its two parts.
+      const cnGrossShare = r.farmPotential * (1 - r.farmerSharePct);
+      const cnOffsetShare = -(r.buyerCredits * (1 - r.farmerSharePct));
+      cnTable.rows.push([r.farmName, fmt(cnGrossShare), fmt(cnOffsetShare), fmt(r.cnCredits)]);
+      cnSub.gross += cnGrossShare;
+      cnSub.offset += cnOffsetShare;
+      cnSub.net += r.cnCredits;
+    }
+
+    if (projectLevel) {
+      cnTable.rows.push(["Project Funding (no single farm)", fmt(0), "-", fmt(-projectLevel.credits)]);
+      cnSub.net += -projectLevel.credits;
+    }
+
+    farmsTable.rows.push([`TOTAL — ${key}`, fmt(farmSub.area), "", "", fmt(farmSub.gross), fmt(farmSub.offset), fmt(farmSub.net)]);
+    farmsTable.boldRowIndexes!.push(farmsTable.rows.length - 1);
+    cnTable.rows.push([`TOTAL — ${key}`, fmt(cnSub.gross), fmt(cnSub.offset), fmt(cnSub.net)]);
+    cnTable.boldRowIndexes!.push(cnTable.rows.length - 1);
+
+    farmNetTotal += farmSub.net;
+    cnNetTotal += cnSub.net;
+  });
+
+  farmsTable.rows.push([...BLANK7]);
+  farmsTable.spacerRowIndexes!.push(farmsTable.rows.length - 1);
+  farmsTable.rows.push(["GRAND TOTAL", "", "", "", "", "", fmt(farmNetTotal)]);
+  farmsTable.emphasisRowIndexes!.push(farmsTable.rows.length - 1);
+
+  cnTable.rows.push([...BLANK4]);
+  cnTable.spacerRowIndexes!.push(cnTable.rows.length - 1);
+  cnTable.rows.push(["GRAND TOTAL", "", "", fmt(cnNetTotal)]);
+  cnTable.emphasisRowIndexes!.push(cnTable.rows.length - 1);
+
+  farmsTable.notes = [
+    "* Gross/Offset show the farm's own full potential and the full Agri-Inputs offset quantity; Net is this farm's Rev-Share of what remains after that offset (Section 5.1, confirmed format 2026-08-31).",
+  ];
+  cnTable.notes = [
+    "* The negative row in a project's section (\"Project Funding\") is the exact credits already sold to a buyer in Chapter 1, netted out here so CarboNature's total reflects what's actually still available — not double-counted.",
+  ];
+
+  // ---------- 5.3 — TOTAL CREDIT IN VALUE (reconciliation gate) ----------
+  const allFarmRows = [...data.byProject.values()].flat();
+  const gross = allFarmRows.reduce((s, r) => s + r.farmPotential, 0);
+  const totalNetAllocation = farmNetTotal + cnNetTotal + buyerGrandCredits;
+  const discrepancy = gross - totalNetAllocation;
+  const reconciled = Math.abs(discrepancy) < 0.01;
+
+  const reconciliationTable: LetterheadTable = {
+    title: "5.3 — TOTAL CREDIT IN VALUE",
+    columns: [
+      { header: "Group", width: 220 },
+      { header: "Net Credits (VCU)", width: 100, align: "right" },
+      { header: "Value", width: 100, align: "right" },
+    ],
+    rows: (() => {
+      const farmValueTotal = allFarmRows.reduce((s, r) => s + r.farmValue, 0);
+      const cnValueBeforePF = allFarmRows.reduce((s, r) => s + r.cnValue, 0);
+      const pfValueDeduction = [...data.projectLevelDeals.values()].reduce(
+        (s, p) => s + p.credits * (data.priceByProject.get(p.projectId) ?? 0),
+        0,
+      );
+      const cnValueTotal = cnValueBeforePF - pfValueDeduction;
+      const totalValue = farmValueTotal + cnValueTotal + buyerGrandValue;
+      return [
+        ["Gross Potential", fmt(gross), "-"],
+        ["Farms", fmt(farmNetTotal), usd(farmValueTotal)],
+        ["CarboNature", fmt(cnNetTotal), usd(cnValueTotal)],
+        ["Buyers", fmt(buyerGrandCredits), usd(buyerGrandValue)],
+        ["Total Net Allocation", fmt(totalNetAllocation), usd(totalValue)],
+        reconciled
+          ? [`RECONCILED - Gross Potential (${fmt(gross)} VCU) = Total Net Allocation (${fmt(totalNetAllocation)} VCU)`, "", ""]
+          : [`NOT RECONCILED - discrepancy of ${fmt(Math.abs(discrepancy))} VCU`, "", ""],
+      ];
+    })(),
+    boldRowIndexes: [0, 4],
+    emphasisRowIndexes: [5],
+    spacerRowIndexes: [],
+    notes: [
+      "* Confirmed 2026-08-31: this check is on credit QUANTITY only, never monetary value — buyers are valued at their own real signed price while Farms/CarboNature use the fixed potential-price key, so a value gap is expected and does not affect reconciliation.",
+      "* Bounded retry (confirmed 2026-08-31): on a mismatch, one re-sync + one re-check; if still not reconciled, this report still sends, clearly marked NOT RECONCILED, for manual review — never silent, never retried indefinitely.",
+    ],
+  };
+
+  return {
+    farmsTable,
+    carboNatureTable: cnTable,
+    reconciliationTable,
+    reconciliation: { grossPotential: gross, farmNetTotal, cnNetTotal, buyerNetTotal: buyerGrandCredits, totalNetAllocation, reconciled, discrepancy },
+  };
+}

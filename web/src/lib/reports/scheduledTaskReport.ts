@@ -1,6 +1,7 @@
 import "server-only";
 import type { ToolContext } from "../tools/context";
 import type { ScheduledTaskOutcome } from "../agent/scheduledTaskRegistry";
+import type { LetterheadTable } from "./letterheadPdf";
 
 /**
  * The one closing step every one of Rebeka's 5 scheduled tasks shares
@@ -17,7 +18,11 @@ export async function finishScheduledTask(
     taskKey: string;
     projectId: string;
     subject: string;
+    /** A small bold eyebrow label drawn directly above `bodyParagraphs` — e.g. "Summary" over the opening stat line. */
+    leadCaption?: string;
     bodyParagraphs: string[];
+    /** Real bordered tables, rendered after the paragraphs — for reports where a reader needs the bottom line at a glance (see letterheadPdf.ts's LetterheadTable). */
+    tables?: LetterheadTable[];
     memoryKind: string;
     /** Task 5 only sends an email when it actually found something new — everything else always emails. */
     sendEmail?: boolean;
@@ -85,7 +90,9 @@ export async function finishScheduledTask(
     const pdfBuffer = await buildLetterheadPdf({
       title: input.subject,
       subtitle: "CarboNature MRV — Automated Report",
+      leadCaption: input.leadCaption,
       bodyParagraphs: input.bodyParagraphs,
+      tables: input.tables,
       generatedAt: new Date(),
       org: {
         legalName: org.legal_name,

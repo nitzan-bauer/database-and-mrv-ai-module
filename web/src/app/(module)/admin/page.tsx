@@ -14,6 +14,8 @@ import { AdminView } from "@/components/admin/AdminView";
 import { FarmContextForm } from "@/components/admin/FarmContextForm";
 import { DocumentsPanel } from "@/components/admin/DocumentsPanel";
 import { AgentLearningPanel } from "@/components/admin/AgentLearningPanel";
+import { CreditYieldRatesPanel, type CreditYieldRate } from "@/components/admin/CreditYieldRatesPanel";
+import { CropCycleLengthsPanel, type CropCycleLength } from "@/components/admin/CropCycleLengthsPanel";
 import { listAgentLearningStats } from "@/lib/agent/learningStats";
 import type { DriveFile } from "@/lib/google/driveClient";
 import type { LinkedDriveFolder } from "@/lib/tools/linkFarmDriveFolder";
@@ -89,6 +91,110 @@ export default async function AdminPage() {
         })()
       : Promise.resolve([]),
   ]);
+
+  // Credit-yield rates (John's allocation-register potential estimate) —
+  // super_admin only, per Nitzan's explicit request. Checked against the
+  // signed-in person's OWN role in mrv.project_memberships, not a
+  // hardcoded email — the same real permissions system this whole page
+  // exists to be the source of truth for.
+  const session = await auth().catch(() => null);
+  let isSuperAdmin = false;
+  let creditYieldRates: CreditYieldRate[] = [];
+  let cropCycleLengths: CropCycleLength[] = [];
+  if (DATA_MODE === "db" && session?.user?.email) {
+    const { query } = await import("@/lib/db");
+    const roleRows = await query<{ role: string }>(
+      `SELECT m.role::text AS role FROM mrv.project_memberships m
+         JOIN mrv.users u ON u.user_id = m.user_id
+        WHERE u.email = $1 AND m.role = 'super_admin' LIMIT 1`,
+      [session.user.email],
+    );
+    isSuperAdmin = roleRows.length > 0;
+    if (isSuperAdmin) {
+      const rows = await query<{ plot_type: string; rate_per_ha: string; updated_by: string | null; updated_at: string }>(
+        `SELECT plot_type, rate_per_ha, updated_by, updated_at FROM mrv.credit_yield_rate_table ORDER BY plot_type`,
+      );
+      creditYieldRates = rows.map((r) => ({
+        plotType: r.plot_type as CreditYieldRate["plotType"],
+        ratePerHa: Number(r.rate_per_ha),
+        updatedBy: r.updated_by,
+        updatedAt: r.updated_at,
+      }));
+
+      const cropRows = await query<{ crop_name: string; cycle_days: number; updated_by: string | null; updated_at: string }>(
+        `SELECT crop_name, cycle_days, updated_by, updated_at FROM mrv.crop_cycle_lengths ORDER BY crop_name`,
+      );
+      cropCycleLengths = cropRows.map((r) => ({
+        cropName: r.crop_name,
+        cycleDays: r.cycle_days,
+        updatedBy: r.updated_by,
+        updatedAt: r.updated_at,
+      }));
+    }
+  }
+
+  async function saveCreditYieldRateAction(plotType: string, ratePerHa: number): Promise<{ ok: boolean; error?: string }> {
+    "use server";
+    const session = await auth().catch(() => null);
+    const actor = session?.user?.email;
+    if (!actor) return { ok: false, error: "Not signed in." };
+
+    const { query } = await import("@/lib/db");
+    const roleRows = await query<{ role: string }>(
+      `SELECT m.role::text AS role FROM mrv.project_memberships m
+         JOIN mrv.users u ON u.user_id = m.user_id
+        WHERE u.email = $1 AND m.role = 'super_admin' LIMIT 1`,
+      [actor],
+    );
+    if (!roleRows.length) return { ok: false, error: "Only a super_admin can edit credit-yield rates." };
+    if (!["open_field", "young_orchard", "mature_orchard"].includes(plotType)) {
+      return { ok: false, error: `Unknown plot type "${plotType}".` };
+    }
+    if (!(ratePerHa >= 0)) return { ok: false, error: "Rate must be a non-negative number." };
+
+    await query(
+      `UPDATE mrv.credit_yield_rate_table SET rate_per_ha = $1, updated_by = $2, updated_at = now() WHERE plot_type = $3`,
+      [ratePerHa, actor, plotType],
+    );
+    await query(
+      `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
+       VALUES ($1, 'update_credit_yield_rate', 'credit_yield_rate_table', $2, $3::jsonb)`,
+      [actor, plotType, JSON.stringify({ plotType, ratePerHa })],
+    );
+    return { ok: true };
+  }
+
+  async function saveCropCycleLengthAction(cropName: string, cycleDays: number): Promise<{ ok: boolean; error?: string }> {
+    "use server";
+    const session = await auth().catch(() => null);
+    const actor = session?.user?.email;
+    if (!actor) return { ok: false, error: "Not signed in." };
+
+    const { query } = await import("@/lib/db");
+    const roleRows = await query<{ role: string }>(
+      `SELECT m.role::text AS role FROM mrv.project_memberships m
+         JOIN mrv.users u ON u.user_id = m.user_id
+        WHERE u.email = $1 AND m.role = 'super_admin' LIMIT 1`,
+      [actor],
+    );
+    if (!roleRows.length) return { ok: false, error: "Only a super_admin can edit crop-cycle lengths." };
+    const normalized = cropName.trim().toLowerCase();
+    if (!normalized) return { ok: false, error: "Crop name is required." };
+    if (!(cycleDays > 0)) return { ok: false, error: "Cycle length must be a positive number of days." };
+
+    await query(
+      `INSERT INTO mrv.crop_cycle_lengths (crop_name, cycle_days, updated_by, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (crop_name) DO UPDATE SET cycle_days = $2, updated_by = $3, updated_at = now()`,
+      [normalized, cycleDays, actor],
+    );
+    await query(
+      `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
+       VALUES ($1, 'update_crop_cycle_length', 'crop_cycle_lengths', $2, $3::jsonb)`,
+      [actor, normalized, JSON.stringify({ cropName: normalized, cycleDays })],
+    );
+    return { ok: true };
+  }
   const pddDraftOptions = pddDrafts.map((d) => ({
     draftId: d.draftId,
     label: `${d.templateName} ${d.templateVersion} · ${new Date(d.generatedAt).toLocaleDateString("en-GB")}`,
@@ -199,6 +305,20 @@ export default async function AdminPage() {
       )}
 
       {DATA_MODE === "db" && <AgentLearningPanel stats={agentLearningStats} />}
+
+      {isSuperAdmin && (
+        <section id="credit-yield-rates" className="scroll-mt-6">
+          <h2 className="text-base font-bold text-pine-700">Credit-yield rates — John (super_admin only)</h2>
+          <p className="mt-1 max-w-3xl text-[13px] text-muted">
+            You&apos;re seeing this because you&apos;re a super_admin — everyone else on this page,
+            including other agents&apos; own tools, cannot edit these.
+          </p>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            <CreditYieldRatesPanel rates={creditYieldRates} save={saveCreditYieldRateAction} />
+            <CropCycleLengthsPanel crops={cropCycleLengths} save={saveCropCycleLengthAction} />
+          </div>
+        </section>
+      )}
 
       <AdminView users={users} policies={policies} audit={audit} />
     </div>
