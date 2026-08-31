@@ -66,7 +66,7 @@ export async function runJohnAllocationReport(ctx: ToolContext): Promise<Schedul
   const outcome = await finishScheduledTask(ctx, {
     taskKey: TASK_KEY,
     projectId: TARGET_PROJECT_ID,
-    subject: `Allocation Book weekly report - ${new Date().toISOString().slice(0, 10)}`,
+    subject: `Allocation Book - ${new Date().toISOString().slice(0, 10)}`,
     leadCaption: "Summary",
     bodyParagraphs: summaryLines,
     tables: [buyersTable, chapter2.farmsTable, chapter2.carboNatureTable, chapter2.reconciliationTable, ...chapter3.tables],

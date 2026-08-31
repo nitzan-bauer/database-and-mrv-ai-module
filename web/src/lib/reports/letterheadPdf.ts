@@ -310,6 +310,17 @@ export async function buildLetterheadPdf(input: {
   const BORDER = rgb(0x2b / 255, 0x61 / 255, 0x61 / 255);
 
   for (const table of input.tables ?? []) {
+    // Keep the whole table together on one page rather than splitting mid-
+    // table with no repeated header on the continuation (Nitzan, 2026-08-31).
+    // A table taller than a full page still has to spill — the row-level
+    // `need()` calls below remain as that fallback — but the common case
+    // (every Book table today) now always starts fresh rather than
+    // gambling on whatever room is left on the current page.
+    const rowsHeight = (table.rows ?? []).reduce((h, _row, i) => h + ((table.spacerRowIndexes ?? []).includes(i) ? SPACER_H : ROW_H), 0);
+    const estimatedHeight =
+      (table.title ? 20 : 0) + (table.groupHeaders?.length ? ROW_H + 4 : 0) + (ROW_H + 4) + rowsHeight + 14;
+    need(estimatedHeight);
+
     if (table.title) {
       need(20);
       page!.drawText(wa(table.title), { x: M, y, size: 11, font: bold, color: TEAL });

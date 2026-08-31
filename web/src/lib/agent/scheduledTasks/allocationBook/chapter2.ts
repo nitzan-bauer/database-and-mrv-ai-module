@@ -54,7 +54,7 @@ export interface Chapter2Result {
 export function buildChapter2(data: PotentialData, buyerGrandCredits: number, buyerGrandValue: number): Chapter2Result {
   // ---------- 5.1 — Net Allocation to Farms ----------
   const farmsTable: LetterheadTable = {
-    title: "5.1 — Net Allocation to Farms, by project",
+    title: "2.1 — Net Allocation to Farms, by project",
     fontSize: 7,
     columns: [
       { header: "Farm", width: 90 },
@@ -74,7 +74,7 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
 
   // ---------- 5.2 — Net Allocation to CarboNature ----------
   const cnTable: LetterheadTable = {
-    title: "5.2 — Net Allocation to CarboNature, by project",
+    title: "2.2 — Net Allocation to CarboNature, by project",
     fontSize: 7,
     columns: [
       { header: "Farm / Buyer", width: 140 },
@@ -175,7 +175,7 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
   const reconciled = Math.abs(discrepancy) < 0.01;
 
   const reconciliationTable: LetterheadTable = {
-    title: "5.3 — TOTAL CREDIT IN VALUE",
+    title: "2.3 — TOTAL CREDIT IN VALUE",
     columns: [
       { header: "Group", width: 220 },
       { header: "Net Credits (VCU)", width: 100, align: "right" },

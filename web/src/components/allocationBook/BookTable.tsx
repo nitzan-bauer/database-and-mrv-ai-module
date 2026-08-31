@@ -5,7 +5,7 @@ const ROW_CLASS: Record<LiveRowKind, string> = {
   total: "bg-sage-50 font-semibold",
   grand: "bg-pine-800 text-white font-semibold",
   spacer: "h-3 bg-transparent border-none",
-  section: "bg-sage-50 font-semibold uppercase tracking-wide text-[13px]",
+  section: "bg-pine-100 font-bold uppercase tracking-wide text-[13.5px] text-pine-800 border-t-2 border-pine-600",
   negative: "bg-danger/10 text-danger",
 };
 
@@ -17,10 +17,15 @@ const ROW_CLASS: Record<LiveRowKind, string> = {
  * so multi-line headers and wrapped cells work properly (the emailed PDF
  * report can't do either).
  */
-export function BookTable({ table }: { table: LiveTable }) {
+export function BookTable({ table, titleExtra }: { table: LiveTable; titleExtra?: React.ReactNode }) {
   return (
     <div className="mb-8">
-      {table.title ? <h3 className="mb-2 text-[15px] font-semibold text-pine-800">{table.title}</h3> : null}
+      {table.title ? (
+        <h3 className="mb-2 flex items-center gap-3 text-[15px] font-semibold text-pine-800">
+          {table.title}
+          {titleExtra}
+        </h3>
+      ) : null}
       <div className="overflow-x-auto rounded-md border border-line-2">
         <table className="w-full border-collapse text-[13px]">
           <thead>

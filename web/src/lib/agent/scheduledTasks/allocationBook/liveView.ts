@@ -28,6 +28,16 @@ export function toLiveTable(t: LetterheadTable, opts?: { headerOverride?: (strin
     if (spacer.has(i)) kind = "spacer";
     else if (emphasis.has(i)) kind = "grand";
     else if (bold.has(i)) kind = "total";
+    // boldRowIndexes marks BOTH a project-name header row and its "TOTAL —
+    // key" subtotal row identically — the live page distinguishes them
+    // (Nitzan, 2026-08-31: bolder styling + the word "PROJECT" appended to
+    // the header, neither of which applies to a subtotal row) by checking
+    // whether every other cell is blank, which only a bare project-name
+    // header row is.
+    if (kind === "total" && !/^(total|grand total)\b/i.test(cells[0].trim()) && cells.slice(1).every((c) => !c.trim())) {
+      kind = "section";
+      cells = [`${cells[0]} PROJECT`, ...cells.slice(1)];
+    }
     const netIdx = opts?.netCol ?? -1;
     const negCell = netIdx >= 0 ? cells[netIdx] : cells.find((c) => c.trim().startsWith("-"));
     if (kind === "normal" && negCell && negCell.trim().startsWith("-")) kind = "negative";
@@ -40,6 +50,45 @@ export function toLiveTable(t: LetterheadTable, opts?: { headerOverride?: (strin
     notes: t.notes,
     netCol: opts?.netCol,
   };
+}
+
+const CHAPTER2_FARMS_HEADERS: (string | [string, string])[] = [
+  "Farm",
+  "Area (ha)",
+  "Agri-Input",
+  ["Split", "CN% : Farm%"],
+  "Gross (VCU)",
+  "Offset (VCU)",
+  "Net (VCU)",
+];
+
+/** Chapter 3's honest empty state — real, structurally-correct empty tables (headers only, blank round date) rather than a text-only explanation, per Nitzan's explicit request (2026-08-31): "show the tables empty, and the round date stays empty." Populates automatically once a real round exists (see chapter3.ts). Headers say "Verified", not "Gross" — the Actual vector's own term, per Chapter 2 vs Chapter 3's own terminology split. */
+function buildEmptyChapter3Tables(): LiveTable[] {
+  const roundHeader: LiveTable = {
+    headers: ["Allocation Round", "Issuance Date"],
+    rows: [{ cells: ["Round 1 — not yet issued", "—"], kind: "grand" }],
+  };
+  const farms: LiveTable = {
+    title: "3.1 — Net Allocation to Farms (Actual)",
+    headers: ["Farm", "Area (ha)", "Agri-Input", ["Split", "CN% : Farm%"], "Verified (VCU)", "Offset (VCU)", "Net (VCU)"],
+    rows: [],
+  };
+  const carboNature: LiveTable = {
+    title: "3.2 — Net Allocation to CarboNature (Actual)",
+    headers: ["Farm / Buyer", "Verified (VCU)", "Agri-Inputs Offset (VCU)", "Net (VCU)"],
+    rows: [],
+  };
+  const reconciliation: LiveTable = {
+    title: "3.3 — Total Credit in Value (Actual)",
+    headers: ["Group", "Net Credits (VCU)", "Value"],
+    rows: [],
+  };
+  const actualVsPlan: LiveTable = {
+    title: "3.4 — Actual vs Plan",
+    headers: ["Farm", "Plan (VCU)", "Actual (VCU)", "Variance (VCU)", "Accuracy %"],
+    rows: [],
+  };
+  return [roundHeader, farms, carboNature, reconciliation, actualVsPlan];
 }
 
 export interface AllocationBookView {
@@ -104,10 +153,7 @@ export async function getAllocationBookView(): Promise<AllocationBookView> {
     chapter1: toLiveTable(c1Table),
     chapter1Grand: c1Grand,
     chapter2: {
-      farms: toLiveTable(chapter2.farmsTable, {
-        headerOverride: ["Farm", "Area (ha)", "Agri-Input", ["Split", "CN% : Farm%"], "Gross (VCU)", "Offset (VCU)", "Net (VCU)"],
-        netCol: 6,
-      }),
+      farms: toLiveTable(chapter2.farmsTable, { headerOverride: CHAPTER2_FARMS_HEADERS, netCol: 6 }),
       carboNature: toLiveTable(chapter2.carboNatureTable, { netCol: 3 }),
       reconciliation: toLiveTable(chapter2.reconciliationTable),
       reconciled: chapter2.reconciliation.reconciled,
@@ -117,7 +163,7 @@ export async function getAllocationBookView(): Promise<AllocationBookView> {
     },
     chapter3: {
       hasAnyRound: chapter3.hasAnyRound,
-      tables: chapter3.tables.map((t) => toLiveTable(t)),
+      tables: chapter3.hasAnyRound ? chapter3.tables.map((t) => toLiveTable(t)) : buildEmptyChapter3Tables(),
       bodyParagraphs: chapter3.bodyParagraphs,
     },
     negativeBalance: { active },
