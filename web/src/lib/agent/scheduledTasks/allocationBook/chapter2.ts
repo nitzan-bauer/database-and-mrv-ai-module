@@ -161,7 +161,7 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
   cnTable.emphasisRowIndexes!.push(cnTable.rows.length - 1);
 
   farmsTable.notes = [
-    "* Gross/Offset show the farm's own full potential and the full Agri-Inputs offset quantity; Net is this farm's Rev-Share of what remains after that offset (Section 5.1, confirmed format 2026-08-31).",
+    "* Gross/Offset show the farm's own full potential and the full Agri-Inputs offset quantity; Net is this farm's Rev-Share of what remains after that offset (Section 2.1, confirmed format 2026-08-31).",
   ];
   cnTable.notes = [
     "* The negative row in a project's section (\"Project Funding\") is the exact credits already sold to a buyer in Chapter 1, netted out here so CarboNature's total reflects what's actually still available — not double-counted.",
