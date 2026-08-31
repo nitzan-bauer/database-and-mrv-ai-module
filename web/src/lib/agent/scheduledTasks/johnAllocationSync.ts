@@ -257,10 +257,16 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
 
   // Release rows whose reservation no longer exists (cancelled/expired) —
   // status-only, never deleted, per the double-counting audit-trail design.
+  // Excludes is_test_data rows: a test row was deliberately forced through
+  // BEFORE its real reservation ever got a signed contract (2026-08-31),
+  // so it will never appear in liveReservationIds — this sweep's premise
+  // ("the SaaS no longer shows this as live, so release it") doesn't apply
+  // to a row that was never sourced from the SaaS's own live-signed state
+  // in the first place.
   const releaseResult = await query(
     `UPDATE mrv.allocation_register SET status = 'released', released_at = now(), updated_at = now()
      WHERE deal_type = 'agri_inputs' AND source_reservation_id IS NOT NULL
-       AND status <> 'released' AND NOT (source_reservation_id = ANY($1::text[]))
+       AND status <> 'released' AND NOT is_test_data AND NOT (source_reservation_id = ANY($1::text[]))
      RETURNING allocation_id`,
     [[...liveReservationIds]],
   );
