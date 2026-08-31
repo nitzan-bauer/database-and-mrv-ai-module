@@ -1,11 +1,15 @@
 import "server-only";
 import type { LetterheadTable } from "../../../reports/letterheadPdf";
+import type { PotentialData } from "./queries";
+import type { SaasContractDetail } from "../../../saas/saasClient";
 
 export type LiveRowKind = "normal" | "total" | "grand" | "spacer" | "section" | "negative";
 
 export interface LiveRow {
   cells: string[];
   kind: LiveRowKind;
+  /** For Chapter 1 deal rows only — a key into AllocationBookView.chapter1Contracts, letting the row's Transaction # cell open a "view signed agreement" popup (Nitzan, 2026-08-31). Never transaction_no itself — see saasClient.ts's SaasContractDetail doc comment on why. */
+  contractKey?: string | null;
 }
 
 export interface LiveTable {
@@ -52,6 +56,74 @@ export function toLiveTable(t: LetterheadTable, opts?: { headerOverride?: (strin
   };
 }
 
+/** The contractKey for a deal row — matches how listContractDetailsByProfileIds' rows are keyed below. */
+function contractKeyFor(d: { dealType: string; sourceReservationId: string | null; sourceFinancingId: string | null }): string | null {
+  if (d.dealType === "agri_inputs" && d.sourceReservationId) return `res:${d.sourceReservationId}`;
+  if (d.dealType === "project_funding" && d.sourceFinancingId) return `fin:${d.sourceFinancingId}`;
+  return null;
+}
+
+/**
+ * Chapter 1 for the live page — same rows/totals as chapter1.ts's PDF
+ * table (reuses its exact formatting helpers, no re-derivation), but each
+ * deal row also carries a contractKey so its Transaction # cell can open
+ * a real "view signed agreement" popup — something the PDF can't do.
+ */
+async function buildLiveChapter1Table(data: PotentialData): Promise<{ table: LiveTable; grand: { credits: number; value: number } }> {
+  const { fmt, usd, pricePerCredit, trackLabel, offsetLabel, formatDealDate } = await import("./chapter1");
+
+  const headers = ["Track", "Farm", "Buyer", "Price", "Credits (VCU)", "Value", "Offset", "Deal date", "Transaction #"];
+  const rows: LiveRow[] = [];
+  const grand = { credits: 0, value: 0 };
+
+  data.projectOrder.forEach((key, projectIdx) => {
+    if (projectIdx > 0) rows.push({ cells: new Array(headers.length).fill(""), kind: "spacer" });
+    rows.push({ cells: [`${key.toUpperCase()} PROJECT`, "", "", "", "", "", "", "", ""], kind: "section" });
+
+    const dealsHere = data.dealsByProject.get(key) ?? [];
+    const sub = { credits: 0, value: 0 };
+    for (const d of dealsHere) {
+      rows.push({
+        cells: [
+          d.isTestData ? `${trackLabel(d.dealType)} (TEST)` : trackLabel(d.dealType),
+          d.farmName,
+          d.buyerName,
+          pricePerCredit(d.value, d.credits),
+          fmt(d.credits),
+          usd(d.value),
+          offsetLabel(d.dealType, d.cnPct),
+          formatDealDate(d.signedAt ?? d.createdAt),
+          d.transactionNo ?? "-",
+        ],
+        kind: "normal",
+        contractKey: contractKeyFor(d),
+      });
+      sub.credits += d.credits;
+      sub.value += d.value;
+    }
+    if (!dealsHere.length) rows.push({ cells: ["No deals", "", "", "", "", "", "", "", ""], kind: "normal" });
+    rows.push({ cells: ["TOTAL", "", "", "", fmt(sub.credits), usd(sub.value), "", "", ""], kind: "total" });
+    grand.credits += sub.credits;
+    grand.value += sub.value;
+  });
+
+  rows.push({ cells: new Array(headers.length).fill(""), kind: "spacer" });
+  rows.push({ cells: ["GRAND TOTAL", "", "", "", fmt(grand.credits), usd(grand.value), "", "", ""], kind: "grand" });
+
+  return {
+    table: {
+      title: "Chapter 1 — Buyer Transactions Ledger, by project",
+      headers,
+      rows,
+      notes: [
+        "* \"Price\" for a Project Funding row is the buyer's real signed $/credit. For an Agri Inputs row it is that input's real application cost divided by the credits it unlocks — a different, unrelated basis, so it will not resemble the standard credit price.",
+        "* Click a Transaction # to view the signed agreement.",
+      ],
+    },
+    grand,
+  };
+}
+
 const CHAPTER2_FARMS_HEADERS: (string | [string, string])[] = [
   "Farm",
   "Area (ha)",
@@ -95,6 +167,8 @@ export interface AllocationBookView {
   generatedAt: string;
   chapter1: LiveTable;
   chapter1Grand: { credits: number; value: number };
+  /** Keyed by "res:<reservationId>" / "fin:<financingId>" — see contractKeyFor. */
+  chapter1Contracts: Record<string, SaasContractDetail>;
   chapter2: {
     farms: LiveTable;
     carboNature: LiveTable;
@@ -117,14 +191,22 @@ export interface AllocationBookView {
 export async function getAllocationBookView(): Promise<AllocationBookView> {
   const { query } = await import("../../../db");
   const { loadPotentialData } = await import("./queries");
-  const { buildChapter1Table } = await import("./chapter1");
   const { buildChapter2 } = await import("./chapter2");
   const { buildChapter3 } = await import("./chapter3");
+  const { listContractDetailsByProfileIds } = await import("../../../saas/saasClient");
 
   const data = await loadPotentialData();
-  const { table: c1Table, grand: c1Grand } = buildChapter1Table(data);
+  const { table: c1Table, grand: c1Grand } = await buildLiveChapter1Table(data);
   const chapter2 = buildChapter2(data, c1Grand.credits, c1Grand.value);
   const chapter3 = await buildChapter3(data);
+
+  const buyerIds = [...new Set(data.dealRows.map((d) => d.buyerId))];
+  const contracts = await listContractDetailsByProfileIds(buyerIds);
+  const chapter1Contracts: Record<string, SaasContractDetail> = {};
+  for (const c of contracts) {
+    if (c.reservationId) chapter1Contracts[`res:${c.reservationId}`] = c;
+    if (c.financingId) chapter1Contracts[`fin:${c.financingId}`] = c;
+  }
 
   const flagRows = await query<{
     scope_type: string;
@@ -150,8 +232,9 @@ export async function getAllocationBookView(): Promise<AllocationBookView> {
 
   return {
     generatedAt: new Date().toISOString(),
-    chapter1: toLiveTable(c1Table),
+    chapter1: c1Table,
     chapter1Grand: c1Grand,
+    chapter1Contracts,
     chapter2: {
       farms: toLiveTable(chapter2.farmsTable, { headerOverride: CHAPTER2_FARMS_HEADERS, netCol: 6 }),
       carboNature: toLiveTable(chapter2.carboNatureTable, { netCol: 3 }),

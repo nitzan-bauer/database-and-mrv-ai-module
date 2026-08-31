@@ -1,5 +1,6 @@
 import type { AllocationBookView as ViewData } from "@/lib/agent/scheduledTasks/allocationBook/liveView";
 import { BookTable } from "./BookTable";
+import { Chapter1Ledger } from "./Chapter1Ledger";
 import { ReconciledBadge } from "./ReconciledBadge";
 
 /** A real vertical table of contents — chapters and sub-chapters, sequential numbering — per Nitzan's explicit request (2026-08-31): "build a Table of Contents like a table of contents." */
@@ -92,7 +93,7 @@ export function AllocationBookView({ view }: { view: ViewData }) {
         <p className="mb-4 text-[13px] text-muted">
           {view.chapter1Grand.credits.toLocaleString("en-US")} VCU across all deals, worth ${view.chapter1Grand.value.toLocaleString("en-US")}.
         </p>
-        <BookTable table={view.chapter1} />
+        <Chapter1Ledger table={view.chapter1} contracts={view.chapter1Contracts} />
       </section>
 
       <section id="chapter-2" className="mb-12 scroll-mt-6">

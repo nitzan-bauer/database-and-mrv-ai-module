@@ -1,6 +1,6 @@
 import type { LiveTable, LiveRowKind } from "@/lib/agent/scheduledTasks/allocationBook/liveView";
 
-const ROW_CLASS: Record<LiveRowKind, string> = {
+export const ROW_CLASS: Record<LiveRowKind, string> = {
   normal: "",
   total: "bg-sage-50 font-semibold",
   grand: "bg-pine-800 text-white font-semibold",
@@ -50,6 +50,16 @@ export function BookTable({ table, titleExtra }: { table: LiveTable; titleExtra?
               row.kind === "spacer" ? (
                 <tr key={ri} aria-hidden>
                   <td colSpan={table.headers.length} className="h-3 border-none bg-transparent p-0" />
+                </tr>
+              ) : row.kind === "section" ? (
+                // A project-name banner reads as one label spanning the
+                // whole row, not "text in column 1" — confined to column
+                // 1's own (narrow) width, a longer project name wrapped
+                // into an ugly 3-line stack (Nitzan, 2026-08-31).
+                <tr key={ri} className={`${ROW_CLASS.section} border-b border-line-2`}>
+                  <td colSpan={table.headers.length} className="whitespace-nowrap px-3 py-2 text-left">
+                    {row.cells[0]}
+                  </td>
                 </tr>
               ) : (
                 <tr key={ri} className={`${ROW_CLASS[row.kind]} border-b border-line-2 last:border-0`}>

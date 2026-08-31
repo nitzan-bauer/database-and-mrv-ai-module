@@ -93,7 +93,17 @@ export interface SaasPlot {
   farm_id: string | null;
   credits: number;
   area_ha: number;
-  /** The AGRI INPUTS product(s)/practice(s) chosen for this plot — from plots.geojson.properties.agri_inputs (falls back to the single agri_input string when that's all a plot has). Empty for a plot with no Agri-Inputs activity at all. */
+  /**
+   * The AGRI INPUT product/practice actually reserved/purchased for this
+   * plot's deal — plots.geojson.properties.reserved_agri_input (falling
+   * back to the single .agri_input field, never the plural .agri_inputs
+   * array). Confirmed live 2026-08-31: .agri_inputs lists EVERY input
+   * option ever available/recorded for the plot — e.g. a plot reserved for
+   * "Rootella-F" ($1,676) also listed "CoteN" ($13,968) in that array
+   * despite the buyer never selecting or paying for it. Using the array
+   * silently attributed an unpurchased input to a real deal — a real bug,
+   * not a display quirk (Nitzan, 2026-08-31: "I didn't select CoteN").
+   */
   agriInputs: string[];
 }
 
@@ -103,15 +113,13 @@ interface SaasPlotRaw {
   farm_id: string | null;
   credits: number;
   area_ha: number;
-  geojson: { properties?: { agri_input?: string | null; agri_inputs?: { agriInput?: string | null }[] | null } } | null;
+  geojson: { properties?: { agri_input?: string | null; reserved_agri_input?: string | null } } | null;
 }
 
 function parsePlotAgriInputs(raw: SaasPlotRaw): SaasPlot {
   const props = raw.geojson?.properties;
-  const fromList = (props?.agri_inputs ?? [])
-    .map((a) => a.agriInput)
-    .filter((a): a is string => Boolean(a));
-  const agriInputs = fromList.length ? [...new Set(fromList)] : props?.agri_input ? [props.agri_input] : [];
+  const reserved = props?.reserved_agri_input ?? props?.agri_input ?? null;
+  const agriInputs = reserved ? [reserved] : [];
   return { id: raw.id, project_id: raw.project_id, farm_id: raw.farm_id, credits: raw.credits, area_ha: raw.area_ha, agriInputs };
 }
 
@@ -175,6 +183,69 @@ export async function listAgriContractsForReservations(reservationIds: string[])
   return restGet<SaasContractRow[]>(
     `contracts?reservation_id=in.(${reservationIds.map(encodeURIComponent).join(",")})&type=in.(funding_agri_inputs,pre_financing)&select=reservation_id,status,signed_at`,
   );
+}
+
+export interface SaasContractDetail {
+  id: string;
+  type: string;
+  status: "draft" | "sent" | "signed" | "countersigned";
+  signedAt: string | null;
+  reservationId: string | null;
+  financingId: string | null;
+  transactionNo: string | null;
+  totalPrice: string | null;
+  creditPrice: string | null;
+  allocatedCredits: string | null;
+  signerName: string | null;
+  counterSignedBy: string | null;
+  registryNo: string | null;
+}
+
+/**
+ * Contract details for the "click a transaction # to see the signed
+ * agreement" popup (Nitzan, 2026-08-31). Callers must match by
+ * reservationId (agri_inputs) or financingId (project_funding) — NOT by
+ * transactionNo. Confirmed live 2026-08-31: two agri_inputs contracts
+ * signed in the same flow carried the SAME data.transaction_no (copied
+ * from one reservation onto the other's contract row) despite belonging
+ * to two different real reservations — a real labeling quirk in the
+ * SaaS's own contract data, not something safe to key a lookup on.
+ */
+export async function listContractDetailsByProfileIds(profileIds: string[]): Promise<SaasContractDetail[]> {
+  const ids = [...new Set(profileIds)];
+  if (!ids.length) return [];
+  const rows = await restGet<{
+    id: string;
+    type: string;
+    status: "draft" | "sent" | "signed" | "countersigned";
+    signed_at: string | null;
+    reservation_id: string | null;
+    data: {
+      transaction_no?: string;
+      financing_id?: string;
+      total_price?: string;
+      credit_price?: string;
+      allocated_credits?: string;
+      signerName?: string;
+      counterSignedBy?: string;
+      registry_no?: string;
+    } | null;
+  }[]>(`contracts?profile_id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,type,status,signed_at,reservation_id,data`);
+  return rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    status: r.status,
+    signedAt: r.signed_at,
+    reservationId: r.reservation_id,
+    financingId: r.data?.financing_id ?? null,
+    transactionNo: r.data?.transaction_no ?? null,
+    totalPrice: r.data?.total_price ?? null,
+    creditPrice: r.data?.credit_price ?? null,
+    allocatedCredits: r.data?.allocated_credits ?? null,
+    signerName: r.data?.signerName ?? null,
+    counterSignedBy: r.data?.counterSignedBy ?? null,
+    registryNo: r.data?.registry_no ?? null,
+  }));
 }
 
 export async function listCreditBuyersByProfileIds(profileIds: string[]): Promise<SaasCreditBuyer[]> {

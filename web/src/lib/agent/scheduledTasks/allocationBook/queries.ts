@@ -33,6 +33,7 @@ export interface FarmProjectRow {
 export interface DealRow {
   projectId: string;
   dealType: string;
+  buyerId: string;
   farmId: string | null;
   farmName: string;
   buyerName: string;
@@ -43,6 +44,9 @@ export interface DealRow {
   transactionNo: string | null;
   cnPct: number;
   isTestData: boolean;
+  /** For matching a real SaaS contract for the "view agreement" popup — reservation_id (agri_inputs) or financing_id (project_funding), never transaction_no (see saasClient.ts's SaasContractDetail doc comment on why). */
+  sourceReservationId: string | null;
+  sourceFinancingId: string | null;
 }
 
 export interface ProjectLevelDeal {
@@ -117,6 +121,7 @@ export async function loadPotentialData(): Promise<PotentialData> {
   const deals = await query<{
     project_id: string;
     deal_type: string;
+    buyer_id: string;
     buyer_company_name: string | null;
     credits_tco2e_potential: string;
     cost_usd: string;
@@ -125,8 +130,10 @@ export async function loadPotentialData(): Promise<PotentialData> {
     transaction_no: string | null;
     farm_id: string | null;
     is_test_data: boolean;
+    source_reservation_id: string | null;
+    source_financing_id: string | null;
   }>(
-    `SELECT project_id, deal_type, buyer_company_name, credits_tco2e_potential, cost_usd, signed_at, created_at, transaction_no, farm_id, is_test_data
+    `SELECT project_id, deal_type, buyer_id, buyer_company_name, credits_tco2e_potential, cost_usd, signed_at, created_at, transaction_no, farm_id, is_test_data, source_reservation_id, source_financing_id
        FROM mrv.allocation_register
       WHERE status <> 'released'
       ORDER BY project_id, signed_at NULLS LAST, created_at`,
@@ -207,6 +214,7 @@ export async function loadPotentialData(): Promise<PotentialData> {
   const dealRows: DealRow[] = deals.map((d) => ({
     projectId: d.project_id,
     dealType: d.deal_type,
+    buyerId: d.buyer_id,
     farmId: d.farm_id,
     farmName: d.farm_id ? (farmNames.get(d.farm_id) ?? d.farm_id) : "-",
     buyerName: d.buyer_company_name ?? "-",
@@ -217,6 +225,8 @@ export async function loadPotentialData(): Promise<PotentialData> {
     transactionNo: d.transaction_no,
     cnPct: cnPctFor(d.deal_type, d.farm_id),
     isTestData: d.is_test_data,
+    sourceReservationId: d.source_reservation_id,
+    sourceFinancingId: d.source_financing_id,
   }));
 
   const byProject = new Map<string, FarmProjectRow[]>();

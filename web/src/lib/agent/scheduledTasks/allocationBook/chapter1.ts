@@ -2,31 +2,31 @@ import "server-only";
 import type { LetterheadTable } from "../../../reports/letterheadPdf";
 import type { PotentialData } from "./queries";
 
-function round(n: number): number {
+export function round(n: number): number {
   return Math.round(n);
 }
-function fmt(n: number): string {
+export function fmt(n: number): string {
   return round(n).toLocaleString("en-US");
 }
-function usd(n: number): string {
+export function usd(n: number): string {
   const v = round(n);
   return v < 0 ? `-$${fmt(-v)}` : `$${fmt(v)}`;
 }
-function pricePerCredit(value: number, credits: number): string {
+export function pricePerCredit(value: number, credits: number): string {
   return credits ? `$${(value / credits).toFixed(2)}` : "-";
 }
-function trackLabel(dealType: string): string {
+export function trackLabel(dealType: string): string {
   if (dealType === "agri_inputs") return "Agri Inputs";
   if (dealType === "project_funding") return "Project Funding";
   return dealType;
 }
 /** Chapter 1's own confirmed format (2026-08-31): "%" signs, e.g. "CN 50% / Farm 50%" — never bare "50/50". */
-function offsetLabel(dealType: string, cnPct: number): string {
+export function offsetLabel(dealType: string, cnPct: number): string {
   if (dealType === "project_funding") return `CarboNature ${Math.round(cnPct * 100)}%`;
   if (dealType === "agri_inputs") return `CN ${Math.round(cnPct * 100)}% / Farm ${Math.round((1 - cnPct) * 100)}%`;
   return "-";
 }
-function formatDealDate(iso: string | null): string {
+export function formatDealDate(iso: string | null): string {
   if (!iso) return "-";
   return new Date(iso).toLocaleDateString("en-GB");
 }
@@ -104,11 +104,20 @@ export function buildChapter1Table(data: PotentialData): { table: LetterheadTabl
   table.rows.push(["GRAND TOTAL", "", "", "", fmt(grand.credits), usd(grand.value), "", "", ""]);
   table.emphasisRowIndexes!.push(table.rows.length - 1);
 
+  const notes = [
+    // Confirmed live 2026-08-31: an Agri-Inputs row's "Price" is that
+    // deal's real cost-of-application ÷ resulting credits — NOT a carbon-
+    // credit sale price. Only Project Funding is priced by the standard
+    // $/credit key. A low Agri-Inputs "price" (e.g. $7.20) is real, not a
+    // bug — it reflects a cheap input relative to the credits it unlocked.
+    "* \"Price\" for a Project Funding row is the buyer's real signed $/credit. For an Agri Inputs row it is that input's real application cost divided by the credits it unlocks — a different, unrelated basis, so it will not resemble the standard credit price.",
+  ];
   if (sawTestData) {
-    table.notes = [
+    notes.push(
       "* (TEST) rows are real transactional records forced through before their contract/payment step completed, per an explicit test request (2026-08-31) — included in every total exactly as a real deal would be, so this report shows what it will genuinely look like once real.",
-    ];
+    );
   }
+  table.notes = notes;
 
   return { table, grand, sawTestData };
 }
