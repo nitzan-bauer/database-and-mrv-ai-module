@@ -181,9 +181,9 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
       await query(
         `INSERT INTO mrv.allocation_register
            (deal_type, buyer_id, buyer_company_name, project_id, project_name, farm_id, plot_id,
-            application_area_ha, credits_tco2e_potential, cost_usd, transaction_no,
+            agri_input, application_area_ha, credits_tco2e_potential, cost_usd, transaction_no,
             source_reservation_id, status, signed_at, paid_at)
-         VALUES ('agri_inputs', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         VALUES ('agri_inputs', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (source_reservation_id, plot_id) WHERE source_reservation_id IS NOT NULL DO NOTHING`,
         [
           reservation.buyer_id,
@@ -192,6 +192,7 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
           projectNameById.get(plot.project_id) ?? "Unknown project",
           plot.farm_id,
           plot.id,
+          plot.agriInputs.length ? plot.agriInputs.join("; ") : null,
           Number(plot.area_ha),
           thisAllocationCredits,
           proportionalCostUsd,
@@ -212,8 +213,23 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
   // by name so both deal types group under the SAME project in reports,
   // rather than silently forking into two differently-spelled rows for the
   // same real project (confirmed live: this was actually happening).
+  // Token-set comparison, not string equality — confirmed live 2026-08-31
+  // that punctuation/whitespace normalization alone isn't enough: the
+  // ledger's "CarboNature Fruits-Plantation project" didn't match the real
+  // project's "CarboNature Fruit-Plantations Project – E.Africa" (drops a
+  // region suffix AND swaps which word is plural). Strips stopwords, then
+  // singularizes each remaining token before comparing as a sorted set.
+  const PROJECT_NAME_STOPWORDS = new Set(["project", "carbonature", "e", "africa", "the"]);
   function normalizeProjectName(s: string): string {
-    return s.toLowerCase().replace(/[–—-]/g, " ").replace(/\s+/g, " ").trim();
+    return s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .filter(Boolean)
+      .filter((t) => !PROJECT_NAME_STOPWORDS.has(t))
+      .map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t))
+      .sort()
+      .join(" ");
   }
   let financingWritten = 0;
   try {

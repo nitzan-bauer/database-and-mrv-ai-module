@@ -14,6 +14,7 @@ const NAV = [
   // Tier 2. Sits after the MRV screens because the department is what
   // operates them, not another one of them.
   { href: "/agents", label: "Factory" },
+  { href: "/allocation-book", label: "Allocation Book" },
   { href: "/admin", label: "Admin" },
 ];
 

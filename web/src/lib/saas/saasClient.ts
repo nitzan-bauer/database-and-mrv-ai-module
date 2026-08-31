@@ -93,6 +93,26 @@ export interface SaasPlot {
   farm_id: string | null;
   credits: number;
   area_ha: number;
+  /** The AGRI INPUTS product(s)/practice(s) chosen for this plot — from plots.geojson.properties.agri_inputs (falls back to the single agri_input string when that's all a plot has). Empty for a plot with no Agri-Inputs activity at all. */
+  agriInputs: string[];
+}
+
+interface SaasPlotRaw {
+  id: string;
+  project_id: string;
+  farm_id: string | null;
+  credits: number;
+  area_ha: number;
+  geojson: { properties?: { agri_input?: string | null; agri_inputs?: { agriInput?: string | null }[] | null } } | null;
+}
+
+function parsePlotAgriInputs(raw: SaasPlotRaw): SaasPlot {
+  const props = raw.geojson?.properties;
+  const fromList = (props?.agri_inputs ?? [])
+    .map((a) => a.agriInput)
+    .filter((a): a is string => Boolean(a));
+  const agriInputs = fromList.length ? [...new Set(fromList)] : props?.agri_input ? [props.agri_input] : [];
+  return { id: raw.id, project_id: raw.project_id, farm_id: raw.farm_id, credits: raw.credits, area_ha: raw.area_ha, agriInputs };
 }
 
 export interface SaasContractRow {
@@ -128,14 +148,16 @@ export async function listReservationPlots(reservationIds: string[]): Promise<Sa
 
 export async function listPlotsByIds(plotIds: string[]): Promise<SaasPlot[]> {
   if (!plotIds.length) return [];
-  return restGet<SaasPlot[]>(
-    `plots?id=in.(${plotIds.map(encodeURIComponent).join(",")})&select=id,project_id,farm_id,credits,area_ha`,
+  const raw = await restGet<SaasPlotRaw[]>(
+    `plots?id=in.(${plotIds.map(encodeURIComponent).join(",")})&select=id,project_id,farm_id,credits,area_ha,geojson`,
   );
+  return raw.map(parsePlotAgriInputs);
 }
 
 /** Every plot in the SaaS marketplace, not just ones already tied to a reservation — the potential estimate covers unsold plots too. */
 export async function listAllSaasPlots(): Promise<SaasPlot[]> {
-  return restGet<SaasPlot[]>("plots?select=id,project_id,farm_id,credits,area_ha");
+  const raw = await restGet<SaasPlotRaw[]>("plots?select=id,project_id,farm_id,credits,area_ha,geojson");
+  return raw.map(parsePlotAgriInputs);
 }
 
 /** Farm names for a set of ids — display-only lookup for reports (the Allocation Register itself stores only the SaaS farm id, never a name, to avoid a second place a rename could go stale). */
