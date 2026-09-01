@@ -83,7 +83,7 @@ export function BookTable({ table, titleExtra }: { table: LiveTable; titleExtra?
         </table>
       </div>
       {table.notes?.length ? (
-        <ul className="mt-2 space-y-1 text-[11.5px] text-muted">
+        <ul className={`mt-2 space-y-1 ${table.notesReadable ? "text-[13px] font-medium text-ink" : "text-[11.5px] text-muted"}`}>
           {table.notes.map((n, i) => (
             <li key={i}>{n}</li>
           ))}

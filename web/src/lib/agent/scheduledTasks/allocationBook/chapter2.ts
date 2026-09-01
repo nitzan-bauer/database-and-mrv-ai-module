@@ -171,12 +171,17 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
   cnTable.rows.push(["GRAND TOTAL", "", "", fmt(cnNetTotal)]);
   cnTable.emphasisRowIndexes!.push(cnTable.rows.length - 1);
 
-  farmsTable.notes = [
-    "* Gross/Offset show the farm's own Rev-Share portion (per the Split column) of the plot's full potential and of the buyer's offset — the same convention Section 2.2 uses for CarboNature's share. Gross - Offset = Net exactly. The buyer's offset is always split by the same Rev-Share percentage as everything else, so the farm and CarboNature always lose an equal amount from a given deal (confirmed live 2026-09-01, after Nitzan flagged the previous display as looking like the farm alone absorbed the full offset).",
-  ];
-  cnTable.notes = [
-    "* The negative row in a project's section (\"Project Funding\") is the exact credits already sold to a buyer in Chapter 1, netted out here so CarboNature's total reflects what's actually still available — not double-counted.",
-  ];
+  // No footnotes on 2.1/2.2's own tables — Nitzan's explicit instruction
+  // (2026-09-01). The one thing worth keeping visible in Chapter 2 — the
+  // credit-yield keys the Gross figures above are built from — gets its
+  // own short, readable-font line instead (see PLOT_TYPE_LABELS below),
+  // not small print.
+  const PLOT_TYPE_LABELS: Record<string, string> = { open_field: "Open Field", young_orchard: "Young Orchard", mature_orchard: "Mature Orchard" };
+  const yieldKeyLines = [...data.rateByPlotType.entries()]
+    .map(([type, rate]) => `${PLOT_TYPE_LABELS[type] ?? type}: ${rate} VCU/ha`)
+    .join("  |  ");
+  farmsTable.notes = yieldKeyLines ? [`Credit-yield keys (admin-editable) — ${yieldKeyLines}`] : [];
+  farmsTable.notesFontSize = 9.5;
 
   // ---------- 5.3 — TOTAL CREDIT IN VALUE (reconciliation gate) ----------
   const allFarmRows = [...data.byProject.values()].flat();
@@ -215,10 +220,10 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
     boldRowIndexes: [0, 4],
     emphasisRowIndexes: [5],
     spacerRowIndexes: [],
-    notes: [
-      "* Confirmed 2026-08-31: this check is on credit QUANTITY only, never monetary value — buyers are valued at their own real signed price while Farms/CarboNature use the fixed potential-price key, so a value gap is expected and does not affect reconciliation.",
-      "* Bounded retry (confirmed 2026-08-31): on a mismatch, one re-sync + one re-check; if still not reconciled, this report still sends, clearly marked NOT RECONCILED, for manual review — never silent, never retried indefinitely.",
-    ],
+    // No footnotes here either — Nitzan's explicit instruction (2026-09-01).
+    // The quantity-only / bounded-retry rules are still fully in force
+    // (see negativeBalance.ts, reconciliation logic above); they're just
+    // no longer restated as small print under this table every run.
   };
 
   return {

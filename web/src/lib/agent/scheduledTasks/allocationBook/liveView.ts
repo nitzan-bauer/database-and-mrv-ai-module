@@ -18,6 +18,8 @@ export interface LiveTable {
   headers: (string | [string, string])[];
   rows: LiveRow[];
   notes?: string[];
+  /** When true, `notes` render as normal readable text instead of small print — for a short key reference line, not a footnote (Nitzan, 2026-09-01). */
+  notesReadable?: boolean;
   /** Index of the column that should get the highlighted "net" treatment (dark header, tinted cells) — mirrors mockTable's netCol in the spec docx. */
   netCol?: number;
 }
@@ -52,6 +54,7 @@ export function toLiveTable(t: LetterheadTable, opts?: { headerOverride?: (strin
     headers: opts?.headerOverride ?? t.columns.map((c) => c.header),
     rows,
     notes: t.notes,
+    notesReadable: (t.notesFontSize ?? 0) >= 9,
     netCol: opts?.netCol,
   };
 }

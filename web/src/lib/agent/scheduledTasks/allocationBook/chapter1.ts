@@ -16,7 +16,7 @@ export function pricePerCredit(value: number, credits: number): string {
   return credits ? `$${(value / credits).toFixed(2)}` : "-";
 }
 export function trackLabel(dealType: string): string {
-  if (dealType === "agri_inputs") return "Agri Inputs";
+  if (dealType === "agri_inputs") return "Agri Inputs Funding";
   if (dealType === "project_funding") return "Project Funding";
   return dealType;
 }
@@ -104,21 +104,10 @@ export function buildChapter1Table(data: PotentialData): { table: LetterheadTabl
   table.rows.push(["GRAND TOTAL", "", "", "", fmt(grand.credits), usd(grand.value), "", "", ""]);
   table.emphasisRowIndexes!.push(table.rows.length - 1);
 
-  const notes: string[] = [
-    // Confirmed live 2026-08-31: this WAS real (Agri-Inputs priced by
-    // cost-of-application ÷ credits, e.g. $7.20) until Nitzan corrected the
-    // model in carbonature-saas the same day — Agri-Inputs now prices
-    // identically to Project Funding (credits x the same per-project $/
-    // credit key), verified live on the next 2 real signed deals (both
-    // landed at exactly the project's standard price). Deals signed before
-    // the fix keep their old, lower price — not retroactively recomputed.
-  ];
-  if (sawTestData) {
-    notes.push(
-      "* (TEST) rows are real transactional records forced through before their contract/payment step completed, per an explicit test request (2026-08-31) — included in every total exactly as a real deal would be, so this report shows what it will genuinely look like once real.",
-    );
-  }
-  table.notes = notes;
+  // No footnotes on this table — Nitzan's explicit instruction (2026-09-01):
+  // the small print under Chapters 1 and 2's tables wasn't relevant. A
+  // (TEST) row is still tagged in the Track column itself if one ever
+  // appears; that tag alone is the signal now, no explanatory footnote.
 
   return { table, grand, sawTestData };
 }

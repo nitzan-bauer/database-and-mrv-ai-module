@@ -9,10 +9,12 @@ export const TASK_KEY = "john_credit_potential_estimate";
  * Pre-sampling credit-yield potential, computed for every plot (sold or
  * not) — the campaign launches well before any real soil-sampling round,
  * so this is the only "how many credits could this farm generate" number
- * available for most of the plan's life. Plot type is derived from which
- * project a plot belongs to (mrv.project_plot_type_defaults), per Nitzan's
- * own confirmation — no new intake field anywhere. Rates come from the
- * admin-editable mrv.credit_yield_rate_table, never hardcoded here.
+ * available for most of the plan's life. Plot type resolves per farm
+ * (plotTypeResolver.ts): a farm's own admin-set override wins (young vs.
+ * mature orchard, 9 vs. 3 tCO2e/ha — a real distinction an admin decides
+ * per farm, 2026-09-01), else the farm's project default
+ * (mrv.project_plot_type_defaults). Rates come from the admin-editable
+ * mrv.credit_yield_rate_table, never hardcoded here.
  *
  * Upserts one 'rate_table' row per plot (idx_credit_yield_estimates_plot_method
  * is unique on (plot_id, method)) — safe to re-run every week as the rate
@@ -31,10 +33,8 @@ export async function runJohnCreditPotentialEstimate(ctx: ToolContext): Promise<
     return { ok: false, detail: `john_credit_potential_estimate: could not reach the SaaS database — ${e instanceof Error ? e.message : e}` };
   }
 
-  const defaults = await query<{ project_id: string; default_plot_type: string }>(
-    `SELECT project_id, default_plot_type FROM mrv.project_plot_type_defaults`,
-  );
-  const plotTypeByProject = new Map(defaults.map((d) => [d.project_id, d.default_plot_type]));
+  const { resolvePlotTypesByFarm } = await import("./plotTypeResolver");
+  const plotTypeByFarm = await resolvePlotTypesByFarm();
 
   const rates = await query<{ plot_type: string; rate_per_ha: string }>(`SELECT plot_type, rate_per_ha FROM mrv.credit_yield_rate_table`);
   const rateByType = new Map(rates.map((r) => [r.plot_type, Number(r.rate_per_ha)]));
@@ -44,7 +44,7 @@ export async function runJohnCreditPotentialEstimate(ctx: ToolContext): Promise<
 
   for (const plot of plots) {
     if (!plot.farm_id) continue; // an unassigned/template plot, not a real farm's
-    const plotType = plotTypeByProject.get(plot.project_id);
+    const plotType = plotTypeByFarm.get(plot.farm_id);
     const rate = plotType ? rateByType.get(plotType) : undefined;
     if (!plotType || rate === undefined) {
       skippedNoMapping++;
@@ -64,7 +64,7 @@ export async function runJohnCreditPotentialEstimate(ctx: ToolContext): Promise<
 
   const paragraphs = [
     `Computed/refreshed potential-credit estimates for ${written} plot(s).`,
-    skippedNoMapping ? `${skippedNoMapping} plot(s) skipped — no project→plot-type mapping found for their project.` : `Every plot had a project→plot-type mapping.`,
+    skippedNoMapping ? `${skippedNoMapping} plot(s) skipped — no resolvable plot type for their farm (no override and no project default).` : `Every plot resolved to a plot type.`,
   ];
 
   const outcome = await finishScheduledTask(ctx, {

@@ -22,13 +22,24 @@ export interface NegativeBalanceResult {
  * itself renders (queries.ts's PotentialData), so the alert and the
  * report can never silently disagree about a balance.
  *
- * Option B (Nitzan's explicit choice, 2026-08-31): at CarboNature's 20%
+ * Option B (Nitzan's explicit choice, 2026-08-31): at CarboNature's block
  * threshold, BOTH financing tracks are blocked for that project — not
- * just Project Funding. A farm's own 20% threshold only ever blocks
+ * just Project Funding. A farm's own block threshold only ever blocks
  * Agri Inputs (a farm has no Project Funding deals to block).
+ *
+ * The alert/block thresholds themselves are admin-editable (2026-09-01,
+ * mrv.negative_balance_settings, /admin panel) — read fresh every run,
+ * never hardcoded here.
  */
 export async function computeAndApplyNegativeBalanceFlags(data: PotentialData): Promise<NegativeBalanceResult> {
   const { query } = await import("../../../db");
+
+  const settingsRows = await query<{ setting_key: string; threshold_pct: number }>(
+    `SELECT setting_key, threshold_pct FROM mrv.negative_balance_settings`,
+  );
+  const settings = new Map(settingsRows.map((s) => [s.setting_key, s.threshold_pct]));
+  const alertThreshold = settings.get("alert_threshold_pct") ?? 30;
+  const blockThreshold = settings.get("block_threshold_pct") ?? 20;
 
   const checks: BalanceCheck[] = [];
 
@@ -55,8 +66,8 @@ export async function computeAndApplyNegativeBalanceFlags(data: PotentialData): 
 
   for (const c of checks) {
     const desiredThresholds = new Set<number>();
-    if (c.balancePct <= 30) desiredThresholds.add(30);
-    if (c.balancePct <= 20) desiredThresholds.add(20);
+    if (c.balancePct <= alertThreshold) desiredThresholds.add(alertThreshold);
+    if (c.balancePct <= blockThreshold) desiredThresholds.add(blockThreshold);
 
     const existing = await query<{ threshold_pct: number }>(
       `SELECT threshold_pct FROM mrv.negative_balance_flags WHERE scope_type = $1 AND scope_id = $2 AND status = 'active'`,
@@ -64,12 +75,12 @@ export async function computeAndApplyNegativeBalanceFlags(data: PotentialData): 
     );
     const existingThresholds = new Set(existing.map((e) => e.threshold_pct));
 
-    for (const threshold of [30, 20]) {
+    for (const threshold of new Set([alertThreshold, blockThreshold])) {
       const wants = desiredThresholds.has(threshold);
       const has = existingThresholds.has(threshold);
       if (wants && !has) {
-        const blocksAgriInputs = threshold === 20;
-        const blocksProjectFunding = threshold === 20 && c.scopeType === "project_cn";
+        const blocksAgriInputs = threshold === blockThreshold;
+        const blocksProjectFunding = threshold === blockThreshold && c.scopeType === "project_cn";
         await query(
           `INSERT INTO mrv.negative_balance_flags
              (scope_type, scope_id, project_id, threshold_pct, balance_pct_at_trigger, blocks_agri_inputs, blocks_project_funding)
@@ -78,7 +89,7 @@ export async function computeAndApplyNegativeBalanceFlags(data: PotentialData): 
         );
         newAlerts.push(
           `${c.label}: balance at ${c.balancePct.toFixed(1)}% (<=${threshold}%) - ${
-            threshold === 20 ? (c.scopeType === "project_cn" ? "new Project Funding AND Agri Inputs deals blocked for this project" : "new Agri Inputs deals blocked for this farm") : "alert only"
+            threshold === blockThreshold ? (c.scopeType === "project_cn" ? "new Project Funding AND Agri Inputs deals blocked for this project" : "new Agri Inputs deals blocked for this farm") : "alert only"
           }.`,
         );
       } else if (!wants && has) {

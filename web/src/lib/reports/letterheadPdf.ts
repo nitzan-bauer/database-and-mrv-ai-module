@@ -96,6 +96,8 @@ export interface LetterheadTable {
   emphasisRowIndexes?: number[];
   /** Small-print lines rendered right after THIS table, before the next one — for working assumptions that belong under a specific table, not lumped with the report's opening paragraphs (Nitzan, 2026-08-30). */
   notes?: string[];
+  /** Overrides the default 8pt gray small-print size for THIS table's notes — for a short, key reference line that should read as normal body text, not a footnote (Nitzan, 2026-09-01: "readable font, short lines, no stories"). */
+  notesFontSize?: number;
   /** Overrides the default 9pt data / 8.5pt header size — for a table with enough real columns (buyer name, transaction #, deal date, ...) that shrinking column widths further would start cutting real content rather than whitespace. Found live 2026-08-30: an 8-column Credit Buyers table had no width left to give without truncating something real. */
   fontSize?: number;
 }
@@ -446,12 +448,18 @@ export async function buildLetterheadPdf(input: {
 
     y -= 14;
 
-    // Small-print notes for THIS table — positioned here, not lumped with the opening paragraphs, with a little breathing room between each one.
+    // Notes for THIS table — positioned here, not lumped with the opening
+    // paragraphs, with a little breathing room between each one. Small
+    // gray print by default; notesFontSize lets a specific table's notes
+    // read as normal body text instead (Nitzan, 2026-09-01).
+    const noteSize = table.notesFontSize ?? 8;
+    const noteLineGap = noteSize + 3;
+    const noteColor = noteSize >= 9 ? INK : GRAY;
     for (const note of table.notes ?? []) {
-      for (const line of wrapLines(font, note, 8, contentWidth)) {
-        need(12);
-        page!.drawText(wa(line), { x: M, y, size: 8, font, color: GRAY });
-        y -= 11;
+      for (const line of wrapLines(font, note, noteSize, contentWidth)) {
+        need(noteLineGap);
+        page!.drawText(wa(line), { x: M, y, size: noteSize, font, color: noteColor });
+        y -= noteLineGap;
       }
       y -= 4;
     }

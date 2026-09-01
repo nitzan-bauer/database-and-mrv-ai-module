@@ -92,15 +92,13 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
     if (existing.length) return Number(existing[0].estimated_credits);
 
     const plot = plotById.get(plotId);
-    if (!plot) return null;
-    const defaults = await query<{ default_plot_type: string }>(
-      `SELECT default_plot_type FROM mrv.project_plot_type_defaults WHERE project_id = $1`,
-      [plot.project_id],
-    );
-    if (!defaults.length) return null;
+    if (!plot || !plot.farm_id) return null;
+    const { resolvePlotTypesByFarm } = await import("./plotTypeResolver");
+    const plotType = (await resolvePlotTypesByFarm()).get(plot.farm_id);
+    if (!plotType) return null;
     const rates = await query<{ rate_per_ha: string }>(
       `SELECT rate_per_ha FROM mrv.credit_yield_rate_table WHERE plot_type = $1`,
-      [defaults[0].default_plot_type],
+      [plotType],
     );
     if (!rates.length) return null;
     return Number(rates[0].rate_per_ha) * Number(plot.area_ha);

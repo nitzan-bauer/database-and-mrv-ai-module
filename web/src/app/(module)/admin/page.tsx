@@ -16,6 +16,8 @@ import { DocumentsPanel } from "@/components/admin/DocumentsPanel";
 import { AgentLearningPanel } from "@/components/admin/AgentLearningPanel";
 import { CreditYieldRatesPanel, type CreditYieldRate } from "@/components/admin/CreditYieldRatesPanel";
 import { CropCycleLengthsPanel, type CropCycleLength } from "@/components/admin/CropCycleLengthsPanel";
+import { NegativeBalanceThresholdsPanel, type NegativeBalanceThreshold } from "@/components/admin/NegativeBalanceThresholdsPanel";
+import { FarmPlotTypePanel, type FarmPlotType } from "@/components/admin/FarmPlotTypePanel";
 import { listAgentLearningStats } from "@/lib/agent/learningStats";
 import type { DriveFile } from "@/lib/google/driveClient";
 import type { LinkedDriveFolder } from "@/lib/tools/linkFarmDriveFolder";
@@ -101,6 +103,8 @@ export default async function AdminPage() {
   let isSuperAdmin = false;
   let creditYieldRates: CreditYieldRate[] = [];
   let cropCycleLengths: CropCycleLength[] = [];
+  let negativeBalanceThresholds: NegativeBalanceThreshold[] = [];
+  let farmPlotTypes: FarmPlotType[] = [];
   if (DATA_MODE === "db" && session?.user?.email) {
     const { query } = await import("@/lib/db");
     const roleRows = await query<{ role: string }>(
@@ -129,6 +133,35 @@ export default async function AdminPage() {
         cycleDays: r.cycle_days,
         updatedBy: r.updated_by,
         updatedAt: r.updated_at,
+      }));
+
+      const thresholdRows = await query<{ setting_key: string; threshold_pct: number; updated_by: string | null; updated_at: string }>(
+        `SELECT setting_key, threshold_pct, updated_by, updated_at FROM mrv.negative_balance_settings ORDER BY setting_key`,
+      );
+      negativeBalanceThresholds = thresholdRows.map((r) => ({
+        settingKey: r.setting_key as NegativeBalanceThreshold["settingKey"],
+        thresholdPct: r.threshold_pct,
+        updatedBy: r.updated_by,
+        updatedAt: r.updated_at,
+      }));
+
+      // One row per farm: its own override (if any) plus its project's
+      // default, sourced from the most recent credit-yield estimate run —
+      // that table already carries each farm's real SaaS financing
+      // project_id, which mrv.farms itself does not.
+      const farmRows = await query<{ farm_id: string; farm_name: string; plot_type_override: string | null; project_default: string | null }>(
+        `SELECT f.farm_id, f.name AS farm_name, f.plot_type_override::text AS plot_type_override,
+                (SELECT d.default_plot_type FROM mrv.credit_yield_estimates e
+                   JOIN mrv.project_plot_type_defaults d ON d.project_id = e.project_id
+                  WHERE e.farm_id = f.farm_id LIMIT 1) AS project_default
+           FROM mrv.farms f
+          ORDER BY f.name`,
+      );
+      farmPlotTypes = farmRows.map((r) => ({
+        farmId: r.farm_id,
+        farmName: r.farm_name,
+        projectDefault: r.project_default,
+        override: r.plot_type_override,
       }));
     }
   }
@@ -195,6 +228,66 @@ export default async function AdminPage() {
     );
     return { ok: true };
   }
+  async function saveNegativeBalanceThresholdAction(settingKey: string, thresholdPct: number): Promise<{ ok: boolean; error?: string }> {
+    "use server";
+    const session = await auth().catch(() => null);
+    const actor = session?.user?.email;
+    if (!actor) return { ok: false, error: "Not signed in." };
+
+    const { query } = await import("@/lib/db");
+    const roleRows = await query<{ role: string }>(
+      `SELECT m.role::text AS role FROM mrv.project_memberships m
+         JOIN mrv.users u ON u.user_id = m.user_id
+        WHERE u.email = $1 AND m.role = 'super_admin' LIMIT 1`,
+      [actor],
+    );
+    if (!roleRows.length) return { ok: false, error: "Only a super_admin can edit negative-balance thresholds." };
+    if (!["alert_threshold_pct", "block_threshold_pct"].includes(settingKey)) {
+      return { ok: false, error: `Unknown setting "${settingKey}".` };
+    }
+    if (!Number.isInteger(thresholdPct) || thresholdPct <= 0 || thresholdPct >= 100) {
+      return { ok: false, error: "Threshold must be a whole number between 1 and 99." };
+    }
+
+    await query(
+      `UPDATE mrv.negative_balance_settings SET threshold_pct = $1, updated_by = $2, updated_at = now() WHERE setting_key = $3`,
+      [thresholdPct, actor, settingKey],
+    );
+    await query(
+      `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
+       VALUES ($1, 'update_negative_balance_threshold', 'negative_balance_settings', $2, $3::jsonb)`,
+      [actor, settingKey, JSON.stringify({ settingKey, thresholdPct })],
+    );
+    return { ok: true };
+  }
+
+  async function saveFarmPlotTypeAction(farmId: string, plotType: string | null): Promise<{ ok: boolean; error?: string }> {
+    "use server";
+    const session = await auth().catch(() => null);
+    const actor = session?.user?.email;
+    if (!actor) return { ok: false, error: "Not signed in." };
+
+    const { query } = await import("@/lib/db");
+    const roleRows = await query<{ role: string }>(
+      `SELECT m.role::text AS role FROM mrv.project_memberships m
+         JOIN mrv.users u ON u.user_id = m.user_id
+        WHERE u.email = $1 AND m.role = 'super_admin' LIMIT 1`,
+      [actor],
+    );
+    if (!roleRows.length) return { ok: false, error: "Only a super_admin can edit a farm's plot type." };
+    if (plotType !== null && !["open_field", "young_orchard", "mature_orchard"].includes(plotType)) {
+      return { ok: false, error: `Unknown plot type "${plotType}".` };
+    }
+
+    await query(`UPDATE mrv.farms SET plot_type_override = $1, updated_at = now() WHERE farm_id = $2`, [plotType, farmId]);
+    await query(
+      `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
+       VALUES ($1, 'update_farm_plot_type_override', 'farms', $2, $3::jsonb)`,
+      [actor, farmId, JSON.stringify({ farmId, plotType })],
+    );
+    return { ok: true };
+  }
+
   const pddDraftOptions = pddDrafts.map((d) => ({
     draftId: d.draftId,
     label: `${d.templateName} ${d.templateVersion} · ${new Date(d.generatedAt).toLocaleDateString("en-GB")}`,
@@ -316,6 +409,8 @@ export default async function AdminPage() {
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <CreditYieldRatesPanel rates={creditYieldRates} save={saveCreditYieldRateAction} />
             <CropCycleLengthsPanel crops={cropCycleLengths} save={saveCropCycleLengthAction} />
+            <NegativeBalanceThresholdsPanel thresholds={negativeBalanceThresholds} save={saveNegativeBalanceThresholdAction} />
+            <FarmPlotTypePanel farms={farmPlotTypes} save={saveFarmPlotTypeAction} />
           </div>
         </section>
       )}
