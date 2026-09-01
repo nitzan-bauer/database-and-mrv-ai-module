@@ -104,13 +104,14 @@ export function buildChapter1Table(data: PotentialData): { table: LetterheadTabl
   table.rows.push(["GRAND TOTAL", "", "", "", fmt(grand.credits), usd(grand.value), "", "", ""]);
   table.emphasisRowIndexes!.push(table.rows.length - 1);
 
-  const notes = [
-    // Confirmed live 2026-08-31: an Agri-Inputs row's "Price" is that
-    // deal's real cost-of-application ÷ resulting credits — NOT a carbon-
-    // credit sale price. Only Project Funding is priced by the standard
-    // $/credit key. A low Agri-Inputs "price" (e.g. $7.20) is real, not a
-    // bug — it reflects a cheap input relative to the credits it unlocked.
-    "* \"Price\" for a Project Funding row is the buyer's real signed $/credit. For an Agri Inputs row it is that input's real application cost divided by the credits it unlocks — a different, unrelated basis, so it will not resemble the standard credit price.",
+  const notes: string[] = [
+    // Confirmed live 2026-08-31: this WAS real (Agri-Inputs priced by
+    // cost-of-application ÷ credits, e.g. $7.20) until Nitzan corrected the
+    // model in carbonature-saas the same day — Agri-Inputs now prices
+    // identically to Project Funding (credits x the same per-project $/
+    // credit key), verified live on the next 2 real signed deals (both
+    // landed at exactly the project's standard price). Deals signed before
+    // the fix keep their old, lower price — not retroactively recomputed.
   ];
   if (sawTestData) {
     notes.push(
