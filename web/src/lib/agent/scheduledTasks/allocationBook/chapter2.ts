@@ -111,18 +111,29 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
     const cnSub = { gross: 0, offset: 0, net: 0 };
 
     for (const r of farmRows) {
+      // Gross/Offset shown as the FARM's own 50%-share of each (matching
+      // exactly how the CarboNature table below already shows CN's share),
+      // not the deal's raw full-potential/full-offset — so Gross - Offset
+      // = Net reconciles by simple arithmetic, and the split (buyer's
+      // offset always shared equally, see cnOffsetShare below) is visibly
+      // symmetric rather than looking like the farm absorbs the whole
+      // offset (a real, reasonable misreading flagged live 2026-09-01 —
+      // the underlying math was always a true 50:50 split; the previous
+      // display style just made it look like 100% hit the farm).
+      const farmGrossShare = r.farmPotential * r.farmerSharePct;
+      const farmOffsetShare = -(r.buyerCredits * r.farmerSharePct);
       farmsTable.rows.push([
         r.includesTestData ? `${r.farmName} (TEST)` : r.farmName,
         fmt(r.areaHa),
         r.agriInputs ?? "-",
         splitLabel(r.farmerSharePct),
-        fmt(r.farmPotential),
-        fmt(-r.buyerCredits),
+        fmt(farmGrossShare),
+        fmt(farmOffsetShare),
         fmt(r.farmCredits),
       ]);
       farmSub.area += r.areaHa;
-      farmSub.gross += r.farmPotential;
-      farmSub.offset += -r.buyerCredits;
+      farmSub.gross += farmGrossShare;
+      farmSub.offset += farmOffsetShare;
       farmSub.net += r.farmCredits;
 
       // CarboNature's own Gross/Offset, decomposed so Gross - Offset = Net
@@ -161,7 +172,7 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
   cnTable.emphasisRowIndexes!.push(cnTable.rows.length - 1);
 
   farmsTable.notes = [
-    "* Gross/Offset show the farm's own full potential and the full Agri-Inputs offset quantity; Net is this farm's Rev-Share of what remains after that offset (Section 2.1, confirmed format 2026-08-31).",
+    "* Gross/Offset show the farm's own Rev-Share portion (per the Split column) of the plot's full potential and of the buyer's offset — the same convention Section 2.2 uses for CarboNature's share. Gross - Offset = Net exactly. The buyer's offset is always split by the same Rev-Share percentage as everything else, so the farm and CarboNature always lose an equal amount from a given deal (confirmed live 2026-09-01, after Nitzan flagged the previous display as looking like the farm alone absorbed the full offset).",
   ];
   cnTable.notes = [
     "* The negative row in a project's section (\"Project Funding\") is the exact credits already sold to a buyer in Chapter 1, netted out here so CarboNature's total reflects what's actually still available — not double-counted.",
