@@ -93,8 +93,8 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
 
     const plot = plotById.get(plotId);
     if (!plot || !plot.farm_id) return null;
-    const { resolvePlotTypesByFarm } = await import("./plotTypeResolver");
-    const plotType = (await resolvePlotTypesByFarm()).get(plot.farm_id);
+    const { loadPlotTypeMaps, resolvePlotType } = await import("./plotTypeResolver");
+    const plotType = resolvePlotType(await loadPlotTypeMaps(), plot.farm_id, plot.project_id);
     if (!plotType) return null;
     const rates = await query<{ rate_per_ha: string }>(
       `SELECT rate_per_ha FROM mrv.credit_yield_rate_table WHERE plot_type = $1`,

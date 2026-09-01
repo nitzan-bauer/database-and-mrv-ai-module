@@ -33,8 +33,8 @@ export async function runJohnCreditPotentialEstimate(ctx: ToolContext): Promise<
     return { ok: false, detail: `john_credit_potential_estimate: could not reach the SaaS database — ${e instanceof Error ? e.message : e}` };
   }
 
-  const { resolvePlotTypesByFarm } = await import("./plotTypeResolver");
-  const plotTypeByFarm = await resolvePlotTypesByFarm();
+  const { loadPlotTypeMaps, resolvePlotType } = await import("./plotTypeResolver");
+  const plotTypeMaps = await loadPlotTypeMaps();
 
   const rates = await query<{ plot_type: string; rate_per_ha: string }>(`SELECT plot_type, rate_per_ha FROM mrv.credit_yield_rate_table`);
   const rateByType = new Map(rates.map((r) => [r.plot_type, Number(r.rate_per_ha)]));
@@ -44,7 +44,7 @@ export async function runJohnCreditPotentialEstimate(ctx: ToolContext): Promise<
 
   for (const plot of plots) {
     if (!plot.farm_id) continue; // an unassigned/template plot, not a real farm's
-    const plotType = plotTypeByFarm.get(plot.farm_id);
+    const plotType = resolvePlotType(plotTypeMaps, plot.farm_id, plot.project_id);
     const rate = plotType ? rateByType.get(plotType) : undefined;
     if (!plotType || rate === undefined) {
       skippedNoMapping++;

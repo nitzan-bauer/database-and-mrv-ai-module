@@ -145,24 +145,30 @@ export default async function AdminPage() {
         updatedAt: r.updated_at,
       }));
 
-      // One row per farm: its own override (if any) plus its project's
-      // default, sourced from the most recent credit-yield estimate run —
-      // that table already carries each farm's real SaaS financing
-      // project_id, which mrv.farms itself does not.
-      const farmRows = await query<{ farm_id: string; farm_name: string; plot_type_override: string | null; project_default: string | null }>(
-        `SELECT f.farm_id, f.name AS farm_name, f.plot_type_override::text AS plot_type_override,
-                (SELECT d.default_plot_type FROM mrv.credit_yield_estimates e
-                   JOIN mrv.project_plot_type_defaults d ON d.project_id = e.project_id
-                  WHERE e.farm_id = f.farm_id LIMIT 1) AS project_default
-           FROM mrv.farms f
-          ORDER BY f.name`,
+      // Every farm this feature could plausibly apply to — sourced from
+      // mrv.credit_yield_estimates (every farm the whole Book actually
+      // covers), NOT mrv.farms, which is a curated subset that's missing
+      // real active farms (confirmed live 2026-09-01: the one real
+      // orchard farm had no mrv.farms row at all). Names come straight
+      // from the SaaS, the same source of truth the report itself uses,
+      // so a farm shows up here even without any local admin record.
+      const { listFarmNamesByIds } = await import("@/lib/saas/saasClient");
+      const farmProjectRows = await query<{ farm_id: string; project_id: string; project_default: string | null }>(
+        `SELECT DISTINCT e.farm_id, e.project_id, d.default_plot_type AS project_default
+           FROM mrv.credit_yield_estimates e
+           LEFT JOIN mrv.project_plot_type_defaults d ON d.project_id = e.project_id`,
       );
-      farmPlotTypes = farmRows.map((r) => ({
-        farmId: r.farm_id,
-        farmName: r.farm_name,
-        projectDefault: r.project_default,
-        override: r.plot_type_override,
-      }));
+      const overrideRows = await query<{ farm_id: string; plot_type: string }>(`SELECT farm_id, plot_type FROM mrv.farm_plot_type_overrides`);
+      const overrideByFarm = new Map(overrideRows.map((r) => [r.farm_id, r.plot_type]));
+      const farmNames = await listFarmNamesByIds(farmProjectRows.map((r) => r.farm_id));
+      farmPlotTypes = farmProjectRows
+        .map((r) => ({
+          farmId: r.farm_id,
+          farmName: farmNames.get(r.farm_id) ?? r.farm_id,
+          projectDefault: r.project_default,
+          override: overrideByFarm.get(r.farm_id) ?? null,
+        }))
+        .sort((a, b) => a.farmName.localeCompare(b.farmName));
     }
   }
 
@@ -279,7 +285,16 @@ export default async function AdminPage() {
       return { ok: false, error: `Unknown plot type "${plotType}".` };
     }
 
-    await query(`UPDATE mrv.farms SET plot_type_override = $1, updated_at = now() WHERE farm_id = $2`, [plotType, farmId]);
+    if (plotType === null) {
+      await query(`DELETE FROM mrv.farm_plot_type_overrides WHERE farm_id = $1`, [farmId]);
+    } else {
+      await query(
+        `INSERT INTO mrv.farm_plot_type_overrides (farm_id, plot_type, updated_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (farm_id) DO UPDATE SET plot_type = $2, updated_by = $3, updated_at = now()`,
+        [farmId, plotType, actor],
+      );
+    }
     await query(
       `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
        VALUES ($1, 'update_farm_plot_type_override', 'farms', $2, $3::jsonb)`,
