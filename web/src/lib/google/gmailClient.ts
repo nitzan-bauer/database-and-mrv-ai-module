@@ -181,11 +181,53 @@ function encodeHeaderText(text: string): string {
 }
 
 /**
+ * Reads a "send as" address's own Settings → General signature (the exact
+ * HTML shown in Gmail's UI, including whatever photo/branding is currently
+ * configured there). Confirmed live 2026-09-02: `messages.send` never
+ * applies this on its own — it is purely a compose-UI behavior — every
+ * agent's signature has been sitting configured and untouched in Settings
+ * the whole time, just never carried into any automated email. This is the
+ * read half of the real fix: fetch it and embed it ourselves. GET on a
+ * non-primary sendAs address needs no special scope beyond what's already
+ * granted (`gmail.settings.basic`) — only *writing* one needs Workspace
+ * domain-wide delegation (see project_mrv_agent_email_signatures memory).
+ */
+export async function getSendAsSignature(accessToken: string, sendAsEmail: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs/${encodeURIComponent(sendAsEmail)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { signature?: string };
+    const sig = data.signature?.trim();
+    return sig && sig.length > 0 ? sig : null;
+  } catch {
+    return null;
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function bodyTextToHtml(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map(
+      (para) =>
+        `<p style="margin:0 0 12px;font-family:Arial,sans-serif;font-size:14px;color:#202124;">${escapeHtml(para).replace(/\n/g, "<br>")}</p>`,
+    )
+    .join("");
+}
+
+/**
  * Send a real email, with an optional attachment (the PDD Generator
  * pipeline's own "email me the PDF" step). Builds a minimal RFC 2822
- * multipart/mixed message by hand — one text part plus one attachment
- * part — rather than pulling in a MIME-building library for a shape
- * this simple.
+ * message by hand rather than pulling in a MIME-building library for a
+ * shape this simple: multipart/mixed(attachment + multipart/alternative(
+ * text/plain, text/html-with-signature)) when a signature is found for
+ * `from`, otherwise the original plain single-part behavior unchanged.
  */
 export async function sendGmailMessage(
   accessToken: string,
@@ -204,37 +246,85 @@ export async function sendGmailMessage(
     from?: string;
   },
 ): Promise<{ id: string }> {
-  const boundary = "mrv-mime-" + Math.random().toString(36).slice(2);
-  const parts: string[] = [
+  const signatureHtml = input.from ? await getSendAsSignature(accessToken, input.from) : null;
+
+  const headerLines = [
     ...(input.from ? [`From: ${input.from}`] : []),
     `To: ${input.to}`,
     `Subject: ${encodeHeaderText(input.subject)}`,
     "MIME-Version: 1.0",
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "",
-    input.bodyText,
-    "",
   ];
+
   let raw: Buffer;
-  if (input.attachment) {
-    const headerBuf = Buffer.from(
-      parts.join("\r\n") +
-        `--${boundary}\r\n` +
-        `Content-Type: ${input.attachment.mimeType}; name="${input.attachment.fileName}"\r\n` +
-        `Content-Disposition: attachment; filename="${input.attachment.fileName}"\r\n` +
-        "Content-Transfer-Encoding: base64\r\n\r\n",
-      "utf8",
-    );
-    raw = Buffer.concat([
-      headerBuf,
-      Buffer.from(input.attachment.content.toString("base64").replace(/(.{76})/g, "$1\r\n"), "utf8"),
-      Buffer.from(`\r\n--${boundary}--`, "utf8"),
-    ]);
+
+  if (!signatureHtml) {
+    // Unchanged fallback — identical to the original implementation.
+    const boundary = "mrv-mime-" + Math.random().toString(36).slice(2);
+    const parts: string[] = [
+      ...headerLines,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "",
+      input.bodyText,
+      "",
+    ];
+    if (input.attachment) {
+      const headerBuf = Buffer.from(
+        parts.join("\r\n") +
+          `--${boundary}\r\n` +
+          `Content-Type: ${input.attachment.mimeType}; name="${input.attachment.fileName}"\r\n` +
+          `Content-Disposition: attachment; filename="${input.attachment.fileName}"\r\n` +
+          "Content-Transfer-Encoding: base64\r\n\r\n",
+        "utf8",
+      );
+      raw = Buffer.concat([
+        headerBuf,
+        Buffer.from(input.attachment.content.toString("base64").replace(/(.{76})/g, "$1\r\n"), "utf8"),
+        Buffer.from(`\r\n--${boundary}--`, "utf8"),
+      ]);
+    } else {
+      raw = Buffer.from(parts.join("\r\n") + `--${boundary}--`, "utf8");
+    }
   } else {
-    raw = Buffer.from(parts.join("\r\n") + `--${boundary}--`, "utf8");
+    const altBoundary = "mrv-alt-" + Math.random().toString(36).slice(2);
+    const altBody =
+      `--${altBoundary}\r\n` +
+      "Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
+      `${input.bodyText}\r\n\r\n` +
+      `--${altBoundary}\r\n` +
+      "Content-Type: text/html; charset=UTF-8\r\n\r\n" +
+      `<div>${bodyTextToHtml(input.bodyText)}<br>${signatureHtml}</div>\r\n\r\n` +
+      `--${altBoundary}--`;
+
+    if (input.attachment) {
+      const mixedBoundary = "mrv-mime-" + Math.random().toString(36).slice(2);
+      const headerBuf = Buffer.from(
+        headerLines.join("\r\n") +
+          "\r\n" +
+          `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n\r\n` +
+          `--${mixedBoundary}\r\n` +
+          `Content-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n` +
+          altBody +
+          "\r\n" +
+          `--${mixedBoundary}\r\n` +
+          `Content-Type: ${input.attachment.mimeType}; name="${input.attachment.fileName}"\r\n` +
+          `Content-Disposition: attachment; filename="${input.attachment.fileName}"\r\n` +
+          "Content-Transfer-Encoding: base64\r\n\r\n",
+        "utf8",
+      );
+      raw = Buffer.concat([
+        headerBuf,
+        Buffer.from(input.attachment.content.toString("base64").replace(/(.{76})/g, "$1\r\n"), "utf8"),
+        Buffer.from(`\r\n--${mixedBoundary}--`, "utf8"),
+      ]);
+    } else {
+      raw = Buffer.from(
+        headerLines.join("\r\n") + "\r\n" + `Content-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n` + altBody,
+        "utf8",
+      );
+    }
   }
 
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
