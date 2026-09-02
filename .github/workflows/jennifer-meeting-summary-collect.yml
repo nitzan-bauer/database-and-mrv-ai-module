@@ -1,0 +1,43 @@
+name: Jennifer meeting-summary collect
+
+# Runs on GitHub's own runners, not the Vercel app — confirmed live
+# 2026-09-02 that a real meeting's download + re-encode + transcribe +
+# summarize + email chain exceeds even Vercel Hobby's maxDuration ceiling
+# (60s, no higher tier without a paid upgrade). GitHub Actions has no such
+# limit — the same reason webinar-recording-scan.yml already runs here.
+
+on:
+  schedule:
+    # Daily 10:00 UTC — well after the weekly Monday 14:00 IDT meeting
+    # ends and Recall has time to finish processing the recording; cheap
+    # to run daily since most days there is nothing pending.
+    - cron: '0 10 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  collect:
+    name: Collect and summarize a finished meeting recording
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Run collect
+        working-directory: web
+        env:
+          RECALLAI_API_KEY: ${{ secrets.RECALLAI_API_KEY }}
+          RECALLAI_REGION: ${{ secrets.RECALLAI_REGION }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EXTERNAL_AGENT_SECRET: ${{ secrets.EXTERNAL_AGENT_SECRET }}
+        run: node scripts/jennifer-meeting-summary-collect.mjs

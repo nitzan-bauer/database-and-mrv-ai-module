@@ -18,58 +18,23 @@ export const TASK_KEY = "jennifer_weekly_meeting_summary";
  * instead and captures raw audio, which Groq Whisper (already proven
  * Hebrew-capable this session) transcribes and Claude summarizes.
  *
- * Two jobs each daily run, on the same 'active' meeting cycle from
- * jenniferWeeklyMeetingCycle.ts:
- *   1. SCHEDULE — an upcoming occurrence within the next few days with no
- *      summary row yet gets a Recall bot scheduled via join_at (Recall's
- *      own infrastructure handles exact-time joining, so this can run any
- *      time before the meeting, not right at the start).
- *   2. COLLECT — a past occurrence still 'scheduled'/'recording' gets
- *      polled; once the audio is ready, transcribe -> summarize -> email
- *      -> mark 'sent'. A bot that failed to join gets marked 'failed' and
- *      reported, never silently dropped.
+ * This task only owns SCHEDULING — an upcoming occurrence within the next
+ * few days with no summary row yet gets a Recall bot scheduled via
+ * join_at (Recall's own infrastructure handles exact-time joining, so
+ * this can run any time before the meeting, not right at the start).
+ *
+ * COLLECTING a past occurrence (poll the bot, transcribe, summarize,
+ * email, mark 'sent'/'failed') used to also live here, but moved to
+ * .github/workflows/jennifer-meeting-summary-collect.yml — confirmed live
+ * 2026-09-02 that a real ~36-minute meeting's download + re-encode +
+ * transcribe + summarize + email chain exceeds even the Hobby plan's
+ * maxDuration ceiling (60s, no higher tier without a paid upgrade) run
+ * inside this Vercel function. GitHub Actions has no such limit, the same
+ * reason rebeka_webinar_recording_summary already runs there.
  */
 
 const MEETING_KEY = "weekly_work_meeting";
-const NOTIFY_TO = "nitzan@carbonature.io, elad@carbonature.io";
 const SCHEDULE_LOOKAHEAD_DAYS = 7; // covers a full week's cadence — the daily cron always finds the upcoming Monday even if a run or two is missed
-const MAX_UPLOAD_BYTES = 24 * 1024 * 1024; // Groq's 25MB cap, with headroom
-// Recall's mixed mp3 defaults to ~128kbps — a 36-minute meeting alone
-// already comes back around 33MB. Recall's own bot-creation API has no
-// bitrate/quality option (confirmed live 2026-09-02 against their docs —
-// audio_mixed_mp3 accepts only a metadata field), so shrinking it happens
-// here, at the same 48kbps this project's webinar-recording-scan.mjs
-// already proved keeps Whisper transcription accurate.
-const REENCODE_BITRATE = "48k";
-
-/**
- * Re-encodes an audio buffer down to REENCODE_BITRATE via ffmpeg, only
- * called once a recording is already confirmed over Groq's limit. Runs in
- * a Vercel serverless function — no system ffmpeg, unlike the GitHub
- * Actions runner webinar-recording-scan.mjs uses — so the binary comes
- * from @ffmpeg-installer/ffmpeg instead, which ships a build for exactly
- * this kind of environment.
- */
-async function reencodeAudio(audioBuffer: Buffer): Promise<Buffer> {
-  const os = await import("node:os");
-  const path = await import("node:path");
-  const fs = await import("node:fs/promises");
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execFileAsync = promisify(execFile);
-  const ffmpegPath = (await import("@ffmpeg-installer/ffmpeg")).default.path;
-
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jennifer-audio-"));
-  const inPath = path.join(dir, "in.mp3");
-  const outPath = path.join(dir, "out.mp3");
-  try {
-    await fs.writeFile(inPath, audioBuffer);
-    await execFileAsync(ffmpegPath, ["-y", "-i", inPath, "-b:a", REENCODE_BITRATE, outPath]);
-    return await fs.readFile(outPath);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-}
 
 type CycleRow = {
   cycle_id: string;
@@ -80,14 +45,6 @@ type CycleRow = {
   meet_link: string | null;
   cycle_start_date: string;
   cycle_end_date: string;
-};
-
-type SummaryRow = {
-  summary_id: string;
-  cycle_id: string;
-  meeting_date: string;
-  bot_id: string | null;
-  status: "scheduled" | "recording" | "processing" | "sent" | "failed" | "skipped";
 };
 
 async function getOrCreateMeetLink(ctx: ToolContext, cycle: CycleRow): Promise<string> {
@@ -106,32 +63,14 @@ async function getOrCreateMeetLink(ctx: ToolContext, cycle: CycleRow): Promise<s
   return link;
 }
 
-const HEBREW_SUMMARY_SYSTEM =
-  "אתה מסכם תמלול של פגישת עבודה שבועית בעברית, עבור שני המשתתפים בה. כתוב סיכום אמיתי — לא תרגום מילולי " +
-  "ולא העתקה של קטעים מהתמלול — הכולל: הנושאים המרכזיים שנדונו, החלטות שהתקבלו, ומשימות/פעולות המשך אם צוינו " +
-  "(עם שם האחראי אם נאמר). התבסס אך ורק על מה שנאמר בפועל בתמלול, אל תמציא פרטים. אם התמלול קצר מדי או לא " +
-  'ברור, ציין זאת בכנות במקום לנחש. החזר אך ורק אובייקט JSON, בלי טקסט נוסף ובלי ```: {"paragraphs":[string, ...]}';
-
-async function summarizeHebrew(transcript: string): Promise<string[]> {
-  const { getConfiguredProvider } = await import("../provider");
-  const provider = await getConfiguredProvider();
-  const resp = await provider.complete({ system: HEBREW_SUMMARY_SYSTEM, userMessage: transcript.slice(0, 60_000), tools: [] });
-  const raw = resp.kind === "text" ? resp.text : "";
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const parsed = JSON.parse(cleaned) as { paragraphs?: string[] };
-  return parsed.paragraphs ?? [];
-}
-
 export async function runJenniferMeetingSummary(ctx: ToolContext): Promise<ScheduledTaskOutcome> {
   const { query } = await import("../../db");
-  const { sendGmailMessage } = await import("../../google/gmailClient");
-  const { agentSenderEmail } = await import("../agentEmailAliases");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
 
   const recallKey = process.env.RECALLAI_API_KEY;
   const recallRegion = process.env.RECALLAI_REGION?.trim() || "us-east-1";
   if (!recallKey) {
-    return { ok: false, detail: "RECALLAI_API_KEY is not set — cannot schedule or check meeting-recording bots." };
+    return { ok: false, detail: "RECALLAI_API_KEY is not set — cannot schedule meeting-recording bots." };
   }
 
   const cycles = await query<CycleRow>(
@@ -141,15 +80,13 @@ export async function runJenniferMeetingSummary(ctx: ToolContext): Promise<Sched
       ORDER BY created_at DESC LIMIT 1`,
     [MEETING_KEY],
   );
-  if (!cycles.length) return { ok: true, detail: "No active weekly-meeting cycle — nothing to summarize." };
+  if (!cycles.length) return { ok: true, detail: "No active weekly-meeting cycle — nothing to schedule." };
   const cycle = cycles[0];
 
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
-  const from = agentSenderEmail("jennifer");
   const results: string[] = [];
 
-  /* ── job 1: schedule a bot for the next upcoming occurrence ────────── */
   const upcoming = firstOccurrenceOnOrAfter(todayStart, cycle.weekday);
   const withinCycle = ymd(upcoming) >= cycle.cycle_start_date && ymd(upcoming) <= cycle.cycle_end_date;
   const withinLookahead = upcoming.getTime() - todayStart.getTime() <= SCHEDULE_LOOKAHEAD_DAYS * 86_400_000;
@@ -184,83 +121,7 @@ export async function runJenniferMeetingSummary(ctx: ToolContext): Promise<Sched
     }
   }
 
-  /* ── job 2: collect any past occurrence still awaiting processing ──── */
-  const pending = await query<SummaryRow>(
-    `SELECT summary_id, cycle_id, meeting_date::text, bot_id, status
-       FROM mrv.jennifer_meeting_summaries
-      WHERE cycle_id = $1 AND status IN ('scheduled', 'recording') AND meeting_date <= $2::date
-      ORDER BY meeting_date`,
-    [cycle.cycle_id, ymd(todayStart)],
-  );
-
-  for (const row of pending) {
-    if (!row.bot_id) continue;
-    try {
-      const { getBotStatus } = await import("../../recall/recallClient");
-      const status = await getBotStatus(recallKey, recallRegion, row.bot_id);
-
-      if (status.failed) {
-        await query(`UPDATE mrv.jennifer_meeting_summaries SET status = 'failed', failure_reason = $2, updated_at = clock_timestamp() WHERE summary_id = $1`, [
-          row.summary_id,
-          `Recording bot failed (latest status: ${status.latestStatus ?? "unknown"}).`,
-        ]);
-        results.push(`Meeting ${row.meeting_date}: recording bot failed (${status.latestStatus ?? "unknown"}) — no summary this week.`);
-        continue;
-      }
-
-      if (!status.audioReady) {
-        if (row.status !== "recording") {
-          await query(`UPDATE mrv.jennifer_meeting_summaries SET status = 'recording', updated_at = clock_timestamp() WHERE summary_id = $1`, [row.summary_id]);
-        }
-        results.push(`Meeting ${row.meeting_date}: still recording/processing, not ready yet.`);
-        continue;
-      }
-
-      const audioRes = await fetch(status.audioDownloadUrl!);
-      if (!audioRes.ok) throw new Error(`could not download the recording (${audioRes.status})`);
-      let audioBuffer: Buffer = Buffer.from(await audioRes.arrayBuffer());
-      if (audioBuffer.byteLength > MAX_UPLOAD_BYTES) {
-        audioBuffer = await reencodeAudio(audioBuffer);
-        if (audioBuffer.byteLength > MAX_UPLOAD_BYTES) {
-          throw new Error(
-            `recording is still ${(audioBuffer.byteLength / 1024 / 1024).toFixed(1)}MB after re-encoding at ${REENCODE_BITRATE} — over Groq's 25MB limit`,
-          );
-        }
-      }
-
-      const groqKey = process.env.GROQ_API_KEY;
-      if (!groqKey) throw new Error("GROQ_API_KEY is not set — cannot transcribe the recording");
-      const { transcribeAudioBuffer } = await import("../../audio/groqTranscribe");
-      const transcript = await transcribeAudioBuffer(groqKey, audioBuffer);
-      if (!transcript.trim()) throw new Error("transcription came back empty");
-
-      const paragraphs = await summarizeHebrew(transcript);
-      if (!paragraphs.length) throw new Error("Hebrew summary came back empty");
-
-      if (ctx.googleAccessToken) {
-        await sendGmailMessage(ctx.googleAccessToken, {
-          to: NOTIFY_TO,
-          from,
-          subject: `סיכום פגישה שבועית — ${row.meeting_date}`,
-          bodyText: paragraphs.join("\n\n"),
-        });
-      }
-      await query(
-        `UPDATE mrv.jennifer_meeting_summaries SET status = 'sent', summary_text = $2, updated_at = clock_timestamp() WHERE summary_id = $1`,
-        [row.summary_id, paragraphs.join("\n\n")],
-      );
-      results.push(`Meeting ${row.meeting_date}: summarized and emailed to ${NOTIFY_TO}.`);
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      await query(`UPDATE mrv.jennifer_meeting_summaries SET status = 'failed', failure_reason = $2, updated_at = clock_timestamp() WHERE summary_id = $1`, [
-        row.summary_id,
-        reason,
-      ]);
-      results.push(`Meeting ${row.meeting_date}: failed — ${reason}`);
-    }
-  }
-
-  if (!results.length) return { ok: true, detail: "Nothing due — no upcoming occurrence to schedule, nothing pending to collect." };
+  if (!results.length) return { ok: true, detail: "Nothing due — no upcoming occurrence to schedule." };
 
   return finishScheduledTask(ctx, {
     taskKey: TASK_KEY,
