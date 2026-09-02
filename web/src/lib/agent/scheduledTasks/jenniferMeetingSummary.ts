@@ -34,6 +34,42 @@ const MEETING_KEY = "weekly_work_meeting";
 const NOTIFY_TO = "nitzan@carbonature.io, elad@carbonature.io";
 const SCHEDULE_LOOKAHEAD_DAYS = 7; // covers a full week's cadence — the daily cron always finds the upcoming Monday even if a run or two is missed
 const MAX_UPLOAD_BYTES = 24 * 1024 * 1024; // Groq's 25MB cap, with headroom
+// Recall's mixed mp3 defaults to ~128kbps — a 36-minute meeting alone
+// already comes back around 33MB. Recall's own bot-creation API has no
+// bitrate/quality option (confirmed live 2026-09-02 against their docs —
+// audio_mixed_mp3 accepts only a metadata field), so shrinking it happens
+// here, at the same 48kbps this project's webinar-recording-scan.mjs
+// already proved keeps Whisper transcription accurate.
+const REENCODE_BITRATE = "48k";
+
+/**
+ * Re-encodes an audio buffer down to REENCODE_BITRATE via ffmpeg, only
+ * called once a recording is already confirmed over Groq's limit. Runs in
+ * a Vercel serverless function — no system ffmpeg, unlike the GitHub
+ * Actions runner webinar-recording-scan.mjs uses — so the binary comes
+ * from @ffmpeg-installer/ffmpeg instead, which ships a build for exactly
+ * this kind of environment.
+ */
+async function reencodeAudio(audioBuffer: Buffer): Promise<Buffer> {
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const fs = await import("node:fs/promises");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+  const ffmpegPath = (await import("@ffmpeg-installer/ffmpeg")).default.path;
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jennifer-audio-"));
+  const inPath = path.join(dir, "in.mp3");
+  const outPath = path.join(dir, "out.mp3");
+  try {
+    await fs.writeFile(inPath, audioBuffer);
+    await execFileAsync(ffmpegPath, ["-y", "-i", inPath, "-b:a", REENCODE_BITRATE, outPath]);
+    return await fs.readFile(outPath);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
 
 type CycleRow = {
   cycle_id: string;
@@ -182,11 +218,14 @@ export async function runJenniferMeetingSummary(ctx: ToolContext): Promise<Sched
 
       const audioRes = await fetch(status.audioDownloadUrl!);
       if (!audioRes.ok) throw new Error(`could not download the recording (${audioRes.status})`);
-      const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+      let audioBuffer: Buffer = Buffer.from(await audioRes.arrayBuffer());
       if (audioBuffer.byteLength > MAX_UPLOAD_BYTES) {
-        throw new Error(
-          `recording is ${(audioBuffer.byteLength / 1024 / 1024).toFixed(1)}MB, over Groq's 25MB limit — no ffmpeg available here to re-encode it down`,
-        );
+        audioBuffer = await reencodeAudio(audioBuffer);
+        if (audioBuffer.byteLength > MAX_UPLOAD_BYTES) {
+          throw new Error(
+            `recording is still ${(audioBuffer.byteLength / 1024 / 1024).toFixed(1)}MB after re-encoding at ${REENCODE_BITRATE} — over Groq's 25MB limit`,
+          );
+        }
       }
 
       const groqKey = process.env.GROQ_API_KEY;
