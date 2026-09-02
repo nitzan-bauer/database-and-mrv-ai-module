@@ -201,7 +201,12 @@ function describeYtDlpFailure(output) {
 
 function downloadAudio(videoUrl) {
   if (existsSync(AUDIO_PATH)) unlinkSync(AUDIO_PATH);
-  const args = ["-x", "--audio-format", "mp3", "--audio-quality", "5"];
+  // YouTube's "n challenge" (signature obfuscation) needs yt-dlp's own
+  // remote JS solver script, which it otherwise skips downloading by
+  // default — confirmed live 2026-09-02: without this flag, every
+  // download fails with "n challenge solving failed" / "page needs to be
+  // reloaded" even with valid cookies and Deno installed in the runner.
+  const args = ["-x", "--audio-format", "mp3", "--audio-quality", "5", "--remote-components", "ejs:github"];
   if (YT_COOKIES_PATH) args.push("--cookies", YT_COOKIES_PATH);
   args.push("-o", AUDIO_PATH.replace(/\.mp3$/, ".%(ext)s"), videoUrl);
   try {
