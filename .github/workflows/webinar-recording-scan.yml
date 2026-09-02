@@ -25,6 +25,15 @@ jobs:
         with:
           node-version: '22'
 
+      # yt-dlp needs a JS runtime to solve YouTube's "n challenge" (signature
+      # obfuscation) — confirmed live 2026-09-02: without this, yt-dlp fails
+      # every YouTube download with "n challenge solving failed" even once
+      # cookies solve the separate bot-detection block. yt-dlp's EJS solver
+      # looks for Deno specifically, not plain Node.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Install yt-dlp and ffmpeg
         run: |
           sudo apt-get update -qq
