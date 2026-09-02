@@ -81,6 +81,17 @@ export async function runMonthlyProductResearch(ctx: ToolContext): Promise<Sched
   ];
 
   if (fetched.length) {
+    // Agent-learning plan (0078), same pattern as draftPddChapterContent.ts:
+    // past lessons on this exact task, folded into the synthesis prompt so
+    // recorded outcomes actually influence the next run instead of sitting
+    // unread in mrv.agent_memory.
+    const { recallLessons } = await import("../lessonMemory");
+    const pastLessons = await recallLessons(ctx, { actionName: TASK_KEY, projectId: TARGET_PROJECT_ID });
+    const lessonsBlock = pastLessons.length
+      ? "\n\nLessons from past runs (apply these — don't repeat a known mistake):\n" +
+        pastLessons.map((l) => `- ${l.content}`).join("\n")
+      : "";
+
     const provider = await getConfiguredProvider();
     const sourceBlock = fetched
       .map((f, i) => `[${i + 1}] ${f.title ?? f.url} (${f.url})\n${f.textExcerpt.slice(0, 1500)}`)
@@ -88,7 +99,7 @@ export async function runMonthlyProductResearch(ctx: ToolContext): Promise<Sched
     const t2 = Date.now();
     const resp = await provider.complete({
       system: SYNTHESIS_SYSTEM_PROMPT,
-      userMessage: `Product pages read this month:\n\n${sourceBlock}`,
+      userMessage: `Product pages read this month:\n\n${sourceBlock}` + lessonsBlock,
       tools: [],
       webSearch: { maxUses: 2 },
     });

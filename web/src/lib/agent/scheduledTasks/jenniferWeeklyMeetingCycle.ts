@@ -122,10 +122,25 @@ const REPLY_PARSE_SYSTEM =
   'if truly not mentioned). "decision":"unclear" if the reply does not clearly do either (e.g. a question back, ' +
   "an out-of-office auto-reply, or unrelated content).";
 
-async function parseReply(bodyText: string): Promise<ReplyDecision> {
+async function parseReply(ctx: ToolContext, bodyText: string): Promise<ReplyDecision> {
+  // Agent-learning plan (0078), same pattern as draftPddChapterContent.ts:
+  // past lessons on this exact task, folded into the parsing prompt so
+  // recorded outcomes actually influence the next run instead of sitting
+  // unread in mrv.agent_memory.
+  const { recallLessons } = await import("../lessonMemory");
+  const pastLessons = await recallLessons(ctx, { actionName: TASK_KEY, projectId: TARGET_PROJECT_ID });
+  const lessonsBlock = pastLessons.length
+    ? "\n\nLessons from past runs (apply these — don't repeat a known mistake):\n" +
+      pastLessons.map((l) => `- ${l.content}`).join("\n")
+    : "";
+
   const { getConfiguredProvider } = await import("../provider");
   const provider = await getConfiguredProvider();
-  const resp = await provider.complete({ system: REPLY_PARSE_SYSTEM, userMessage: bodyText.slice(0, 4000), tools: [] });
+  const resp = await provider.complete({
+    system: REPLY_PARSE_SYSTEM,
+    userMessage: bodyText.slice(0, 4000) + lessonsBlock,
+    tools: [],
+  });
   const raw = resp.kind === "text" ? resp.text : "";
   try {
     const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
@@ -254,7 +269,7 @@ export async function runJenniferWeeklyMeetingCycle(ctx: ToolContext): Promise<S
 
     if (reply) {
       const body = await getMessagePlainTextBody(ctx.googleAccessToken, reply.gmailId);
-      const parsed = await parseReply(body || reply.snippet || "");
+      const parsed = await parseReply(ctx, body || reply.snippet || "");
 
       const nextWeekday = parsed.decision === "new_time" && parsed.weekday !== null ? parsed.weekday : cycle.weekday;
       const nextHour = parsed.decision === "new_time" && parsed.hour !== null ? parsed.hour : cycle.start_hour;

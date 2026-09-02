@@ -86,6 +86,17 @@ export async function runWeeklyVerraWebinarScan(ctx: ToolContext): Promise<Sched
     return { ok: false, detail: `weekly Verra webinar scan: could not reach either page — ${eventsPage.error}` };
   }
 
+  // Agent-learning plan (0078), same pattern as draftPddChapterContent.ts:
+  // past lessons on this exact task, folded into the extraction prompt so
+  // recorded outcomes actually influence the next run instead of sitting
+  // unread in mrv.agent_memory.
+  const { recallLessons } = await import("../lessonMemory");
+  const pastLessons = await recallLessons(ctx, { actionName: TASK_KEY, projectId: TARGET_PROJECT_ID });
+  const lessonsBlock = pastLessons.length
+    ? "\n\nLessons from past runs (apply these — don't repeat a known mistake):\n" +
+      pastLessons.map((l) => `- ${l.content}`).join("\n")
+    : "";
+
   const provider = await getConfiguredProvider();
   const todayIso = new Date().toISOString().slice(0, 10);
   const resp = await provider.complete({
@@ -93,7 +104,8 @@ export async function runWeeklyVerraWebinarScan(ctx: ToolContext): Promise<Sched
     userMessage:
       `Today's date: ${todayIso}\n\n` +
       `Events page (${EVENTS_URL}):\n${eventsPage.ok ? eventsPage.data.textExcerpt : "(fetch failed)"}\n\n` +
-      `Recordings page (${RECORDINGS_URL}):\n${recordingsPage.ok ? recordingsPage.data.textExcerpt : "(fetch failed)"}`,
+      `Recordings page (${RECORDINGS_URL}):\n${recordingsPage.ok ? recordingsPage.data.textExcerpt : "(fetch failed)"}` +
+      lessonsBlock,
     tools: [],
   });
   const extracted = parseExtraction(resp.kind === "text" ? resp.text : "");
