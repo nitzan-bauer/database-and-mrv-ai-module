@@ -63,9 +63,18 @@ export async function GET(req: Request) {
   // Confirmed live 2026-08-25: without this filter, a resolve-URL failure
   // on the routine's first run made the very next run's dedupe check treat
   // the same still-unsummarized recording as already handled.
+  //
+  // That filter alone isn't enough: the "we couldn't process this, here's
+  // why" notice this route itself emails Nitzan (subject prefixed "Action
+  // needed — ") reuses the webinar's own title and IS emailed = true —
+  // confirmed live 2026-09-02, this made the 2026-08-25 YouTube-blocked
+  // webinar permanently look "already summarized" even though no summary
+  // was ever produced. Excluded by subject prefix, the one thing that
+  // reliably tells a failure notice apart from a real summary.
   const rows = await query<{ subject: string; body_text: string; created_at: string }>(
     `SELECT subject, body_text, created_at FROM mrv.scheduled_task_reports
       WHERE task_key = 'rebeka_webinar_recording_summary' AND emailed = true AND created_at > now() - interval '90 days'
+        AND subject NOT LIKE 'Action needed — %'
       ORDER BY created_at DESC LIMIT 20`,
   );
   return NextResponse.json({

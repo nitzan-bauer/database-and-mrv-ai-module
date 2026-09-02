@@ -72,10 +72,17 @@ const FAILURE_STATUSES = new Set(["fatal", "call_ended_error", "recording_permis
 /**
  * bot.retrieve — reads back whether the recording is ready yet.
  * Deliberately checks for the download URL itself rather than matching a
- * specific "done" status string: Recall's own status vocabulary is
- * unconfirmed against a real response as of writing (no live bot has run
- * yet), whereas "does media_shortcuts.audio_mixed_mp3 have a URL" is the
- * one fact that can't be misread regardless of exact status naming.
+ * specific "done" status string, since Recall's own status vocabulary is
+ * secondary to the one fact that can't be misread: does the mixed-audio
+ * media shortcut have a download URL.
+ *
+ * The shortcut key is `audio_mixed` (format "mp3" inside it), NOT
+ * `audio_mixed_mp3` — confirmed live 2026-09-02 against a real completed
+ * bot (id bc82b3e5-…) whose audio had been sitting ready since the meeting
+ * ended on 2026-08-31, silently missed every day since because this
+ * function was checking a key that never existed in Recall's real
+ * response. Written before any live bot had run; never verified against
+ * one until this bug surfaced.
  */
 export async function getBotStatus(apiKey: string, region: string, botId: string): Promise<BotStatus> {
   const res = await fetch(`${baseUrl(region)}/bot/${botId}`, {
@@ -84,10 +91,10 @@ export async function getBotStatus(apiKey: string, region: string, botId: string
   if (!res.ok) throw new Error(`Recall.ai bot retrieve returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as {
     status_changes?: { code: string }[];
-    recordings?: { media_shortcuts?: { audio_mixed_mp3?: { data?: { download_url?: string } } } }[];
+    recordings?: { media_shortcuts?: { audio_mixed?: { data?: { download_url?: string } } } }[];
   };
   const latestStatus = data.status_changes?.length ? data.status_changes[data.status_changes.length - 1].code : null;
-  const audioDownloadUrl = data.recordings?.[0]?.media_shortcuts?.audio_mixed_mp3?.data?.download_url ?? null;
+  const audioDownloadUrl = data.recordings?.[0]?.media_shortcuts?.audio_mixed?.data?.download_url ?? null;
   const failed = (data.status_changes ?? []).some((s) => FAILURE_STATUSES.has(s.code));
   return { audioReady: Boolean(audioDownloadUrl), audioDownloadUrl, failed, latestStatus };
 }
