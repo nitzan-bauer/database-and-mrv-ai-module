@@ -130,7 +130,11 @@ const HEBREW_SUMMARY_SYSTEM =
   'ברור, ציין זאת בכנות במקום לנחש. החזר אך ורק אובייקט JSON, בלי טקסט נוסף ובלי ```: {"paragraphs":[string, ...]}';
 
 async function summarizeHebrew(transcript) {
-  const raw = await callClaude(HEBREW_SUMMARY_SYSTEM, `תמלול:\n${transcript.slice(0, 60_000)}`);
+  // Hebrew uses noticeably more tokens per word than English (confirmed
+  // live 2026-09-02: callClaude's 2048-token default cut a real summary
+  // off mid-string, breaking JSON parsing) — well above webinar-scan.mjs's
+  // own English 2048, which has real headroom to spare by comparison.
+  const raw = await callClaude(HEBREW_SUMMARY_SYSTEM, `תמלול:\n${transcript.slice(0, 60_000)}`, 4096);
   const parsed = JSON.parse(stripFences(raw));
   return parsed.paragraphs ?? [];
 }
