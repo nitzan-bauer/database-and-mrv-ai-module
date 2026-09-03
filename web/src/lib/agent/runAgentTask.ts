@@ -124,9 +124,19 @@ export async function runAgentTask(
   // synthesizing a lesson — its own LLM call — never adds latency to what
   // a person waiting on this chat turn actually sees.
   const scheduleLesson = (outcomeSummary: string) => {
-    after(() =>
-      recordLesson(ctx, { agentId, actionName: agentId, projectId: TARGET_PROJECT_ID, outcomeSummary }),
-    );
+    const write = () =>
+      recordLesson(ctx, { agentId, actionName: agentId, projectId: TARGET_PROJECT_ID, outcomeSummary });
+    try {
+      after(write);
+    } catch {
+      // after() requires an active Next.js request scope (a Server Action,
+      // a route handler); both real callers of runAgentTask are Server
+      // Actions, so this never fires in production. Outside one (a
+      // script), it throws synchronously — fall back to firing the write
+      // without awaiting it, since there's no "response already sent" to
+      // protect in that context either.
+      void write();
+    }
   };
 
   // Only the schemas for tools this agent actually holds — never its
