@@ -17,7 +17,7 @@ export function ScheduledTasksPanel({ tasks }: { tasks: ScheduledTaskCard[] }) {
   if (!tasks.length) return null;
 
   return (
-    <div className="rounded-xl border border-line bg-white p-4">
+    <div className="w-full max-w-[280px] rounded-xl border border-line bg-white p-4">
       <div className="mb-2.5 flex items-baseline justify-between">
         <h3 className="text-[12.5px] font-bold text-pine-700">Scheduled Tasks</h3>
         <span className="font-mono text-[10px] text-faint">
