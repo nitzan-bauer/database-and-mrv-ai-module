@@ -1100,6 +1100,59 @@ export async function getAgent(agentId: string): Promise<AgentRecord | null> {
   return all.find((a) => a.agentId === agentId) ?? null;
 }
 
+export interface ScheduledTaskCard {
+  taskKey: string;
+  /** A few words, derived from task_key — the card/row label. */
+  shortTitle: string;
+  /** mrv.scheduled_tasks.title, verbatim — a full sentence, shown as context in the popup only. */
+  fullTitle: string;
+  /** 'pending' — added here, not a DB value — means the task has never run yet (last_run_status is NULL). */
+  status: "ok" | "error" | "no_handler" | "pending";
+  lastRunAt: string | null;
+  nextRunAt: string;
+  lastRunDetail: string | null;
+}
+
+const SCHEDULED_TASK_ACRONYMS = new Set(["kyc", "pdd", "crm", "vm0042", "saas"]);
+
+/** "ron_kyc_followup" -> "KYC Followup" — task_key is already a short, meaningful identifier; `title` in the DB is a full descriptive sentence, not card-sized. */
+function shortTitleFromTaskKey(taskKey: string, agentId: string): string {
+  const stripped = taskKey.startsWith(`${agentId}_`) ? taskKey.slice(agentId.length + 1) : taskKey;
+  return stripped
+    .split("_")
+    .map((w) => (SCHEDULED_TASK_ACRONYMS.has(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+/**
+ * One agent's scheduled tasks, for the small status panel on its dashboard
+ * page (Nitzan's own spec). Reads mrv.scheduled_tasks directly —
+ * last_run_status/last_run_detail already carry both success/failure and a
+ * human-readable summary per run (set by the cron route after every
+ * invocation), so there is no need to reconstruct either from
+ * scheduled_task_reports or the audit log.
+ */
+export async function listScheduledTasksForAgent(agentId: string): Promise<ScheduledTaskCard[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT task_key, title, last_run_status, last_run_at, next_run_at, last_run_detail
+       FROM mrv.scheduled_tasks
+      WHERE agent_id = $1 AND enabled
+      ORDER BY task_key`,
+    [agentId],
+  );
+  return rows.map((r) => ({
+    taskKey: String(r.task_key),
+    shortTitle: shortTitleFromTaskKey(String(r.task_key), agentId),
+    fullTitle: String(r.title),
+    status: (r.last_run_status as ScheduledTaskCard["status"] | null) ?? "pending",
+    lastRunAt: r.last_run_at ? new Date(String(r.last_run_at)).toISOString() : null,
+    nextRunAt: new Date(String(r.next_run_at)).toISOString(),
+    lastRunDetail: (r.last_run_detail as string | null) ?? null,
+  }));
+}
+
 export interface PipelineStage {
   key: string;
   label: string;

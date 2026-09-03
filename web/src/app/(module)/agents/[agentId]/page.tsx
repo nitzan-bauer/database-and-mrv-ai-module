@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { getAgent, listProjects, resolveActiveProject } from "@/lib/data";
+import { getAgent, listProjects, listScheduledTasksForAgent, resolveActiveProject } from "@/lib/data";
 import { DATA_MODE } from "@/lib/env";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
 import type { ToolResult } from "@/lib/tools/context";
@@ -13,6 +13,7 @@ import { RebekaDashboard } from "@/components/agents/RebekaDashboard";
 import { RonDashboard } from "@/components/agents/RonDashboard";
 import { JenniferDashboard } from "@/components/agents/JenniferDashboard";
 import { ComingSoonDashboard } from "@/components/agents/ComingSoonDashboard";
+import { ScheduledTasksPanel } from "@/components/agents/ScheduledTasksPanel";
 import { AgentFeedSection } from "@/components/agents/AgentFeedSection";
 
 export const dynamic = "force-dynamic";
@@ -95,6 +96,7 @@ export default async function AgentDetailPage({
 
   const { listAgentFeed } = await import("@/lib/agent/agentFeed");
   const feed = await listAgentFeed(agent.agentId);
+  const scheduledTasks = await listScheduledTasksForAgent(agent.agentId);
 
   async function askAgent(id: string, task: string): Promise<AgentTaskResult> {
     "use server";
@@ -120,6 +122,8 @@ export default async function AgentDetailPage({
       )}
 
       <SingleAgentHeader agent={agent} connections={connections} askAgent={askAgent} />
+
+      {scheduledTasks.length > 0 && <ScheduledTasksPanel tasks={scheduledTasks} />}
 
       {agent.agentId === "rebeka" ? (
         <RebekaDashboard
