@@ -1,8 +1,11 @@
 import "server-only";
+import { after } from "next/server";
 import { getAgent } from "../data";
 import { DATA_MODE } from "../env";
 import { audit, type ToolContext } from "../tools/context";
+import { recallLessons, recordLesson } from "./lessonMemory";
 import { getConfiguredProvider, type ModelProvider } from "./provider";
+import { TARGET_PROJECT_ID } from "./scheduledTasks/constants";
 import { TOOL_REGISTRY } from "./toolRegistry";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -87,6 +90,45 @@ export async function runAgentTask(
 
   const provider = opts.provider ?? (await getConfiguredProvider());
 
+  // The agent acts with exactly the Google access the human who invoked it
+  // already has by hand — not a separate service identity. Built here
+  // (rather than just before the tool call, where it used to live) so the
+  // lesson-recording helper below can reuse the same ctx a scheduled task
+  // would use for its own recordLesson call.
+  const ctx: ToolContext = {
+    actor: agent.actorId,
+    actorKind: "agent",
+    confirmed: opts.confirmed,
+    googleAccessToken: opts.googleAccessToken,
+  };
+
+  // Agent-learning plan (0078), same recall-then-fold pattern already
+  // proven in draftPddChapterContent.ts — but scoped by agentId rather
+  // than a task key, since a free-form chat turn has no task key of its
+  // own. This is what actually closes the loop for an agent like Dave,
+  // who has no scheduled tasks (and so no recordLesson call) anywhere
+  // else in the codebase: every chat turn with every agent goes through
+  // this one function, so this is the one place a lesson can be recalled
+  // and recorded regardless of whether that agent has cron plumbing.
+  const pastLessons = await recallLessons(ctx, {
+    actionName: agentId,
+    projectId: TARGET_PROJECT_ID,
+    situation: userTask.slice(0, 300),
+  });
+  const lessonsBlock = pastLessons.length
+    ? "\n\nLessons from past conversations (apply these — don't repeat a known mistake):\n" +
+      pastLessons.map((l) => `- ${l.content}`).join("\n")
+    : "";
+
+  // Fires after the response is already sent (Next.js `after()`), so
+  // synthesizing a lesson — its own LLM call — never adds latency to what
+  // a person waiting on this chat turn actually sees.
+  const scheduleLesson = (outcomeSummary: string) => {
+    after(() =>
+      recordLesson(ctx, { agentId, actionName: agentId, projectId: TARGET_PROJECT_ID, outcomeSummary }),
+    );
+  };
+
   // Only the schemas for tools this agent actually holds — never its
   // planned_tools, and never the registry's full set. An agent cannot be
   // offered more than it is allowed to do just because a handler exists
@@ -97,7 +139,7 @@ export async function runAgentTask(
 
   let response;
   try {
-    response = await provider.complete({ system: agent.rolePrompt, userMessage: userTask, tools: schemas });
+    response = await provider.complete({ system: agent.rolePrompt + lessonsBlock, userMessage: userTask, tools: schemas });
   } catch (e) {
     return {
       agentId,
@@ -107,6 +149,7 @@ export async function runAgentTask(
   }
 
   if (response.kind === "text") {
+    scheduleLesson(response.text.slice(0, 4000));
     return { agentId, providerId: provider.id, outcome: { kind: "text", text: response.text } };
   }
 
@@ -131,20 +174,11 @@ export async function runAgentTask(
     return { agentId, providerId: provider.id, outcome: { kind: "error", message: resolved.error } };
   }
 
-  // The agent acts with exactly the Google access the human who invoked it
-  // already has by hand — not a separate service identity. Without this,
-  // any Drive/Gmail/Calendar tool an agent holds fails with "no token for
-  // this session" even when the requester's own sign-in granted the scope.
-  const ctx: ToolContext = {
-    actor: agent.actorId,
-    actorKind: "agent",
-    confirmed: opts.confirmed,
-    googleAccessToken: opts.googleAccessToken,
-  };
   const result = await entry.handler(ctx, resolved.input);
 
   if (!result.ok) {
     if (result.needsConfirmation) {
+      scheduleLesson(`Wanted to call ${response.call.name} but needs human confirmation: ${result.error}`);
       return {
         agentId,
         providerId: provider.id,
@@ -156,9 +190,14 @@ export async function runAgentTask(
         },
       };
     }
+    scheduleLesson(result.error);
     return { agentId, providerId: provider.id, outcome: { kind: "error", message: result.error } };
   }
 
+  scheduleLesson(
+    `Called ${response.call.name} → succeeded.` +
+      (result.warnings?.length ? ` Warnings: ${result.warnings.join("; ")}` : ""),
+  );
   return {
     agentId,
     providerId: provider.id,
