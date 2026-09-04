@@ -149,7 +149,33 @@ export async function runAgentTask(
 
   let response;
   try {
-    response = await provider.complete({ system: agent.rolePrompt + lessonsBlock, userMessage: userTask, tools: schemas });
+    // 55s, not the provider's 15s default: this is the "person watching"
+    // caller anthropicProvider.ts's own comment carves out — someone is
+    // sitting on this chat turn waiting for a real answer, unlike an
+    // unattended scheduled task sharing a shared serverless budget.
+    // Confirmed live this session, twice: a compound ask (explore an
+    // external site, weigh it against a large attached document, decide)
+    // genuinely needs more than 15s of reasoning before the model even
+    // picks a tool call — and raising maxTokens below to fix a truncated
+    // ("thinking" ate the whole budget) response then pushed real
+    // generation time past the first 45s ceiling too. 55s leaves ~5s of
+    // the agents pages' own maxDuration=60 for everything around the
+    // model call itself (auth, the recall/record lesson queries).
+    response = await provider.complete({
+      system: agent.rolePrompt + lessonsBlock,
+      userMessage: userTask,
+      tools: schemas,
+      timeoutMs: 55_000,
+      // 8192, not the provider's 1536 default: confirmed live this
+      // session — a large attached document pushed the model to spend
+      // nearly its whole default budget on internal "thinking" alone,
+      // leaving no room for the actual answer (stop_reason "max_tokens",
+      // empty text). An interactive turn now regularly carries real
+      // document content (the "Ask" panel's file-attachment feature), so
+      // it needs materially more headroom than a short scheduled-task
+      // prompt does.
+      maxTokens: 8192,
+    });
   } catch (e) {
     return {
       agentId,

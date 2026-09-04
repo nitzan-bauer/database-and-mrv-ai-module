@@ -25,6 +25,8 @@ import { checkCreditAllocation } from "../tools/checkCreditAllocation";
 import { recordAgentMemory } from "../tools/recordAgentMemory";
 import { recallAgentMemory } from "../tools/recallAgentMemory";
 import { fetchPublicUrl } from "../tools/fetchPublicUrl";
+import { browseWebsite } from "../tools/browseWebsite";
+import { sendEmail } from "../tools/sendEmail";
 import { recordVvbFinding } from "../tools/recordVvbFinding";
 import { resolveVvbFinding } from "../tools/resolveVvbFinding";
 import { recordPddForecast } from "../tools/recordPddForecast";
@@ -621,7 +623,11 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       name: "recall_agent_memory",
       description:
         "Semantic search over shared agent memory — embeds the query (Voyage AI) and ranks stored notes by " +
-        "cosine distance. Optional projectId/farmId/kind narrow the search.",
+        "cosine distance. Optional projectId/farmId/kind narrow the search. Relevant past lessons for THIS " +
+        "conversation are already folded into your system prompt automatically before every turn — do not call " +
+        "this reflexively or as a substitute for actually answering the question asked (its raw JSON result is " +
+        "not itself an answer). Call it only when you genuinely need a targeted memory search beyond what's " +
+        "already been surfaced to you.",
       inputSchema: {
         type: "object",
         properties: {
@@ -658,6 +664,48 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       },
     },
     handler: (ctx, input) => fetchPublicUrl(ctx, { url: String(input.url ?? "") }),
+  },
+
+  browse_website: {
+    schema: {
+      name: "browse_website",
+      description:
+        "Explore a real site beyond a single page — fetches a start URL, then follows its same-origin links to " +
+        "gather up to maxPages pages total (default 5, max 8). Use this instead of fetch_public_url when the " +
+        "task needs more than one page of a site, e.g. a product catalog or a set of related pages.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          startUrl: { type: "string" },
+          maxPages: { type: "number", description: "1-8, default 5." },
+        },
+        required: ["startUrl"],
+      },
+    },
+    handler: (ctx, input) =>
+      browseWebsite(ctx, {
+        startUrl: String(input.startUrl ?? ""),
+        maxPages: typeof input.maxPages === "number" ? input.maxPages : undefined,
+      }),
+  },
+
+  send_email: {
+    schema: {
+      name: "send_email",
+      description:
+        "Send a real email to nitzan@carbonature.io with a subject and a free-form body — for a finding or " +
+        "report that doesn't fit an existing pipeline. Not for a project's PDD PDF (use " +
+        "run_pdd_generator_pipeline for that) — this sends plain text only, no attachment.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          subject: { type: "string" },
+          body: { type: "string" },
+        },
+        required: ["subject", "body"],
+      },
+    },
+    handler: (ctx, input) => sendEmail(ctx, { subject: String(input.subject ?? ""), body: String(input.body ?? "") }),
   },
 
   record_vvb_finding: {

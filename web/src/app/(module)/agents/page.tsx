@@ -1,13 +1,26 @@
 import { auth } from "@/auth";
-import { creditPipeline, listAgents, listAuditLog, listProjects, resolveActiveProject } from "@/lib/data";
+import {
+  creditPipeline,
+  listAgents,
+  listAuditLog,
+  listProjects,
+  listScheduledTasksForAgent,
+  resolveActiveProject,
+} from "@/lib/data";
 import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { DATA_MODE } from "@/lib/env";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
 import { AgentOrgChart } from "@/components/agents/AgentOrgChart";
 import { MarketScanSection } from "@/components/agents/MarketScanSection";
+import { ScheduledTasksPanel } from "@/components/agents/ScheduledTasksPanel";
 import { listMarketScanDeals, listMarketScanProjects } from "@/lib/agent/marketScan";
 
 export const dynamic = "force-dynamic";
+// Vercel's default Serverless Function ceiling (10s) is shorter than the
+// 45s timeout runAgentTask now gives an interactive "Ask <Agent>" turn —
+// without raising this, the platform would kill the Server Action before
+// that timeout ever gets a chance to matter.
+export const maxDuration = 60;
 
 /**
  * Screen A — the Verified Credits Factory control tower (spec §13).
@@ -47,12 +60,13 @@ export default async function AgentsPage({
   const { project: requestedProjectId } = await searchParams;
   const allProjects = await listProjects();
   const project = resolveActiveProject(allProjects, requestedProjectId);
-  const [agents, pipeline, audit, marketProjects, marketDeals] = await Promise.all([
+  const [agents, pipeline, audit, marketProjects, marketDeals, johnScheduledTasks] = await Promise.all([
     listAgents(),
     creditPipeline(),
     listAuditLog(200),
     listMarketScanProjects(),
     listMarketScanDeals(),
+    listScheduledTasksForAgent("john"),
   ]);
 
   const actorIds = new Set(agents.map((a) => a.actorId));
@@ -101,6 +115,13 @@ export default async function AgentsPage({
           foot="by an agent, in the audit log"
         />
       </div>
+
+      {johnScheduledTasks.length > 0 && (
+        <section>
+          <h2 className="mb-1 text-base font-bold text-pine-700">John&apos;s dashboard</h2>
+          <ScheduledTasksPanel tasks={johnScheduledTasks} />
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-base font-bold text-pine-700">The department</h2>

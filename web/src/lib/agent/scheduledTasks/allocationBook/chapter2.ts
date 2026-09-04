@@ -180,7 +180,7 @@ export function buildChapter2(data: PotentialData, buyerGrandCredits: number, bu
   const yieldKeyLines = [...data.rateByPlotType.entries()]
     .map(([type, rate]) => `${PLOT_TYPE_LABELS[type] ?? type}: ${rate} VCU/ha`)
     .join("  |  ");
-  farmsTable.notes = yieldKeyLines ? [`Credit-yield keys (admin-editable) — ${yieldKeyLines}`] : [];
+  farmsTable.notes = yieldKeyLines ? [`Credit-yield keys (set in the SaaS's Project Financing settings) — ${yieldKeyLines}`] : [];
   farmsTable.notesFontSize = 9.5;
 
   // ---------- 5.3 — TOTAL CREDIT IN VALUE (reconciliation gate) ----------

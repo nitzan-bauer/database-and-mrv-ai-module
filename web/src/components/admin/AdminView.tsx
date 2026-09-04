@@ -39,7 +39,10 @@ export function AdminView({
 
   return (
     <div className="space-y-4">
-      {/* the three governed systems */}
+      {/* the three governed systems — each identity is the SAME mrv.users row
+          regardless of which app it was seen through (seen_apps, migration
+          0097), so these three tiles and the table below are one real,
+          shared directory, not three independently-pulled lists. */}
       <Card imprint className="p-5">
         <h2 className="text-sm font-semibold text-pine-700">One admin, three systems</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -47,17 +50,28 @@ export function AdminView({
             name="MRV module"
             state="live"
             detail={`${bySystem("MRV")} identities · this database`}
+            href="/admin"
           />
           <SystemCard
             name="CarboNature SaaS"
-            state="pulled"
-            detail={`${bySystem("SaaS")} identities · farmers and credit buyers`}
+            state="live"
+            detail={`${bySystem("SaaS")} identities · admin staff`}
+            href={`/api/oidc/authorize?client_id=saas&redirect_uri=${encodeURIComponent(
+              process.env.SAAS_STAFF_BRIDGE_URL ?? "https://app.carbonature.io/api/staff-bridge",
+            )}`}
           />
-          <SystemCard name="In-house CRM" state="tier 3" detail="plugs into the same system" />
+          <SystemCard
+            name="In-house CRM"
+            state="live"
+            detail={`${bySystem("CRM")} identities · staff sign-ins`}
+            href="https://carbonature-crm-nitzan-s-projects4.vercel.app/approvals"
+          />
         </div>
         <p className="mt-3 border-t border-line pt-2.5 text-[12px] text-muted">
-          The module connects to the SaaS admin and governs it from here, so a user, role or
-          permission is defined once rather than maintained twice and drifting.
+          Clicking &quot;CarboNature SaaS&quot; hands you straight into its admin section using this
+          same sign-in (Addendum 2&apos;s staff SSO bridge) — one real login, not two. The CRM link
+          signs in the same way the moment you land on it, since it now delegates to this same
+          MRV session instead of running its own separate Google sign-in.
         </p>
       </Card>
 
@@ -218,10 +232,13 @@ function SystemCard({
   name,
   state,
   detail,
+  href,
 }: {
   name: string;
   state: "live" | "pulled" | "tier 3";
   detail: string;
+  /** Deep-link to that system's own native admin screen — internal path or a full URL to another deployment. */
+  href?: string;
 }) {
   const tone =
     state === "live"
@@ -229,13 +246,25 @@ function SystemCard({
       : state === "pulled"
         ? "border-verify-500/30 bg-verify-100/50"
         : "border-line bg-cream/60";
-  return (
-    <div className={"rounded-xl border px-3.5 py-3 " + tone}>
+  const body = (
+    <>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[13px] font-semibold text-ink">{name}</p>
         <span className="font-mono text-[9.5px] uppercase tracking-wider text-faint">{state}</span>
       </div>
       <p className="mt-0.5 text-[11.5px] text-muted">{detail}</p>
-    </div>
+    </>
+  );
+  if (!href) return <div className={"rounded-xl border px-3.5 py-3 " + tone}>{body}</div>;
+  const external = href.startsWith("http");
+  return (
+    <a
+      href={href}
+      target={external ? "_blank" : undefined}
+      rel={external ? "noopener noreferrer" : undefined}
+      className={"block rounded-xl border px-3.5 py-3 transition-colors hover:border-pine-600/60 " + tone}
+    >
+      {body}
+    </a>
   );
 }

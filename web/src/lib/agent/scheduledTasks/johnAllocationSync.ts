@@ -93,15 +93,10 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
 
     const plot = plotById.get(plotId);
     if (!plot || !plot.farm_id) return null;
-    const { loadPlotTypeMaps, resolvePlotType } = await import("./plotTypeResolver");
-    const plotType = resolvePlotType(await loadPlotTypeMaps(), plot.farm_id, plot.project_id);
-    if (!plotType) return null;
-    const rates = await query<{ rate_per_ha: string }>(
-      `SELECT rate_per_ha FROM mrv.credit_yield_rate_table WHERE plot_type = $1`,
-      [plotType],
-    );
-    if (!rates.length) return null;
-    return Number(rates[0].rate_per_ha) * Number(plot.area_ha);
+    const { loadPlotTypeContext, resolvePlotAndRate } = await import("./plotTypeResolver");
+    const resolved = resolvePlotAndRate(await loadPlotTypeContext([plot.farm_id]), plot.farm_id, plot.id);
+    if (!resolved) return null;
+    return resolved.ratePerHa * Number(plot.area_ha);
   }
 
   async function committedPotential(plotId: string): Promise<number> {
@@ -237,7 +232,15 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
       const already = await query(`SELECT 1 FROM mrv.allocation_register WHERE source_financing_id = $1`, [f.id]);
       if (already.length) continue;
       const matchedProject = projects.find((p) => normalizeProjectName(p.name) === normalizeProjectName(f.projectName));
-      if (matchedProject && pfBlockedProjects.has(matchedProject.id)) {
+      if (!matchedProject) {
+        // project_id is a real uuid FK into public.projects now (0093) — f.projectKey
+        // ("eafrica") is a different, non-uuid identifier from the ledger and was
+        // never a valid value here; skip and surface it rather than fail the whole
+        // run on one unmatched deal.
+        console.warn(`[john_allocation_sync] financing deal ${f.transactionNo ?? f.id}: no project matched "${f.projectName}" — skipped.`);
+        continue;
+      }
+      if (pfBlockedProjects.has(matchedProject.id)) {
         refusedBalanceBlock.push(
           `financing deal ${f.transactionNo ?? f.id}: Project Funding blocked for project ${matchedProject.id} - CarboNature's balance is below the 20% threshold (Section 7.3, Option B).`,
         );
@@ -252,8 +255,8 @@ export async function runJohnAllocationSync(ctx: ToolContext): Promise<Scheduled
         [
           f.buyerId,
           buyerNameByProfileId.get(f.buyerId) ?? "Unknown buyer",
-          matchedProject?.id ?? f.projectKey,
-          matchedProject?.name ?? f.projectName,
+          matchedProject.id,
+          matchedProject.name,
           f.credits,
           f.amountUsd,
           f.transactionNo,

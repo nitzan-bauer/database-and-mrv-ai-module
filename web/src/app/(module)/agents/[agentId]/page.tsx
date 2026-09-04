@@ -17,6 +17,11 @@ import { ScheduledTasksPanel } from "@/components/agents/ScheduledTasksPanel";
 import { AgentFeedSection } from "@/components/agents/AgentFeedSection";
 
 export const dynamic = "force-dynamic";
+// Vercel's default Serverless Function ceiling (10s) is shorter than the
+// 45s timeout runAgentTask now gives an interactive "Ask <Agent>" turn —
+// without raising this, the platform would kill the Server Action before
+// that timeout ever gets a chance to matter.
+export const maxDuration = 60;
 
 /** Save one SEED-questionnaire answer, as the signed-in person. */
 async function updateSeedAnswerAction(input: {

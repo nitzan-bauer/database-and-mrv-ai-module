@@ -14,7 +14,6 @@ import { AdminView } from "@/components/admin/AdminView";
 import { FarmContextForm } from "@/components/admin/FarmContextForm";
 import { DocumentsPanel } from "@/components/admin/DocumentsPanel";
 import { AgentLearningPanel } from "@/components/admin/AgentLearningPanel";
-import { CreditYieldRatesPanel, type CreditYieldRate } from "@/components/admin/CreditYieldRatesPanel";
 import { CropCycleLengthsPanel, type CropCycleLength } from "@/components/admin/CropCycleLengthsPanel";
 import { NegativeBalanceThresholdsPanel, type NegativeBalanceThreshold } from "@/components/admin/NegativeBalanceThresholdsPanel";
 import { FarmPlotTypePanel, type FarmPlotType } from "@/components/admin/FarmPlotTypePanel";
@@ -101,7 +100,6 @@ export default async function AdminPage() {
   // exists to be the source of truth for.
   const session = await auth().catch(() => null);
   let isSuperAdmin = false;
-  let creditYieldRates: CreditYieldRate[] = [];
   let cropCycleLengths: CropCycleLength[] = [];
   let negativeBalanceThresholds: NegativeBalanceThreshold[] = [];
   let farmPlotTypes: FarmPlotType[] = [];
@@ -115,16 +113,6 @@ export default async function AdminPage() {
     );
     isSuperAdmin = roleRows.length > 0;
     if (isSuperAdmin) {
-      const rows = await query<{ plot_type: string; rate_per_ha: string; updated_by: string | null; updated_at: string }>(
-        `SELECT plot_type, rate_per_ha, updated_by, updated_at FROM mrv.credit_yield_rate_table ORDER BY plot_type`,
-      );
-      creditYieldRates = rows.map((r) => ({
-        plotType: r.plot_type as CreditYieldRate["plotType"],
-        ratePerHa: Number(r.rate_per_ha),
-        updatedBy: r.updated_by,
-        updatedAt: r.updated_at,
-      }));
-
       const cropRows = await query<{ crop_name: string; cycle_days: number; updated_by: string | null; updated_at: string }>(
         `SELECT crop_name, cycle_days, updated_by, updated_at FROM mrv.crop_cycle_lengths ORDER BY crop_name`,
       );
@@ -170,37 +158,6 @@ export default async function AdminPage() {
         }))
         .sort((a, b) => a.farmName.localeCompare(b.farmName));
     }
-  }
-
-  async function saveCreditYieldRateAction(plotType: string, ratePerHa: number): Promise<{ ok: boolean; error?: string }> {
-    "use server";
-    const session = await auth().catch(() => null);
-    const actor = session?.user?.email;
-    if (!actor) return { ok: false, error: "Not signed in." };
-
-    const { query } = await import("@/lib/db");
-    const roleRows = await query<{ role: string }>(
-      `SELECT m.role::text AS role FROM mrv.project_memberships m
-         JOIN mrv.users u ON u.user_id = m.user_id
-        WHERE u.email = $1 AND m.role = 'super_admin' LIMIT 1`,
-      [actor],
-    );
-    if (!roleRows.length) return { ok: false, error: "Only a super_admin can edit credit-yield rates." };
-    if (!["open_field", "young_orchard", "mature_orchard"].includes(plotType)) {
-      return { ok: false, error: `Unknown plot type "${plotType}".` };
-    }
-    if (!(ratePerHa >= 0)) return { ok: false, error: "Rate must be a non-negative number." };
-
-    await query(
-      `UPDATE mrv.credit_yield_rate_table SET rate_per_ha = $1, updated_by = $2, updated_at = now() WHERE plot_type = $3`,
-      [ratePerHa, actor, plotType],
-    );
-    await query(
-      `INSERT INTO mrv.audit_log (actor, action, target_type, target_id, payload)
-       VALUES ($1, 'update_credit_yield_rate', 'credit_yield_rate_table', $2, $3::jsonb)`,
-      [actor, plotType, JSON.stringify({ plotType, ratePerHa })],
-    );
-    return { ok: true };
   }
 
   async function saveCropCycleLengthAction(cropName: string, cycleDays: number): Promise<{ ok: boolean; error?: string }> {
@@ -419,10 +376,11 @@ export default async function AdminPage() {
           <h2 className="text-base font-bold text-pine-700">Credit-yield rates — John (super_admin only)</h2>
           <p className="mt-1 max-w-3xl text-[13px] text-muted">
             You&apos;re seeing this because you&apos;re a super_admin — everyone else on this page,
-            including other agents&apos; own tools, cannot edit these.
+            including other agents&apos; own tools, cannot edit these. Credit-yield-per-hectare rates
+            themselves are set in the SaaS&apos;s own admin (Project Financing settings) and read live
+            from there everywhere in MRV — there is no separate rate table to edit here anymore.
           </p>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            <CreditYieldRatesPanel rates={creditYieldRates} save={saveCreditYieldRateAction} />
             <CropCycleLengthsPanel crops={cropCycleLengths} save={saveCropCycleLengthAction} />
             <NegativeBalanceThresholdsPanel thresholds={negativeBalanceThresholds} save={saveNegativeBalanceThresholdAction} />
             <FarmPlotTypePanel farms={farmPlotTypes} save={saveFarmPlotTypeAction} />

@@ -90,6 +90,8 @@ export type ActionName =
   | "record_agent_memory"
   | "recall_agent_memory"
   | "fetch_public_url"
+  | "browse_website"
+  | "send_email"
   | "record_vvb_finding"
   | "resolve_vvb_finding"
   | "record_pdd_forecast"

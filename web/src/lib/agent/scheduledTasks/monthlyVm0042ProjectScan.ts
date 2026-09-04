@@ -82,8 +82,17 @@ export async function runMonthlyVm0042ProjectScan(ctx: ToolContext): Promise<Sch
   });
   console.log(`[${TASK_KEY}] web-search model call: ${Date.now() - t0}ms`);
 
+  // Nitzan's own request, live this session — see monthlyCreditMarketScan.ts's
+  // identical check: 0 real searches despite requesting web search is a
+  // genuine access bug, not an unremarkable "nothing new this month."
+  if (resp.webSearchesPerformed === 0) {
+    return { ok: false, detail: `monthly VM0042 project scan: web search did not run at all this month (0 searches executed) — this is a real access failure, not an empty month.` };
+  }
+
   const found = resp.kind === "text" ? parseProjects(resp.text) : [];
-  const paragraphs: string[] = [];
+  const paragraphs: string[] = [
+    `Web search ran (${resp.webSearchesPerformed ?? "?"} real search(es) executed) — every finding below carries its own real source.`,
+  ];
   let inserted = 0;
 
   if (!found.length) {

@@ -30,9 +30,21 @@ export interface ProviderToolCall {
   input: Record<string, unknown>;
 }
 
-export type ProviderResponse =
+export type ProviderResponse = (
   | { kind: "text"; text: string }
-  | { kind: "tool_call"; call: ProviderToolCall; text?: string };
+  | { kind: "tool_call"; call: ProviderToolCall; text?: string }
+) & {
+  /**
+   * How many real web searches the server actually executed for this call
+   * (Anthropic's own `usage.server_tool_use.web_search_requests`), only
+   * present when `webSearch` was requested. Lets a caller tell "searched
+   * and genuinely found nothing" apart from "the search tool never ran" —
+   * confirmed live this session as a real, silent gap: a scheduled task
+   * reporting "no deals found this month" looked identical to one where
+   * websearch failed outright, with no way to flag the second as a bug.
+   */
+  webSearchesPerformed?: number;
+};
 
 export interface ModelProvider {
   /** Identifies what actually answered — shown in the UI so a response is never presented as more than it is. */
@@ -50,6 +62,25 @@ export interface ModelProvider {
      * offer it (no-key stand-in included) rather than erroring.
      */
     webSearch?: { maxUses?: number; timeoutMs?: number };
+    /**
+     * Overrides the call's own timeout regardless of webSearch — for a
+     * caller with a person actually watching (an interactive "Ask <Agent>"
+     * chat turn), which can and should wait longer than the flat default
+     * built for an unattended scheduled task sharing one serverless
+     * invocation's budget with other due tasks.
+     */
+    timeoutMs?: number;
+    /**
+     * Overrides the call's own max_tokens. Confirmed live this session: a
+     * large attached document pushed claude-sonnet-5 to spend nearly all of
+     * the default 1536-token budget on its own internal "thinking" content
+     * block, leaving no room to emit any actual answer text (stop_reason
+     * "max_tokens", empty response) — thinking tokens count against this
+     * same budget. A caller expecting to hand over a lot of real content
+     * (an interactive turn with an attachment) needs materially more room
+     * than the default.
+     */
+    maxTokens?: number;
   }): Promise<ProviderResponse>;
 }
 

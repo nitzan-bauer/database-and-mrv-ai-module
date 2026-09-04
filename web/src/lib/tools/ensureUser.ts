@@ -57,14 +57,15 @@ export async function ensureUser(
       `UPDATE mrv.users
           SET full_name      = coalesce(nullif($2, ''), full_name),
               last_active_at = clock_timestamp(),
-              updated_at     = clock_timestamp()
+              updated_at     = clock_timestamp(),
+              seen_apps      = array(SELECT DISTINCT unnest(seen_apps || ARRAY['mrv']))
         WHERE user_id = $1`,
       [userId, profile.fullName ?? ""],
     );
   } else {
     const inserted = await query<{ user_id: string }>(
-      `INSERT INTO mrv.users (org_id, email, full_name, auth_method, last_active_at)
-       VALUES ($1, $2, $3, 'sso', clock_timestamp())
+      `INSERT INTO mrv.users (org_id, email, full_name, auth_method, last_active_at, seen_apps)
+       VALUES ($1, $2, $3, 'sso', clock_timestamp(), ARRAY['mrv'])
        RETURNING user_id`,
       [orgId, email, profile.fullName?.trim() || email],
     );

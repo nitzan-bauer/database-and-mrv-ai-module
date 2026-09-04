@@ -86,6 +86,16 @@ export async function runWeeklyVerraWebinarScan(ctx: ToolContext): Promise<Sched
     return { ok: false, detail: `weekly Verra webinar scan: could not reach either page — ${eventsPage.error}` };
   }
 
+  // Nitzan's own request, live this session: reaching only one of the two
+  // pages this task depends on is a real, partial access failure — it
+  // used to pass through silently as "(fetch failed)" text fed to the
+  // model, with the run still reporting as an unremarkable success.
+  const accessFailed = !eventsPage.ok
+    ? `could not reach the events page (${EVENTS_URL}) — ${eventsPage.error}`
+    : !recordingsPage.ok
+      ? `could not reach the recordings page (${RECORDINGS_URL}) — ${recordingsPage.error}`
+      : null;
+
   // Agent-learning plan (0078), same pattern as draftPddChapterContent.ts:
   // past lessons on this exact task, folded into the extraction prompt so
   // recorded outcomes actually influence the next run instead of sitting
@@ -110,7 +120,10 @@ export async function runWeeklyVerraWebinarScan(ctx: ToolContext): Promise<Sched
   });
   const extracted = parseExtraction(resp.kind === "text" ? resp.text : "");
 
-  const paragraphs: string[] = [];
+  const paragraphs: string[] = [
+    `Sources checked: ${EVENTS_URL} (${eventsPage.ok ? "read" : "FAILED"}), ${RECORDINGS_URL} (${recordingsPage.ok ? "read" : "FAILED"}).`,
+  ];
+  if (accessFailed) paragraphs.push(`⚠ Access failure this week: ${accessFailed}.`);
 
   /* ── upcoming sessions → calendar reminders, deduped ──────── */
   if (extracted.upcoming.length) {
@@ -187,5 +200,13 @@ export async function runWeeklyVerraWebinarScan(ctx: ToolContext): Promise<Sched
     memoryKind: "verra_webinar_scan",
   });
 
-  return { ok: outcome.ok, detail: outcome.detail };
+  // Nitzan's own request, live this session: reaching only one of the two
+  // pages is a real, partial access failure and has to show as this
+  // task's own failure (red in the Scheduled Tasks panel), not pass
+  // through as an unremarkable success just because the other page and
+  // the calendar/report steps still worked.
+  return {
+    ok: outcome.ok && !accessFailed,
+    detail: accessFailed ? `${outcome.detail} — ACCESS FAILURE: ${accessFailed}.` : outcome.detail,
+  };
 }

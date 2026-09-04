@@ -2,11 +2,25 @@ import "server-only";
 import { SAAS_SUPABASE_SERVICE_ROLE_KEY, SAAS_SUPABASE_URL } from "../env";
 
 /**
- * Raw PostgREST reads against the customer-facing SaaS Supabase database —
- * no @supabase/supabase-js dependency, matching how driveClient.ts and
- * gmailClient.ts already talk to Google's REST APIs directly. Read-only:
- * nothing here can write back to the SaaS database, on purpose — a real
- * PDD import has no business mutating the marketplace/onboarding data.
+ * Reads against the customer-facing SaaS data. Since Addendum 1 (one
+ * physical database — MRV's own DATABASE_URL now points at the SaaS's own
+ * Supabase project, mrv/crm schemas migrated alongside its public schema),
+ * every table read below goes through MRV's own pooled `pg` connection
+ * (db.ts's query()) as a direct SQL query against `public.*` — no network
+ * hop, no PostgREST, no service-role key. Always schema-qualified
+ * (`public.farms`, never bare `farms`) because this pool's search_path is
+ * `mrv,public`: an unqualified name that happens to also exist in `mrv`
+ * (farms, plots, projects, users all do) would silently resolve to the
+ * WRONG table otherwise.
+ *
+ * The two Storage-backed reads at the bottom (readStorageJson/
+ * readStorageObject — JSON ledgers and settings.json, not real tables)
+ * still go over the Storage REST API, since Postgres has no equivalent for
+ * "read this JSON file out of a bucket."
+ *
+ * Read-only: nothing here can write back to the SaaS database, on purpose —
+ * a real PDD import has no business mutating the marketplace/onboarding
+ * data.
  */
 
 export interface SaasFarm {
@@ -28,26 +42,12 @@ function assertConfigured(): void {
   }
 }
 
-async function restGet<T>(path: string): Promise<T> {
-  assertConfigured();
-  const res = await fetch(`${SAAS_SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SAAS_SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${SAAS_SUPABASE_SERVICE_ROLE_KEY}`,
-    },
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`SaaS Supabase REST ${path} returned ${res.status}: ${body}`);
-  }
-  return (await res.json()) as T;
-}
+const FARM_COLUMNS = "id, farm_name, company_name, addr_country, addr_city, cultivation_area, cultivation_unit, crops, contact_first, contact_surname";
 
 /** One farm by its SaaS id, or null if it doesn't exist there. */
 export async function fetchSaasFarm(saasFarmId: string): Promise<SaasFarm | null> {
-  const rows = await restGet<SaasFarm[]>(
-    `farms?id=eq.${encodeURIComponent(saasFarmId)}&select=id,farm_name,company_name,addr_country,addr_city,cultivation_area,cultivation_unit,crops,contact_first,contact_surname`,
-  );
+  const { query } = await import("../db");
+  const rows = (await query(`SELECT ${FARM_COLUMNS} FROM public.farms WHERE id = $1`, [saasFarmId])) as unknown as SaasFarm[];
   return rows[0] ?? null;
 }
 
@@ -59,9 +59,8 @@ export async function fetchSaasFarm(saasFarmId: string): Promise<SaasFarm | null
  * this codebase is verified rather than assumed.
  */
 export async function listSaasFarmsSince(sinceIso: string): Promise<SaasFarm[]> {
-  return restGet<SaasFarm[]>(
-    `farms?created_at=gt.${encodeURIComponent(sinceIso)}&select=id,farm_name,company_name,addr_country,addr_city,cultivation_area,cultivation_unit,crops,contact_first,contact_surname&order=created_at.asc`,
-  );
+  const { query } = await import("../db");
+  return (await query(`SELECT ${FARM_COLUMNS} FROM public.farms WHERE created_at > $1 ORDER BY created_at ASC`, [sinceIso])) as unknown as SaasFarm[];
 }
 
 /**
@@ -142,37 +141,46 @@ export interface SaasProject {
 
 /** Agri-Inputs reservations, one row per deal regardless of lifecycle state. */
 export async function listAgriInputsReservations(): Promise<SaasReservation[]> {
-  return restGet<SaasReservation[]>(
-    "reservations?select=id,buyer_id,project_id,transaction_no,total_cost_usd,allocated_credits,application_area_ha,created_at&order=created_at.asc",
-  );
+  const { query } = await import("../db");
+  return (await query(
+    `SELECT id, buyer_id, project_id, transaction_no, total_cost_usd, allocated_credits, application_area_ha, created_at
+       FROM public.reservations ORDER BY created_at ASC`,
+  )) as unknown as SaasReservation[];
 }
 
 export async function listReservationPlots(reservationIds: string[]): Promise<SaasReservationPlot[]> {
   if (!reservationIds.length) return [];
-  return restGet<SaasReservationPlot[]>(
-    `reservation_plots?reservation_id=in.(${reservationIds.map(encodeURIComponent).join(",")})&select=reservation_id,plot_id`,
-  );
+  const { query } = await import("../db");
+  return (await query(
+    `SELECT reservation_id, plot_id FROM public.reservation_plots WHERE reservation_id = ANY($1::uuid[])`,
+    [reservationIds],
+  )) as unknown as SaasReservationPlot[];
 }
 
 export async function listPlotsByIds(plotIds: string[]): Promise<SaasPlot[]> {
   if (!plotIds.length) return [];
-  const raw = await restGet<SaasPlotRaw[]>(
-    `plots?id=in.(${plotIds.map(encodeURIComponent).join(",")})&select=id,project_id,farm_id,credits,area_ha,geojson`,
-  );
+  const { query } = await import("../db");
+  const raw = (await query(
+    `SELECT id, project_id, farm_id, credits, area_ha, geojson FROM public.plots WHERE id = ANY($1::uuid[])`,
+    [plotIds],
+  )) as unknown as SaasPlotRaw[];
   return raw.map(parsePlotAgriInputs);
 }
 
 /** Every plot in the SaaS marketplace, not just ones already tied to a reservation — the potential estimate covers unsold plots too. */
 export async function listAllSaasPlots(): Promise<SaasPlot[]> {
-  const raw = await restGet<SaasPlotRaw[]>("plots?select=id,project_id,farm_id,credits,area_ha,geojson");
+  const { query } = await import("../db");
+  const raw = (await query(`SELECT id, project_id, farm_id, credits, area_ha, geojson FROM public.plots`)) as unknown as SaasPlotRaw[];
   return raw.map(parsePlotAgriInputs);
 }
 
 /** Farm names for a set of ids — display-only lookup for reports (the Allocation Register itself stores only the SaaS farm id, never a name, to avoid a second place a rename could go stale). */
 export async function listFarmNamesByIds(farmIds: string[]): Promise<Map<string, string>> {
   if (!farmIds.length) return new Map();
-  const rows = await restGet<{ id: string; farm_name: string }[]>(
-    `farms?id=in.(${[...new Set(farmIds)].map(encodeURIComponent).join(",")})&select=id,farm_name`,
+  const { query } = await import("../db");
+  const rows = await query<{ id: string; farm_name: string }>(
+    `SELECT id, farm_name FROM public.farms WHERE id = ANY($1::uuid[])`,
+    [[...new Set(farmIds)]],
   );
   return new Map(rows.map((r) => [r.id, r.farm_name]));
 }
@@ -180,9 +188,12 @@ export async function listFarmNamesByIds(farmIds: string[]): Promise<Map<string,
 /** Signed Agri-Inputs / Pre-Financing agreements for a set of reservations, same type filter as agriDealLifecycle.ts's AGRI_DEAL_TYPES. */
 export async function listAgriContractsForReservations(reservationIds: string[]): Promise<SaasContractRow[]> {
   if (!reservationIds.length) return [];
-  return restGet<SaasContractRow[]>(
-    `contracts?reservation_id=in.(${reservationIds.map(encodeURIComponent).join(",")})&type=in.(funding_agri_inputs,pre_financing)&select=reservation_id,status,signed_at`,
-  );
+  const { query } = await import("../db");
+  return (await query(
+    `SELECT reservation_id, status, signed_at FROM public.contracts
+      WHERE reservation_id = ANY($1::uuid[]) AND type IN ('funding_agri_inputs', 'pre_financing')`,
+    [reservationIds],
+  )) as unknown as SaasContractRow[];
 }
 
 export interface SaasContractDetail {
@@ -214,7 +225,8 @@ export interface SaasContractDetail {
 export async function listContractDetailsByProfileIds(profileIds: string[]): Promise<SaasContractDetail[]> {
   const ids = [...new Set(profileIds)];
   if (!ids.length) return [];
-  const rows = await restGet<{
+  const { query } = await import("../db");
+  const rows = await query<{
     id: string;
     type: string;
     status: "draft" | "sent" | "signed" | "countersigned";
@@ -230,7 +242,7 @@ export async function listContractDetailsByProfileIds(profileIds: string[]): Pro
       counterSignedBy?: string;
       registry_no?: string;
     } | null;
-  }[]>(`contracts?profile_id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,type,status,signed_at,reservation_id,data`);
+  }>(`SELECT id, type, status, signed_at, reservation_id, data FROM public.contracts WHERE profile_id = ANY($1::uuid[])`, [ids]);
   return rows.map((r) => ({
     id: r.id,
     type: r.type,
@@ -250,19 +262,23 @@ export async function listContractDetailsByProfileIds(profileIds: string[]): Pro
 
 export async function listCreditBuyersByProfileIds(profileIds: string[]): Promise<SaasCreditBuyer[]> {
   if (!profileIds.length) return [];
-  return restGet<SaasCreditBuyer[]>(
-    `credit_buyers?profile_id=in.(${profileIds.map(encodeURIComponent).join(",")})&select=profile_id,company_name`,
-  );
+  const { query } = await import("../db");
+  return (await query(
+    `SELECT profile_id, company_name FROM public.credit_buyers WHERE profile_id = ANY($1::uuid[])`,
+    [profileIds],
+  )) as unknown as SaasCreditBuyer[];
 }
 
 export async function listSaasProjects(): Promise<SaasProject[]> {
-  return restGet<SaasProject[]>("projects?select=id,name,credit_price_usd");
+  const { query } = await import("../db");
+  return (await query(`SELECT id, name, credit_price_usd FROM public.projects`)) as unknown as SaasProject[];
 }
 
 /**
  * Reads a JSON ledger file straight out of Supabase Storage over REST (no
- * @supabase/supabase-js dependency, matching restGet above) — the same
- * "config" bucket carbonature-saas's own reservationPayments.ts /
+ * @supabase/supabase-js dependency — this one genuinely has no SQL
+ * equivalent, unlike the table reads above) — the same "config" bucket
+ * carbonature-saas's own reservationPayments.ts /
  * projectFinancing.ts write to. Read-only, like the rest of this file.
  */
 async function readStorageJson<T>(bucket: string, file: string): Promise<T[]> {
@@ -326,23 +342,31 @@ export interface SaasActivityStatus {
 
 export async function listActivityStatusByFarmIds(farmIds: string[]): Promise<SaasActivityStatus[]> {
   if (!farmIds.length) return [];
-  return restGet<SaasActivityStatus[]>(
-    `activity_status?farm_id=in.(${farmIds.map(encodeURIComponent).join(",")})&select=farm_id,reservation_id,current_status,updated_at&order=updated_at.desc`,
-  );
+  const { query } = await import("../db");
+  return (await query(
+    `SELECT farm_id, reservation_id, current_status, updated_at FROM public.activity_status
+      WHERE farm_id = ANY($1::uuid[]) ORDER BY updated_at DESC`,
+    [farmIds],
+  )) as unknown as SaasActivityStatus[];
 }
 
 export async function listActivityStatusByReservationIds(reservationIds: string[]): Promise<SaasActivityStatus[]> {
   if (!reservationIds.length) return [];
-  return restGet<SaasActivityStatus[]>(
-    `activity_status?reservation_id=in.(${reservationIds.map(encodeURIComponent).join(",")})&select=farm_id,reservation_id,current_status,updated_at&order=updated_at.desc`,
-  );
+  const { query } = await import("../db");
+  return (await query(
+    `SELECT farm_id, reservation_id, current_status, updated_at FROM public.activity_status
+      WHERE reservation_id = ANY($1::uuid[]) ORDER BY updated_at DESC`,
+    [reservationIds],
+  )) as unknown as SaasActivityStatus[];
 }
 
 /** email per SaaS profile id — used to match a buyer's mrv-side records back to their crm.leads row (leads carry email, not the SaaS profile id). */
 export async function listSaasProfileEmails(profileIds: string[]): Promise<Map<string, string>> {
   if (!profileIds.length) return new Map();
-  const rows = await restGet<{ id: string; email: string }[]>(
-    `profiles?id=in.(${[...new Set(profileIds)].map(encodeURIComponent).join(",")})&select=id,email`,
+  const { query } = await import("../db");
+  const rows = await query<{ id: string; email: string }>(
+    `SELECT id, email FROM public.profiles WHERE id = ANY($1::uuid[])`,
+    [[...new Set(profileIds)]],
   );
   return new Map(rows.map((r) => [r.id, r.email]));
 }
@@ -364,8 +388,9 @@ export interface SaasPlotCropCycle {
  * src/app/api/plots/route.ts is the source of truth for this shape).
  */
 export async function listAllSaasPlotCropCycles(): Promise<SaasPlotCropCycle[]> {
-  const rows = await restGet<{ id: string; farm_id: string | null; project_id: string; geojson: { properties?: Record<string, unknown> } }[]>(
-    "plots?select=id,farm_id,project_id,geojson",
+  const { query } = await import("../db");
+  const rows = await query<{ id: string; farm_id: string | null; project_id: string; geojson: { properties?: Record<string, unknown> } }>(
+    `SELECT id, farm_id, project_id, geojson FROM public.plots`,
   );
   return rows.map((r) => {
     const props = r.geojson?.properties ?? {};
@@ -384,8 +409,64 @@ export async function listAllSaasPlotCropCycles(): Promise<SaasPlotCropCycle[]> 
 /** owning profile_id per farm id — the join step to reach a farm's email via listSaasProfileEmails, since crm.leads is matched by email, not by farm id. */
 export async function listFarmProfileIds(farmIds: string[]): Promise<Map<string, string>> {
   if (!farmIds.length) return new Map();
-  const rows = await restGet<{ id: string; profile_id: string }[]>(
-    `farms?id=in.(${[...new Set(farmIds)].map(encodeURIComponent).join(",")})&select=id,profile_id`,
+  const { query } = await import("../db");
+  const rows = await query<{ id: string; profile_id: string }>(
+    `SELECT id, profile_id FROM public.farms WHERE id = ANY($1::uuid[])`,
+    [[...new Set(farmIds)]],
   );
   return new Map(rows.map((r) => [r.id, r.profile_id]));
+}
+
+/** A farm's registered crops (multi-select at onboarding) — the input to resolveProjectKeyForCrops(), never the plot's own single `crop` field. */
+export async function listFarmCropsByIds(farmIds: string[]): Promise<Map<string, string[]>> {
+  if (!farmIds.length) return new Map();
+  const { query } = await import("../db");
+  const rows = await query<{ id: string; crops: string[] | null }>(
+    `SELECT id, crops FROM public.farms WHERE id = ANY($1::uuid[])`,
+    [[...new Set(farmIds)]],
+  );
+  return new Map(rows.map((r) => [r.id, r.crops ?? []]));
+}
+
+/**
+ * Reads a single JSON object out of Supabase Storage (settings.json is one
+ * PlatformSettings object, not an array — readStorageJson above assumes an
+ * array and would silently return [] for this file).
+ */
+async function readStorageObject<T>(bucket: string, file: string): Promise<T | null> {
+  assertConfigured();
+  const res = await fetch(`${SAAS_SUPABASE_URL}/storage/v1/object/${bucket}/${encodeURIComponent(file)}`, {
+    headers: {
+      apikey: SAAS_SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${SAAS_SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`SaaS Storage object ${bucket}/${file} returned ${res.status}: ${body}`);
+  }
+  return (await res.json()) as T;
+}
+
+/**
+ * A financing project's credit-yield config — mirrors carbonature-saas's own
+ * FinancingProject (src/lib/settings.ts) field-for-field. This is now the
+ * single source of truth for credit-yield rates and orchard-age brackets;
+ * MRV never keeps its own copy of these numbers (see plotTypeResolver.ts).
+ */
+export interface SaasFinancingProject {
+  key: string;
+  kind: "open_field" | "plantation";
+  startDate: string;
+  creditsPerHa: number;
+  youngCreditsPerHa: number;
+  matureCreditsPerHa: number;
+  youngMaxAgeYears: number;
+}
+
+/** settings.json's `projects` array — the SaaS admin panel Nitzan edits credit-yield/orchard-age values in. */
+export async function getSaasFinancingProjects(): Promise<SaasFinancingProject[]> {
+  const settings = await readStorageObject<{ projects?: SaasFinancingProject[] }>("config", "settings.json");
+  return settings?.projects ?? [];
 }

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import type { AgentRecord } from "@/lib/data";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
+import { extractAttachmentText } from "@/lib/agent/extractAttachmentText";
 import { AgentAvatar } from "./AgentAvatar";
 
 /** External systems each agent is defined to reach, and whether it is wired. */
@@ -73,6 +74,14 @@ export function AgentOrgChart({
         />
       )}
     </div>
+  );
+}
+
+function PaperclipIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M21.44 11.05 12.25 20.24a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
   );
 }
 
@@ -301,6 +310,51 @@ function AskAgentPanel({
   const [task, setTask] = useState("");
   const [pending, start] = useTransition();
   const [result, setResult] = useState<AgentTaskResult | null>(null);
+  const [attachment, setAttachment] = useState<{ name: string; content: string; truncated: boolean } | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [readingFile, setReadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // readAsDataURL yields "data:<mime>;base64,<data>" — only the part after the comma is the payload.
+        const result = String(reader.result ?? "");
+        resolve(result.slice(result.indexOf(",") + 1));
+      };
+      reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAttachmentError(null);
+    setReadingFile(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const result = await extractAttachmentText({ name: file.name, base64 });
+      if (result.ok) {
+        setAttachment({ name: file.name, content: result.data.text, truncated: result.data.truncated });
+      } else {
+        setAttachmentError(result.error);
+      }
+    } catch (err) {
+      setAttachmentError(`Could not read "${file.name}": ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setReadingFile(false);
+    }
+  }
+
+  function buildTask(): string {
+    if (!attachment) return task.trim();
+    const header = `Attached file: ${attachment.name}${attachment.truncated ? " (truncated)" : ""}`;
+    const fileBlock = `${header}\n\n${attachment.content}`;
+    return task.trim() ? `${task.trim()}\n\n${fileBlock}` : fileBlock;
+  }
 
   return (
     <section>
@@ -320,18 +374,56 @@ function AskAgentPanel({
         rows={2}
         className="mt-2 w-full rounded-lg border border-line bg-white p-2 text-[12.5px]"
       />
-      <button
-        type="button"
-        disabled={!task.trim() || pending}
-        onClick={() =>
-          start(async () => {
-            setResult(await askAgent(agent.agentId, task.trim()));
-          })
-        }
-        className="mt-2 rounded-lg bg-pine-600 px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-pine-700 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {pending ? "Asking…" : "Ask"}
-      </button>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt,.csv,.tsv,.json,.md,.log,.yaml,.yml,.docx,.xlsx,.pdf,text/plain,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <button
+          type="button"
+          disabled={readingFile}
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach a file (.txt, .csv, .md, .json, .docx, .xlsx, .pdf) — its text is added to the message below"
+          className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 py-1.5 text-[11.5px] font-semibold text-muted transition-colors hover:border-pine-300 hover:text-pine-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <PaperclipIcon />
+          {readingFile ? "Reading…" : "Attach"}
+        </button>
+
+        {attachment && (
+          <span className="flex items-center gap-1.5 rounded-full bg-pine-50 px-2.5 py-1 text-[11px] text-pine-700">
+            <PaperclipIcon className="h-3 w-3" />
+            <span className="max-w-[160px] truncate">{attachment.name}</span>
+            {attachment.truncated && <span className="text-earth-600">(truncated)</span>}
+            <button
+              type="button"
+              onClick={() => setAttachment(null)}
+              aria-label={`Remove ${attachment.name}`}
+              className="text-faint hover:text-danger"
+            >
+              ×
+            </button>
+          </span>
+        )}
+
+        <button
+          type="button"
+          disabled={(!task.trim() && !attachment) || pending}
+          onClick={() =>
+            start(async () => {
+              setResult(await askAgent(agent.agentId, buildTask()));
+            })
+          }
+          className="ml-auto rounded-lg bg-pine-600 px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-pine-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {pending ? "Asking…" : "Ask"}
+        </button>
+      </div>
+      {attachmentError && <p className="mt-1.5 text-[11px] text-danger">{attachmentError}</p>}
 
       {result && (
         <div className="mt-3 rounded-lg border border-line bg-cream p-3 text-[12px]">

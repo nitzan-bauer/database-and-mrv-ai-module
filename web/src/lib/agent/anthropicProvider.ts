@@ -28,7 +28,7 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
   return {
     id: `anthropic:${model}`,
 
-    async complete({ system, userMessage, tools, webSearch }) {
+    async complete({ system, userMessage, tools, webSearch, timeoutMs: explicitTimeoutMs, maxTokens: explicitMaxTokens }) {
       const controller = new AbortController();
       // A web-search turn needs the server time to actually run the
       // search(es) before it can answer — the flat 15s budget everything
@@ -37,7 +37,9 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
       // with other due tasks (src/app/api/cron/run-scheduled-tasks/route.ts)
       // can't afford a generous default either, so this only extends as
       // far as the caller explicitly asks for — default stays modest.
-      const timeoutMs = webSearch ? (webSearch.timeoutMs ?? 20_000) : COMPLETE_TIMEOUT_MS;
+      // An explicit timeoutMs (runAgentTask's interactive chat turn) wins
+      // outright, regardless of webSearch — a person watching can wait.
+      const timeoutMs = explicitTimeoutMs ?? (webSearch ? (webSearch.timeoutMs ?? 20_000) : COMPLETE_TIMEOUT_MS);
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let res: Response;
       try {
@@ -51,7 +53,7 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
           },
           body: JSON.stringify({
             model,
-            max_tokens: webSearch ? 3072 : 1536,
+            max_tokens: explicitMaxTokens ?? (webSearch ? 3072 : 1536),
             system,
             messages: [{ role: "user", content: userMessage }],
             tools: [
@@ -84,6 +86,7 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
         content?: Array<
           { type: "text"; text: string } | { type: "tool_use"; name: string; input: unknown }
         >;
+        usage?: { server_tool_use?: { web_search_requests?: number } };
       };
       const blocks = data.content ?? [];
 
@@ -96,13 +99,16 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
         .join("\n")
         .trim();
 
+      const webSearchesPerformed = webSearch ? (data.usage?.server_tool_use?.web_search_requests ?? 0) : undefined;
+
       const response: ProviderResponse = toolUse
         ? {
             kind: "tool_call",
             call: { name: toolUse.name, input: (toolUse.input as Record<string, unknown>) ?? {} },
             text: text || undefined,
+            webSearchesPerformed,
           }
-        : { kind: "text", text };
+        : { kind: "text", text, webSearchesPerformed };
       return response;
     },
   };

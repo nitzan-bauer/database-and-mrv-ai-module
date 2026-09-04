@@ -174,8 +174,20 @@ export async function loadPotentialData(): Promise<PotentialData> {
     `SELECT project_id, default_plot_type FROM mrv.project_plot_type_defaults`,
   );
   const plotTypeByProjectId = new Map(defaults.map((d) => [d.project_id, d.default_plot_type]));
-  const yieldRates = await query<{ plot_type: string; rate_per_ha: string }>(`SELECT plot_type, rate_per_ha FROM mrv.credit_yield_rate_table`);
-  const rateByPlotType = new Map(yieldRates.map((r) => [r.plot_type, Number(r.rate_per_ha)]));
+  // Rates come live from the SaaS's own admin-edited FinancingProject settings
+  // (the single source of truth per the admin-consolidation plan), not the
+  // static mrv.credit_yield_rate_table — confirmed live 2026-09-04 that the
+  // static table had drifted (open_field: 6 there vs. 5 in the SaaS).
+  const { getSaasFinancingProjects } = await import("../../../saas/saasClient");
+  const saasProjects = await getSaasFinancingProjects();
+  const openFieldProject = saasProjects.find((p) => p.kind === "open_field");
+  const plantationProject = saasProjects.find((p) => p.kind === "plantation");
+  const rateByPlotType = new Map<string, number>();
+  if (openFieldProject) rateByPlotType.set("open_field", openFieldProject.creditsPerHa);
+  if (plantationProject) {
+    rateByPlotType.set("young_orchard", plantationProject.youngCreditsPerHa);
+    rateByPlotType.set("mature_orchard", plantationProject.matureCreditsPerHa);
+  }
 
   const farmIds = [...new Set([...perFarm.map((r) => r.farm_id), ...dealFarmIds])];
   const [farmNames, projects] = await Promise.all([listFarmNamesByIds(farmIds), listSaasProjects()]);

@@ -25,18 +25,29 @@ const require = createRequire(import.meta.url);
 const { Client } = require("pg");
 
 /**
- * Same TLS rules as the app (src/lib/dbSsl.ts): verify against the Amazon
- * RDS CA bundle rather than switching verification off, and strip sslmode
- * from the URL so it cannot override that.
+ * Same TLS rules as the app (src/lib/dbSsl.ts): verify against a CA bundle
+ * rather than switching verification off, and strip sslmode from the URL
+ * so it cannot override that. Both the RDS and Supabase bundles are
+ * combined (src/lib/dbSsl.ts's own combinedBundle()) so this verifies
+ * correctly whichever of the two databases DATABASE_URL currently points
+ * at, post-Addendum-1 cutover — this script predates that cutover and
+ * only ever trusted RDS's CA until now.
  */
-const CA = path.join(path.resolve(import.meta.dirname, ".."), "certs", "rds-global-bundle.pem");
+const CERTS_DIR = path.join(path.resolve(import.meta.dirname, ".."), "certs");
+const RDS_CA = path.join(CERTS_DIR, "rds-global-bundle.pem");
+const SUPABASE_CA = path.join(CERTS_DIR, "supabase-ca-bundle.pem");
+function combinedCa() {
+  const parts = [];
+  if (fs.existsSync(RDS_CA)) parts.push(fs.readFileSync(RDS_CA, "utf8"));
+  if (fs.existsSync(SUPABASE_CA)) parts.push(fs.readFileSync(SUPABASE_CA, "utf8"));
+  if (!parts.length) throw new Error(`Missing ${RDS_CA} and ${SUPABASE_CA} — fetch them with:  npm run db:certs`);
+  return parts.join("\n");
+}
 function connOpts(raw) {
   let connectionString = raw;
   try { const u = new URL(raw); u.searchParams.delete("sslmode"); connectionString = u.toString(); }
   catch { connectionString = raw.replace(/[?&]sslmode=[^&]*/i, ""); }
-  if (!fs.existsSync(CA))
-    throw new Error(`Missing ${CA} — fetch it with:  npm run db:certs`);
-  return { connectionString, ssl: { ca: fs.readFileSync(CA, "utf8"), rejectUnauthorized: true } };
+  return { connectionString, ssl: { ca: combinedCa(), rejectUnauthorized: true } };
 }
 
 const WEB = path.resolve(import.meta.dirname, "..");

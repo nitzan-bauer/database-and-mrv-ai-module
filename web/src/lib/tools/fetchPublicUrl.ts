@@ -40,54 +40,55 @@ const BLOCKED_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "169.254.169
 const PRIVATE_IP_RE = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
 
 /**
- * Fetch one public URL and return its real, visible text — never a
- * guess about what a page probably contains. Grounds Rebeka's
- * pdd_generator claim ("research every issued PDD in the category on
- * the Verra registry") and John's verra_benchmarking in genuinely
- * fetched content rather than the model's own recollection, which for
- * anything specific to a particular project is exactly the kind of
- * detail an LLM cannot be trusted to remember correctly.
- *
  * https only, and a small blocklist against localhost/private/link-local
- * addresses — this reaches the public internet on the server's behalf,
- * so it must not become a way to reach the server's own internal network.
+ * addresses — this reaches the public internet on the server's behalf, so
+ * it must not become a way to reach the server's own internal network.
+ * Shared by fetchPublicUrl and browseWebsite (browseWebsite.ts) so every
+ * page either tool touches — the start URL and every same-origin link it
+ * follows — goes through the identical SSRF check, not a second copy of it.
+ * Returns an error message, or null when the URL is safe to fetch.
  */
-export async function fetchPublicUrl(
-  ctx: ToolContext,
-  input: { url: string },
-): Promise<ToolResult<FetchedPublicUrl>> {
-  const policy = await checkPolicy("fetch_public_url", ctx);
-  if (!policy.allowed) return fail(policy.reason!, true);
-
-  let parsed: URL;
-  try {
-    parsed = new URL(input.url);
-  } catch {
-    return fail(`fetchPublicUrl: "${input.url}" is not a valid URL.`);
-  }
-  if (parsed.protocol !== "https:") {
-    return fail("fetchPublicUrl: only https:// URLs are allowed.");
-  }
+export function validatePublicUrl(parsed: URL): string | null {
+  if (parsed.protocol !== "https:") return "only https:// URLs are allowed.";
   const host = parsed.hostname.toLowerCase();
-  if (BLOCKED_HOSTS.has(host) || PRIVATE_IP_RE.test(host)) {
-    return fail(`fetchPublicUrl: "${host}" is not a public address.`);
-  }
+  if (BLOCKED_HOSTS.has(host) || PRIVATE_IP_RE.test(host)) return `"${host}" is not a public address.`;
+  return null;
+}
 
+export interface FetchedPage {
+  status: number;
+  title: string | null;
+  textExcerpt: string;
+  truncated: boolean;
+  /** Distinct absolute https:// links found on the page, capped at MAX_LINKS — empty for a non-HTML response. */
+  links: string[];
+}
+
+/**
+ * Fetches one already-validated https URL and returns its real, visible
+ * text plus the links it found — never a guess about what a page probably
+ * contains. Grounds Rebeka's pdd_generator claim ("research every issued
+ * PDD in the category on the Verra registry") and John's
+ * verra_benchmarking in genuinely fetched content rather than the model's
+ * own recollection, which for anything specific to a particular project is
+ * exactly the kind of detail an LLM cannot be trusted to remember
+ * correctly. Shared by fetchPublicUrl (one page) and browseWebsite
+ * (several pages of the same site) — one fetch-and-sanitize
+ * implementation, not two. Throws on a network/timeout failure; the caller
+ * decides how to report that.
+ */
+export async function fetchAndExtractPage(parsed: URL, maxChars: number): Promise<FetchedPage> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   let res: Response;
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    try {
-      res = await fetch(parsed.toString(), {
-        signal: controller.signal,
-        redirect: "follow",
-        headers: { "user-agent": "CarboNature-MRV/1.0 (+https://carbonature.io)" },
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch (e) {
-    return fail(`fetchPublicUrl: could not reach "${input.url}" — ${e instanceof Error ? e.message : String(e)}`);
+    res = await fetch(parsed.toString(), {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { "user-agent": "CarboNature-MRV/1.0 (+https://carbonature.io)" },
+    });
+  } finally {
+    clearTimeout(timeout);
   }
 
   const contentType = res.headers.get("content-type") ?? "";
@@ -109,24 +110,51 @@ export async function fetchPublicUrl(
       .trim();
   }
 
-  const truncated = text.length > MAX_CHARS;
-  const textExcerpt = truncated ? text.slice(0, MAX_CHARS) : text;
+  const truncated = text.length > maxChars;
+  const textExcerpt = truncated ? text.slice(0, maxChars) : text;
+
+  return { status: res.status, title, textExcerpt, truncated, links };
+}
+
+/** Fetch one public URL and return its real, visible text — see fetchAndExtractPage's own doc comment for why this fetches for real rather than guessing. */
+export async function fetchPublicUrl(
+  ctx: ToolContext,
+  input: { url: string },
+): Promise<ToolResult<FetchedPublicUrl>> {
+  const policy = await checkPolicy("fetch_public_url", ctx);
+  if (!policy.allowed) return fail(policy.reason!, true);
+
+  let parsed: URL;
+  try {
+    parsed = new URL(input.url);
+  } catch {
+    return fail(`fetchPublicUrl: "${input.url}" is not a valid URL.`);
+  }
+  const invalidReason = validatePublicUrl(parsed);
+  if (invalidReason) return fail(`fetchPublicUrl: ${invalidReason}`);
+
+  let page: FetchedPage;
+  try {
+    page = await fetchAndExtractPage(parsed, MAX_CHARS);
+  } catch (e) {
+    return fail(`fetchPublicUrl: could not reach "${input.url}" — ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   const result: FetchedPublicUrl = {
     url: parsed.toString(),
-    status: res.status,
-    title,
-    textExcerpt,
-    truncated,
+    status: page.status,
+    title: page.title,
+    textExcerpt: page.textExcerpt,
+    truncated: page.truncated,
     fetchedAt: new Date().toISOString(),
-    links,
+    links: page.links,
   };
 
   await audit(ctx, "fetch_public_url", null, {
     url: result.url,
     status: result.status,
     truncated: result.truncated,
-    chars: textExcerpt.length,
+    chars: result.textExcerpt.length,
   });
 
   return ok(result);

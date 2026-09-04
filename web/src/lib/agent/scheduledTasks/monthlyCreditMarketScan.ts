@@ -85,8 +85,21 @@ export async function runMonthlyCreditMarketScan(ctx: ToolContext): Promise<Sche
   });
   console.log(`[${TASK_KEY}] web-search model call: ${Date.now() - t0}ms`);
 
+  // Nitzan's own request, live this session: "no deals found" and "the
+  // search tool never actually ran" used to look identical from the
+  // outside — a real access failure would have silently reported as a
+  // quiet, unremarkable month. webSearchesPerformed (Anthropic's own
+  // usage.server_tool_use.web_search_requests) tells them apart: 0 real
+  // searches despite asking for web search is a genuine bug, flagged as
+  // this task's actual failure, not folded into "found nothing."
+  if (resp.webSearchesPerformed === 0) {
+    return { ok: false, detail: `monthly credit market scan: web search did not run at all this month (0 searches executed) — this is a real access failure, not an empty month.` };
+  }
+
   const found = resp.kind === "text" ? parseDeals(resp.text) : [];
-  const paragraphs: string[] = [];
+  const paragraphs: string[] = [
+    `Web search ran (${resp.webSearchesPerformed ?? "?"} real search(es) executed) — every finding below carries its own real source.`,
+  ];
   let inserted = 0;
 
   if (!found.length) {

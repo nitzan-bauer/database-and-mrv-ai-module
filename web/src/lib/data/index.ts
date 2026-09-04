@@ -772,16 +772,24 @@ export async function listAdminUsers(): Promise<import("./fixtures").AdminUser[]
   }
   const { query } = await import("../db");
 
+  // One row per (user, app they've actually signed into) — seen_apps is
+  // real, per-app data (stamped by each app's own sign-in upsert: MRV's
+  // ensureUser.ts, the CRM's and the SaaS's own ensureMrvUser.ts), so a
+  // person who uses more than one app (e.g. Nitzan: MRV + CRM) correctly
+  // counts toward every tile they actually have access to, instead of
+  // every identity being lumped into one hardcoded "MRV" bucket.
   const users = await query<Record<string, unknown>>(
     `SELECT u.full_name, u.email, u.auth_method::text AS auth_method, u.is_active,
-            u.last_active_at,
+            u.last_active_at, app.app_name,
             coalesce(string_agg(DISTINCT m.role::text, ', '), 'no role yet') AS role,
             coalesce(string_agg(DISTINCT m.project_id, ', '), '—')           AS scope
        FROM mrv.users u
+       CROSS JOIN LATERAL unnest(CASE WHEN cardinality(u.seen_apps) = 0 THEN ARRAY['mrv'] ELSE u.seen_apps END) AS app(app_name)
        LEFT JOIN mrv.project_memberships m ON m.user_id = u.user_id
-      GROUP BY u.user_id
+      GROUP BY u.user_id, app.app_name
       ORDER BY u.full_name`,
   );
+  const SYSTEM_LABEL: Record<string, "MRV" | "SaaS" | "CRM"> = { mrv: "MRV", saas: "SaaS", crm: "CRM" };
 
   const tokens = await query<Record<string, unknown>>(
     `SELECT t.contractor_email, t.work_order_id, t.last_used_at, w.contractor_name
@@ -797,7 +805,7 @@ export async function listAdminUsers(): Promise<import("./fixtures").AdminUser[]
       email: String(u.email),
       role: String(u.role),
       scope: String(u.scope),
-      system: "MRV" as const,
+      system: SYSTEM_LABEL[String(u.app_name)] ?? "MRV",
       authMethod: (u.auth_method as "sso" | "password" | "mcp_token") ?? "sso",
       isActive: Boolean(u.is_active),
       lastActiveAt: u.last_active_at ? String(u.last_active_at).slice(0, 10) : null,

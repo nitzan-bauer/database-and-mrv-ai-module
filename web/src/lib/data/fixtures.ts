@@ -169,17 +169,20 @@ export const DEMO_SAMPLING_POINTS: SamplingPoint[] = DEMO_PLOTS.flatMap(demoPoin
    Slice 3). They exercise every Plot-Details tab so the screen can be
    reviewed before real data lands.                                      */
 
+// CoteN and Multicote Products (both 'crf') were removed from the real
+// catalogue (seeds/0003_products.sql) — Nitzan's own request, live this
+// session — so fixtures-mode no longer has a real CRF product to demo
+// with either; every plot now gets a single biofertilizer activity,
+// matching this file's own rule that "Products are the REAL marketplace
+// catalogue," not an invented one.
 export const DEMO_PRODUCTS: Record<string, Product> = {
   rootella: { name: "Rootella products", activityType: "biofertilizer", activityLabel: "Apply Mycorrhiza", costPerHaUsd: 84.96, creditPerHa: 3 },
   rootellaF: { name: "Rootella-F", activityType: "biofertilizer", activityLabel: "Apply Rootella-F", costPerHaUsd: 1298.52, creditPerHa: 38 },
-  coten: { name: "CoteN", activityType: "crf", activityLabel: "Improve fertilizer management", costPerHaUsd: 13968, creditPerHa: 400 },
-  multicote: { name: "Multicote Products", activityType: "crf", activityLabel: "Control Release Fertilizers", costPerHaUsd: 53237.5, creditPerHa: 1522 },
 };
 
-/** Two Project Activities per plot: a biofertilizer (removal) + a CRF (avoidance). */
+/** One Project Activity per plot: a biofertilizer (removal pathway). */
 export const DEMO_ACTIVITIES: AlmActivity[] = DEMO_PLOTS.flatMap((p, i) => {
   const bio = i % 2 === 0 ? DEMO_PRODUCTS.rootella : DEMO_PRODUCTS.rootellaF;
-  const crf = i % 2 === 0 ? DEMO_PRODUCTS.multicote : DEMO_PRODUCTS.coten;
   return [
     {
       activityId: `${p.plotId}-ACT-1`, plotId: p.plotId, product: bio,
@@ -187,13 +190,6 @@ export const DEMO_ACTIVITIES: AlmActivity[] = DEMO_PLOTS.flatMap((p, i) => {
       applicationAreaHa: p.applicationAreaHa, applicationDate: "2026-04-12",
       season: "2026 spring", scenario: "PR" as const,
       notes: "Removal pathway — soil carbon build-up",
-    },
-    {
-      activityId: `${p.plotId}-ACT-2`, plotId: p.plotId, product: crf,
-      activityType: "crf", rate: 180, rateUnit: "kg N/ha",
-      applicationAreaHa: p.applicationAreaHa, applicationDate: "2026-04-20",
-      season: "2026 spring", scenario: "PR" as const,
-      notes: "Avoidance pathway — enters the GHG Calculator",
     },
   ];
 });
