@@ -149,15 +149,25 @@ export async function draftPddChapterContent(
   // own prompt below. This is the one piece of code that turns
   // accumulated feedback/outcomes into an actual influence on what gets
   // written, not just a memory row that sits unread.
-  const { recallLessons } = await import("../agent/lessonMemory");
+  const { recallLessons, recallDomainLessons } = await import("../agent/lessonMemory");
   const pastLessons = await recallLessons(ctx, {
     actionName: "draft_pdd_chapter_content",
     projectId: input.projectId,
     situation: input.chapterTitles.join(", "),
   });
-  const lessonsBlock = pastLessons.length
-    ? "\n\nLessons from past drafting on this project (apply these — don't repeat a known mistake):\n" +
-      pastLessons.map((l) => `- ${l.content}`).join("\n")
+  // Cross-agent (Stage 3): a lesson Dave recorded from a VVB finding, or
+  // John from a credit/allocation discrepancy, can surface here too —
+  // this is the 'mrv' domain, not scoped to draft_pdd_chapter_content
+  // specifically the way recallLessons above is.
+  const domainLessons = await recallDomainLessons(ctx, {
+    domain: "mrv",
+    situation: input.chapterTitles.join(", "),
+    projectId: input.projectId,
+  });
+  const allLessons = [...pastLessons, ...domainLessons];
+  const lessonsBlock = allLessons.length
+    ? "\n\nLessons from past drafting and related MRV work on this project (apply these — don't repeat a known mistake):\n" +
+      allLessons.map((l) => `- ${l.content}`).join("\n")
     : "";
 
   const projectFacts =
@@ -271,11 +281,20 @@ export async function draftPddChapterContent(
       }
 
       const direction = row.inputText?.trim() || row.draftedText?.trim();
+      // Nitzan's own reviewComment on the CURRENT drafted_text (PDD
+      // Development interface, 0067) — until now this was recorded but
+      // never actually reached a redraft's prompt, so a redraft reworded
+      // the section with no idea what was wrong. This is the single
+      // strongest, most specific signal available for this exact section.
+      const reviewBlock = row.reviewComment?.trim()
+        ? `\n\nThe founder reviewed the previous draft and left this note — address it specifically, don't just reword:\n${row.reviewComment.trim()}`
+        : "";
       const userMessage =
         `Section: "${row.sectionTitle}"\n` +
         `Verra's own guidance for this section:\n${guidance}\n\n` +
         `Project facts:\n${projectFacts}` +
         (direction ? `\n\nDirection from the founder (raw, not final wording — write proper prose from this):\n${direction}` : "") +
+        reviewBlock +
         excerptBlock +
         lessonsBlock;
 
@@ -295,8 +314,13 @@ export async function draftPddChapterContent(
             [row.statusId, row.draftedText, ctx.actor],
           );
         }
+        // Clearing review_comment once it's actually been addressed —
+        // otherwise it keeps re-injecting into every future redraft of
+        // this section indefinitely, not just the one that resolves it.
         await query(
-          `UPDATE mrv.pdd_section_status SET drafted_text = $1, status = 'drafted', updated_by = $2 WHERE status_id = $3`,
+          reviewBlock
+            ? `UPDATE mrv.pdd_section_status SET drafted_text = $1, status = 'drafted', updated_by = $2, review_comment = NULL WHERE status_id = $3`
+            : `UPDATE mrv.pdd_section_status SET drafted_text = $1, status = 'drafted', updated_by = $2 WHERE status_id = $3`,
           [text, ctx.actor, row.statusId],
         );
         sections.push({ sectionIndex: row.sectionIndex, sectionTitle: row.sectionTitle, outcome: "drafted" });
@@ -356,6 +380,7 @@ export async function draftPddChapterContent(
     agentId: "rebeka",
     actionName: "draft_pdd_chapter_content",
     projectId: input.projectId,
+    domain: "mrv",
     outcomeSummary:
       `Drafted ${sections.filter((s) => s.outcome === "drafted").length} section(s) across ${input.chapterTitles.join(", ")}.` +
       (errors.length ? ` Errors: ${errors.map((e) => `"${e.sectionTitle}" — ${e.detail}`).join("; ")}.` : " No errors."),

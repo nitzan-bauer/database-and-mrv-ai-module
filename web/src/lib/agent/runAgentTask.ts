@@ -3,12 +3,29 @@ import { after } from "next/server";
 import { getAgent } from "../data";
 import { DATA_MODE } from "../env";
 import { audit, type ToolContext } from "../tools/context";
-import { recallLessons, recordLesson } from "./lessonMemory";
+import { recallLessons, recallDomainLessons, recordLesson } from "./lessonMemory";
 import { getConfiguredProvider, type ModelProvider } from "./provider";
 import { TARGET_PROJECT_ID } from "./scheduledTasks/constants";
 import { TOOL_REGISTRY } from "./toolRegistry";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Stage 3 of the agent learning-layer plan: which professional domain each
+ * agent's own chat turns belong to, for the cross-agent recall/record
+ * below. Deliberately coarse (two buckets, not five) — the whole point is
+ * that a lesson Dave records from a VVB finding can reach Rebeka drafting
+ * a methodology section, and John's credit/allocation work sits close
+ * enough to that same real-world evidence chain to share it too. Ron and
+ * Jennifer's CRM work has no bearing on any of that, so it gets its own.
+ */
+const AGENT_DOMAIN: Record<string, string> = {
+  rebeka: "mrv",
+  dave: "mrv",
+  john: "mrv",
+  jennifer: "crm",
+  ron: "crm",
+};
 
 /**
  * A task comes from a person, who names a farm the way they would in
@@ -115,9 +132,19 @@ export async function runAgentTask(
     projectId: TARGET_PROJECT_ID,
     situation: userTask.slice(0, 300),
   });
-  const lessonsBlock = pastLessons.length
-    ? "\n\nLessons from past conversations (apply these — don't repeat a known mistake):\n" +
-      pastLessons.map((l) => `- ${l.content}`).join("\n")
+  // Cross-agent (Stage 3): the same domain a lesson from Dave's
+  // record_mvr_signoff or resolve_vvb_finding gets tagged with — this is
+  // what actually lets it reach Rebeka or John, not just Dave's own future
+  // turns (recallLessons above, scoped to actionName===agentId, never
+  // crosses that boundary by design).
+  const domain = AGENT_DOMAIN[agentId] ?? null;
+  const domainLessons = domain
+    ? await recallDomainLessons(ctx, { domain, situation: userTask.slice(0, 300), projectId: TARGET_PROJECT_ID })
+    : [];
+  const allLessons = [...pastLessons, ...domainLessons];
+  const lessonsBlock = allLessons.length
+    ? "\n\nLessons from past conversations and related MRV work (apply these — don't repeat a known mistake):\n" +
+      allLessons.map((l) => `- ${l.content}`).join("\n")
     : "";
 
   // Fires after the response is already sent (Next.js `after()`), so
@@ -125,7 +152,7 @@ export async function runAgentTask(
   // a person waiting on this chat turn actually sees.
   const scheduleLesson = (outcomeSummary: string) => {
     const write = () =>
-      recordLesson(ctx, { agentId, actionName: agentId, projectId: TARGET_PROJECT_ID, outcomeSummary });
+      recordLesson(ctx, { agentId, actionName: agentId, projectId: TARGET_PROJECT_ID, outcomeSummary, domain });
     try {
       after(write);
     } catch {

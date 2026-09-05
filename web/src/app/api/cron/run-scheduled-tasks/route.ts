@@ -48,7 +48,9 @@ export const maxDuration = 60;
 const TIME_BUDGET_MS = 10_000;
 function advanceNextRun(current: Date, frequency: string): Date {
   const next = new Date(current);
-  if (frequency === "monthly") {
+  if (frequency === "bimonthly") {
+    next.setUTCMonth(next.getUTCMonth() + 2);
+  } else if (frequency === "monthly") {
     next.setUTCMonth(next.getUTCMonth() + 1);
   } else if (frequency === "daily") {
     next.setUTCDate(next.getUTCDate() + 1);

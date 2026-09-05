@@ -7,6 +7,8 @@ export interface AgentMemoryInput {
   farmId?: string | null;
   /** Free text, e.g. 'note' | 'finding' | 'decision'. Defaults to 'long_term'. */
   kind?: string;
+  /** Coarse professional-domain tag ('mrv' | 'crm' | ...) — lets recallDomainLessons surface this across agents/actions, not just the exact one that wrote it. */
+  domain?: string | null;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -52,8 +54,8 @@ export async function recordAgentMemory(
   if (Number(projects[0].n) === 0) return fail("recordAgentMemory: no such project.");
 
   const rows = await query<{ memory_id: string }>(
-    `INSERT INTO mrv.agent_memory (project_id, farm_id, kind, content, embedding, metadata, created_by)
-     VALUES ($1, $2, $3, $4, $5::vector, $6::jsonb, $7)
+    `INSERT INTO mrv.agent_memory (project_id, farm_id, kind, content, embedding, metadata, created_by, domain)
+     VALUES ($1, $2, $3, $4, $5::vector, $6::jsonb, $7, $8)
      RETURNING memory_id`,
     [
       input.projectId,
@@ -63,6 +65,7 @@ export async function recordAgentMemory(
       vector,
       JSON.stringify(input.metadata ?? {}),
       ctx.actor,
+      input.domain ?? null,
     ],
   );
   const memoryId = rows[0].memory_id;

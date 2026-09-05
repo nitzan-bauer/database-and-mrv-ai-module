@@ -14,6 +14,11 @@ export interface VvbFindingInput {
   issueRaised: string;
   raisedBy?: string | null;
   raisedAt?: string | null;
+  /** Root-cause attribution (0101) — whichever of these the finding actually concerns, if known. All optional: most findings won't name one. */
+  samplingCycleId?: string | null;
+  modelRunId?: string | null;
+  baselineSiteId?: string | null;
+  workOrderId?: string | null;
 }
 
 export interface RecordedVvbFinding {
@@ -55,8 +60,9 @@ export async function recordVvbFinding(
 
   const rows = await query<{ finding_id: string }>(
     `INSERT INTO mrv.vvb_findings
-       (project_id, stage, finding_type, issue_raised, raised_by, raised_at, recorded_by)
-     VALUES ($1, $2::mrv.vvb_finding_stage, $3::mrv.vvb_finding_type, $4, $5, $6, $7)
+       (project_id, stage, finding_type, issue_raised, raised_by, raised_at, recorded_by,
+        sampling_cycle_id, model_run_id, baseline_site_id, work_order_id)
+     VALUES ($1, $2::mrv.vvb_finding_stage, $3::mrv.vvb_finding_type, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING finding_id`,
     [
       input.projectId,
@@ -66,6 +72,10 @@ export async function recordVvbFinding(
       input.raisedBy ?? null,
       input.raisedAt ?? null,
       ctx.actor,
+      input.samplingCycleId ?? null,
+      input.modelRunId ?? null,
+      input.baselineSiteId ?? null,
+      input.workOrderId ?? null,
     ],
   );
   const findingId = rows[0].finding_id;

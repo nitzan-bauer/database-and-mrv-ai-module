@@ -19,6 +19,7 @@ import { TASK_KEY as RON_EXPIRY_REMINDER_KEY, runRonExpiryReminder } from "./sch
 import { TASK_KEY as RON_WEEKLY_REPORT_KEY, runRonWeeklyReport } from "./scheduledTasks/ronWeeklyReport";
 import { TASK_KEY as RON_PLOT_CYCLE_SYNC_KEY, runRonPlotCycleSync } from "./scheduledTasks/ronPlotCycleSync";
 import { TASK_KEY as RON_CROP_CYCLE_REMINDER_KEY, runRonCropCycleReminder } from "./scheduledTasks/ronCropCycleReminder";
+import { TASK_KEY as DAVE_BSL_PROTOCOL_AND_SAMPLING_PLAN_KEY, runDaveBslProtocolAndSamplingPlan } from "./scheduledTasks/daveBslProtocolAndSamplingPlan";
 
 export interface ScheduledTaskOutcome {
   ok: boolean;
@@ -58,4 +59,5 @@ export const SCHEDULED_TASK_REGISTRY: Record<string, ScheduledTaskHandler> = {
   [RON_WEEKLY_REPORT_KEY]: runRonWeeklyReport,
   [RON_PLOT_CYCLE_SYNC_KEY]: runRonPlotCycleSync,
   [RON_CROP_CYCLE_REMINDER_KEY]: runRonCropCycleReminder,
+  [DAVE_BSL_PROTOCOL_AND_SAMPLING_PLAN_KEY]: runDaveBslProtocolAndSamplingPlan,
 };

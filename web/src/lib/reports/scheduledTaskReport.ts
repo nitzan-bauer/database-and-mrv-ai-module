@@ -28,6 +28,8 @@ export async function finishScheduledTask(
     sendEmail?: boolean;
     /** All 5 tasks live today are Rebeka's — future agents' own scheduled tasks pass their own id. */
     agentId?: string;
+    /** Coarse professional-domain tag ('mrv' | 'crm' | ...) — see recallDomainLessons in lessonMemory.ts. Omit to leave untagged, as every task did before Stage 3 of the learning-layer plan. */
+    domain?: string | null;
   },
 ): Promise<ScheduledTaskOutcome> {
   const sendEmail = input.sendEmail ?? true;
@@ -41,6 +43,7 @@ export async function finishScheduledTask(
   const memoryResult = await recordAgentMemory(ctx, {
     projectId: input.projectId,
     kind: input.memoryKind,
+    domain: input.domain ?? null,
     content: `${input.subject}\n\n${bodyText}`,
   });
   if (!memoryResult.ok) {
@@ -58,6 +61,7 @@ export async function finishScheduledTask(
     agentId,
     actionName: input.taskKey,
     projectId: input.projectId,
+    domain: input.domain ?? null,
     outcomeSummary: bodyText,
   });
 

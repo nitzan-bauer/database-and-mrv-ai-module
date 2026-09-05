@@ -96,11 +96,18 @@ export async function updatePddSectionStatus(
   values.push(ctx.actor);
 
   const { query } = await import("../db");
-  const rows = await query<{ status_id: string; status: "pending" | "answered" | "skipped" | "drafted"; review_comment: string | null; dev_approved: boolean }>(
+  const rows = await query<{
+    status_id: string;
+    status: "pending" | "answered" | "skipped" | "drafted";
+    review_comment: string | null;
+    dev_approved: boolean;
+    section_title: string;
+    drafted_text: string | null;
+  }>(
     `UPDATE mrv.pdd_section_status
         SET ${sets.join(", ")}
       WHERE project_id = $1 AND template_id = $2 AND section_index = $3
-      RETURNING status_id, status, review_comment, dev_approved`,
+      RETURNING status_id, status, review_comment, dev_approved, section_title, drafted_text`,
     [input.projectId, input.templateId, input.sectionIndex, ...values],
   );
   if (!rows.length) return fail("updatePddSectionStatus: no such section — it may need seeding first (open the questionnaire page once).");
@@ -125,10 +132,47 @@ export async function updatePddSectionStatus(
   });
 
   // The generic learning-signal table (0078) alongside the existing
-  // dev_approved flag — approving a drafted section is drafting's own
-  // real approval signal, and this is what lets a future "is Rebeka's
-  // drafting actually improving" query see it, not just this one flag.
-  if (input.devApproved === true) {
+  // dev_approved flag. Until now only 'approved' was ever recorded — the
+  // much stronger 'corrected'/'rejected' signals were silently dropped,
+  // even though recallLessons (lessonMemory.ts) now reads them. A real
+  // reviewComment is a correction (it carries the actual substance of
+  // what was wrong); an explicit devApproved:false with no comment this
+  // same call is a bare rejection.
+  if (input.reviewComment !== undefined && input.reviewComment.trim()) {
+    const { recordAgentFeedback } = await import("./recordAgentFeedback");
+    await recordAgentFeedback(ctx, {
+      agentId: "rebeka",
+      actionName: "draft_pdd_chapter_content",
+      targetType: "pdd_section_status",
+      targetId: rows[0].status_id,
+      verdict: "corrected",
+      correctionText: input.reviewComment.trim(),
+    });
+
+    // Stage 4 (generic finding -> lesson trigger): a lesson synthesized
+    // right now, from the actual diff (what was drafted vs. what was
+    // wrong with it) — not the generic per-run summary
+    // draftPddChapterContent's own recordLesson call produces at the end
+    // of a whole drafting pass. This is a stronger, more specific signal:
+    // it fires the moment a human corrects something, grounded in the
+    // real text, not "N sections drafted, no errors".
+    if (rows[0].drafted_text?.trim()) {
+      const { recordLesson } = await import("../agent/lessonMemory");
+      await recordLesson(
+        { actor: "rebeka", actorKind: "agent" },
+        {
+          agentId: "rebeka",
+          actionName: "draft_pdd_chapter_content",
+          projectId: input.projectId,
+          domain: "mrv",
+          outcomeSummary:
+            `Section "${rows[0].section_title}" was corrected by a human reviewer.\n` +
+            `What was drafted:\n${rows[0].drafted_text.trim().slice(0, 1500)}\n\n` +
+            `The correction:\n${input.reviewComment.trim()}`,
+        },
+      );
+    }
+  } else if (input.devApproved === true) {
     const { recordAgentFeedback } = await import("./recordAgentFeedback");
     await recordAgentFeedback(ctx, {
       agentId: "rebeka",
@@ -136,6 +180,15 @@ export async function updatePddSectionStatus(
       targetType: "pdd_section_status",
       targetId: rows[0].status_id,
       verdict: "approved",
+    });
+  } else if (input.devApproved === false) {
+    const { recordAgentFeedback } = await import("./recordAgentFeedback");
+    await recordAgentFeedback(ctx, {
+      agentId: "rebeka",
+      actionName: "draft_pdd_chapter_content",
+      targetType: "pdd_section_status",
+      targetId: rows[0].status_id,
+      verdict: "rejected",
     });
   }
 

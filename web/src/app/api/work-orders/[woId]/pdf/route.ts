@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import QRCode from "qrcode";
 import { getWorkOrder } from "@/lib/data";
 import { DEFAULT_GRACE_DAYS } from "@/lib/mcp/token";
 
@@ -33,12 +34,31 @@ function wa(s: string): string {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ woId: string }> },
 ) {
   const { woId } = await params;
   const wo = await getWorkOrder(decodeURIComponent(woId));
   if (!wo) return new NextResponse("Work order not found", { status: 404 });
+
+  // The raw token is never stored (only its hash is — see issueWorkOrder's
+  // own doc comment) and so can never be recovered by this on-demand
+  // route on its own. A real, working QR code can only be drawn the ONE
+  // time the caller actually has the raw token in hand: immediately after
+  // issuance, passed through here as a query param. Any later regeneration
+  // of the same PDF (no token in the URL) falls back to the placeholder
+  // text below — which is correct, not a bug: a lost token is replaced by
+  // revoking and issuing a new one, never recovered.
+  const freshToken = new URL(req.url).searchParams.get("token");
+  let qrPngDataUrl: string | null = null;
+  if (freshToken && wo.token) {
+    const samplerUrl = `https://sampler.carbonature.io/wo/${wo.woId}?token=${freshToken}`;
+    try {
+      qrPngDataUrl = await QRCode.toDataURL(samplerUrl, { margin: 1, width: 240 });
+    } catch {
+      qrPngDataUrl = null; // a QR-generation hiccup must never block the PDF itself
+    }
+  }
 
   const pdf = await PDFDocument.create();
   pdf.setTitle(`CarboNature Work Order ${wo.woId}`);
@@ -188,7 +208,25 @@ export async function GET(
   text("MCP ACTIVATION", M, 8, bold, PINE);
   y -= 14;
   if (wo.token) {
-    text(`URL       sampler.carbonature.io/wo/${wo.woId}?token=<issued once>`, M, 8.5, mono, INK);
+    const blockTop = y;
+    if (qrPngDataUrl) {
+      try {
+        const qrImage = await pdf.embedPng(Buffer.from(qrPngDataUrl.split(",")[1], "base64"));
+        const qrSize = 70;
+        page.drawImage(qrImage, { x: A4[0] - M - qrSize, y: blockTop - qrSize + 10, width: qrSize, height: qrSize });
+      } catch {
+        // A draw failure here must never sink the rest of the PDF.
+      }
+    }
+    text(
+      qrPngDataUrl
+        ? "Scan the QR code to open the sampler's own link — scoped to this work order only."
+        : `URL       sampler.carbonature.io/wo/${wo.woId}?token=<issued once — regenerate this PDF right after issuing to show the real QR code>`,
+      M,
+      8.5,
+      qrPngDataUrl ? font : mono,
+      INK,
+    );
     y -= 12;
     text(`Expires   ${wo.token.expiresAt.slice(0, 10)}  (window end + ${DEFAULT_GRACE_DAYS} days)`, M, 8.5, mono, INK);
     y -= 12;

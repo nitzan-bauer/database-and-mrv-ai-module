@@ -130,5 +130,32 @@ export async function recordMvrSignoff(
     imeContractedBy,
   });
 
+  // Stage 4 (finding -> lesson, generalized beyond VVB findings): a model
+  // failing its own VMD0053 thresholds is exactly the kind of professional
+  // signal worth remembering — grounded in the real numbers, not a
+  // generic "signoff recorded" summary. Deliberately only fires on a real
+  // failure, not every routine green signoff (the far more common case) —
+  // matching recordLesson's own "don't pad a routine result" stance.
+  if (biasWithinPmu === false || coveragePass === false) {
+    const farms = await query<{ farm_id: string }>(`SELECT farm_id FROM mrv.model_runs WHERE run_id = $1`, [input.runId]);
+    const projectRows = farms.length
+      ? await query<{ project_id: string }>(`SELECT project_id FROM mrv.farms WHERE farm_id = $1`, [farms[0].farm_id])
+      : [];
+    if (projectRows.length) {
+      const { recordLesson } = await import("../agent/lessonMemory");
+      await recordLesson(ctx, {
+        agentId: "dave",
+        actionName: "record_mvr_signoff",
+        projectId: projectRows[0].project_id,
+        domain: "mrv",
+        outcomeSummary:
+          `MVR sign-off for model run ${input.runId} failed a VMD0053 threshold.\n` +
+          `Mean bias: ${input.meanBias ?? "n/a"}, pooled measurement uncertainty: ${input.pooledMeasUnc ?? "n/a"} ` +
+          `(bias within PMU: ${biasWithinPmu}).\n` +
+          `Coverage: ${input.coveragePct ?? "n/a"}% (pass: ${coveragePass}, threshold >=90%).`,
+      });
+    }
+  }
+
   return ok({ mvrId, runId: input.runId, status, biasWithinPmu, coveragePass });
 }

@@ -27,7 +27,7 @@ const LESSON_SYSTEM_PROMPT =
  */
 export async function recordLesson(
   ctx: ToolContext,
-  input: { agentId: string; actionName: string; projectId: string; outcomeSummary: string },
+  input: { agentId: string; actionName: string; projectId: string; outcomeSummary: string; domain?: string | null },
 ): Promise<void> {
   try {
     const { getConfiguredProvider } = await import("./provider");
@@ -45,6 +45,7 @@ export async function recordLesson(
       projectId: input.projectId,
       kind: "lesson",
       content: lesson,
+      domain: input.domain ?? null,
       metadata: { actionName: input.actionName, agentId: input.agentId },
     });
   } catch {
@@ -61,25 +62,84 @@ export interface RecalledLesson {
 /**
  * Past lessons for this action, semantically ranked against the
  * current situation — a thin filter over the existing recallAgentMemory
- * (kind='lesson'). Returns an empty array on any failure; a missing
- * lesson is not a reason to block real work.
+ * (kind='lesson'), UNIONED with real human verdicts from mrv.agent_feedback
+ * (corrected/rejected, with the actual correction text) for the same
+ * action. Until this, the two mechanisms never spoke to each other —
+ * recallLessons only ever saw its own synthesized 'lesson' memories, never
+ * the much stronger signal of an actual human correction. Returns an
+ * empty array on any failure; a missing lesson is not a reason to block
+ * real work.
  */
 export async function recallLessons(
   ctx: ToolContext,
   input: { actionName: string; projectId: string; situation?: string; limit?: number },
 ): Promise<RecalledLesson[]> {
+  const limit = input.limit ?? 3;
+  let synthesized: RecalledLesson[] = [];
   try {
     const { recallAgentMemory } = await import("../tools/recallAgentMemory");
     const result = await recallAgentMemory(ctx, {
       query: `${input.actionName}: ${input.situation ?? "general guidance"}`,
       projectId: input.projectId,
       kind: "lesson",
+      limit,
+    });
+    if (result.ok) {
+      synthesized = result.data.memories
+        .filter((m) => m.metadata.actionName === input.actionName)
+        .map((m) => ({ content: m.content, createdAt: m.createdAt }));
+    }
+  } catch {
+    // fall through — a missing synthesized lesson is not fatal
+  }
+
+  let corrections: RecalledLesson[] = [];
+  try {
+    const { query } = await import("../db");
+    const rows = await query<{ correction_text: string; verdict: string; created_at: string }>(
+      `SELECT correction_text, verdict, created_at::text
+         FROM mrv.agent_feedback
+        WHERE action_name = $1 AND verdict IN ('corrected', 'rejected') AND correction_text IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT $2`,
+      [input.actionName, limit],
+    );
+    corrections = rows.map((r) => ({
+      content: `A human ${r.verdict} a past result of this action: ${r.correction_text}`,
+      createdAt: r.created_at,
+    }));
+  } catch {
+    // fall through — same non-fatal stance as the synthesized side
+  }
+
+  return [...corrections, ...synthesized].slice(0, limit);
+}
+
+/**
+ * Cross-agent lessons for a whole professional domain (e.g. 'mrv' —
+ * spanning Rebeka's PDD drafting, Dave's monitoring/verification, and
+ * John's credit/allocation work), not scoped to one exact actionName the
+ * way recallLessons is. This is what lets a lesson Dave records from a
+ * VVB finding actually reach Rebeka while she's drafting a methodology
+ * section, and vice versa — recallLessons alone never crosses that
+ * boundary, by design (it's the narrow, same-task mechanism). The two are
+ * meant to run side by side, not replace one another.
+ */
+export async function recallDomainLessons(
+  ctx: ToolContext,
+  input: { domain: string; situation: string; projectId?: string | null; limit?: number },
+): Promise<RecalledLesson[]> {
+  try {
+    const { recallAgentMemory } = await import("../tools/recallAgentMemory");
+    const result = await recallAgentMemory(ctx, {
+      query: input.situation,
+      projectId: input.projectId ?? null,
+      kind: "lesson",
+      domain: input.domain,
       limit: input.limit ?? 3,
     });
     if (!result.ok) return [];
-    return result.data.memories
-      .filter((m) => m.metadata.actionName === input.actionName)
-      .map((m) => ({ content: m.content, createdAt: m.createdAt }));
+    return result.data.memories.map((m) => ({ content: m.content, createdAt: m.createdAt }));
   } catch {
     return [];
   }

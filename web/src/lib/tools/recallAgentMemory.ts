@@ -6,6 +6,8 @@ export interface RecallAgentMemoryInput {
   projectId?: string | null;
   farmId?: string | null;
   kind?: string | null;
+  /** Coarse professional-domain filter (pdd_drafting, mrv_monitoring, ...) — see recallDomainLessons. */
+  domain?: string | null;
   /** Default 5, max 20. */
   limit?: number;
 }
@@ -70,12 +72,14 @@ export async function recallAgentMemory(
             (embedding <=> $1::vector)::text AS distance
        FROM mrv.agent_memory
       WHERE embedding IS NOT NULL
+        AND superseded_by IS NULL
         AND ($2::text IS NULL OR project_id = $2)
         AND ($3::uuid IS NULL OR farm_id = $3)
         AND ($4::text IS NULL OR kind = $4)
+        AND ($6::text IS NULL OR domain = $6)
       ORDER BY embedding <=> $1::vector ASC
       LIMIT $5`,
-    [vector, input.projectId ?? null, input.farmId ?? null, input.kind ?? null, limit],
+    [vector, input.projectId ?? null, input.farmId ?? null, input.kind ?? null, limit, input.domain ?? null],
   );
 
   await audit(ctx, "recall_agent_memory", null, {

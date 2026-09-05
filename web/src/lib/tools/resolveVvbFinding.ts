@@ -34,13 +34,15 @@ export async function resolveVvbFinding(
 
   const { query } = await import("../db");
 
-  const existing = await query<{ status: string }>(`SELECT status::text FROM mrv.vvb_findings WHERE finding_id = $1`, [
-    input.findingId,
-  ]);
+  const existing = await query<{ status: string; project_id: string; finding_type: string; issue_raised: string; stage: string }>(
+    `SELECT status::text, project_id, finding_type::text, issue_raised, stage::text FROM mrv.vvb_findings WHERE finding_id = $1`,
+    [input.findingId],
+  );
   if (!existing.length) return fail("resolveVvbFinding: no such finding.");
   if (existing[0].status === "resolved") {
     return fail("resolveVvbFinding: this finding is already resolved.");
   }
+  const finding = existing[0];
 
   await query(
     `UPDATE mrv.vvb_findings
@@ -50,6 +52,25 @@ export async function resolveVvbFinding(
   );
 
   await audit(ctx, "resolve_vvb_finding", { type: "vvb_finding", id: input.findingId }, {});
+
+  // Stage 4 (finding -> lesson, generalized beyond just this tool): a
+  // resolved VVB finding is exactly the "real professional finding" the
+  // plan calls for — grounded in the actual issue and how it was really
+  // resolved, not a generic summary. CAR (Corrective Action Request) is
+  // the serious tier — always worth a lesson; CR/FAR/other still get one,
+  // recordLesson's own "NOTHING" escape hatch handles the routine ones.
+  const { recordLesson } = await import("../agent/lessonMemory");
+  await recordLesson(ctx, {
+    agentId: "dave",
+    actionName: "resolve_vvb_finding",
+    projectId: finding.project_id,
+    domain: "mrv",
+    outcomeSummary:
+      `A VVB ${finding.finding_type} finding at the ${finding.stage} stage was resolved.\n` +
+      `Issue raised: ${finding.issue_raised}\n\n` +
+      `Response: ${input.response.trim()}\n` +
+      `Conclusion: ${input.conclusion.trim()}`,
+  });
 
   return ok({ findingId: input.findingId, status: "resolved" });
 }
