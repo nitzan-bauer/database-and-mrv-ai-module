@@ -57,7 +57,13 @@ export async function POST(req: Request) {
   const grant = await signStaffGrant(clientId, { email: claims.email, name: claims.name, role: claims.role });
   return NextResponse.json({
     access_token: grant,
-    id_token: grant,
+    // Deliberately NOT named id_token: a field with that exact name makes
+    // Auth.js try to verify it itself as a real OIDC ID token against a
+    // JWKS endpoint, defaulting to RS256 — confirmed live ("unexpected JWT
+    // alg header parameter, expected RS256") — which our HS256 grant will
+    // never satisfy. staff_grant carries the identical value; both CRM's
+    // and the SaaS's own client code read this field instead.
+    staff_grant: grant,
     token_type: "Bearer",
     expires_in: 12 * 60 * 60,
   });
