@@ -778,6 +778,9 @@ export async function listAdminUsers(): Promise<import("./fixtures").AdminUser[]
   // person who uses more than one app (e.g. Nitzan: MRV + CRM) correctly
   // counts toward every tile they actually have access to, instead of
   // every identity being lumped into one hardcoded "MRV" bucket.
+  // is_staff = true only — this table is the staff/agent directory, not a
+  // dump of every farmer and credit buyer now that mrv.users also holds
+  // their directory rows (Addendum 2, Part A, migration 0100).
   const users = await query<Record<string, unknown>>(
     `SELECT u.full_name, u.email, u.auth_method::text AS auth_method, u.is_active,
             u.last_active_at, app.app_name,
@@ -786,6 +789,7 @@ export async function listAdminUsers(): Promise<import("./fixtures").AdminUser[]
        FROM mrv.users u
        CROSS JOIN LATERAL unnest(CASE WHEN cardinality(u.seen_apps) = 0 THEN ARRAY['mrv'] ELSE u.seen_apps END) AS app(app_name)
        LEFT JOIN mrv.project_memberships m ON m.user_id = u.user_id
+      WHERE u.is_staff
       GROUP BY u.user_id, app.app_name
       ORDER BY u.full_name`,
   );
