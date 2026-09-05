@@ -22,6 +22,16 @@ export async function POST(req: Request) {
     clientId = form?.get("client_id")?.toString();
   }
 
+  // Some OAuth2 clients authenticate via HTTP Basic (client_secret_basic)
+  // instead of putting client_id in the body — accept either shape.
+  if (!clientId) {
+    const authHeader = req.headers.get("authorization") ?? "";
+    if (authHeader.startsWith("Basic ")) {
+      const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf8");
+      clientId = decoded.split(":")[0];
+    }
+  }
+
   if (!code || !clientId || !OIDC_CLIENTS[clientId]) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
