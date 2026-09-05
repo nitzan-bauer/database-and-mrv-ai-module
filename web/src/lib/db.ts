@@ -24,7 +24,15 @@ function makePool(): Pool {
   return new Pool({
     connectionString,
     ssl,
-    max: 5,
+    // Small on purpose: this pool is one of many, one per warm serverless
+    // container — a single page's nav prefetch alone fires ~10 routes
+    // concurrently, and 5 connections × many concurrent containers blew
+    // through Supabase's session-pooler cap (confirmed live in production:
+    // "max clients reached in session mode - pool_size: 15"). The
+    // transaction pooler this now targets multiplexes far more client
+    // connections onto few backend ones, so a low per-container cap here
+    // is what actually matters, not this number alone.
+    max: 3,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
     // Set at connection startup, not via a query after — a query fired
