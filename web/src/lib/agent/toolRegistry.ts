@@ -29,6 +29,10 @@ import { browseWebsite } from "../tools/browseWebsite";
 import { sendEmail } from "../tools/sendEmail";
 import { recordVvbFinding } from "../tools/recordVvbFinding";
 import { resolveVvbFinding } from "../tools/resolveVvbFinding";
+import { updateEntityProfile } from "../tools/updateEntityProfile";
+import { linkAgentDriveFolder } from "../tools/linkAgentDriveFolder";
+import { listAgentDriveDocuments } from "../tools/listAgentDriveDocuments";
+import { linkSourceDriveFolder } from "../tools/linkSourceDriveFolder";
 import { recordPddForecast } from "../tools/recordPddForecast";
 import { getForecastVsActual } from "../tools/getForecastVsActual";
 import { submitProjectStatus } from "../tools/submitProjectStatus";
@@ -1401,6 +1405,80 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         projectId: String(input.projectId ?? ""),
         questionKey: String(input.questionKey ?? ""),
         answerText: String(input.answerText ?? ""),
+      }),
+  },
+
+  update_entity_profile: {
+    schema: {
+      name: "update_entity_profile",
+      description:
+        "Refine a running profile for a recurring real-world entity (a lab, VVB, farm, or contractor) with a " +
+        "new piece of evidence — updates the existing profile in place rather than adding a competing note.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          entityType: { type: "string", enum: ["lab", "vvb", "farm", "contractor"] },
+          entityId: { type: "string", description: "The entity's real id (lab/farm) or name/reference (VVB, contractor)." },
+          newEvidence: { type: "string" },
+        },
+        required: ["entityType", "entityId", "newEvidence"],
+      },
+    },
+    handler: (ctx, input) =>
+      updateEntityProfile(ctx, {
+        entityType: input.entityType as "lab" | "vvb" | "farm" | "contractor",
+        entityId: String(input.entityId ?? ""),
+        newEvidence: String(input.newEvidence ?? ""),
+      }),
+  },
+
+  link_agent_drive_folder: {
+    schema: {
+      name: "link_agent_drive_folder",
+      description: "Link an agent to its own personal Drive folder, where it centralizes every document it produces via scheduled tasks. Verifies the folder id is real and reachable.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string" },
+          driveFolderId: { type: "string", description: "Copy this from the folder's URL in Drive." },
+        },
+        required: ["agentId", "driveFolderId"],
+      },
+    },
+    handler: (ctx, input) =>
+      linkAgentDriveFolder(ctx, { agentId: String(input.agentId ?? ""), driveFolderId: String(input.driveFolderId ?? "") }),
+  },
+
+  list_agent_drive_documents: {
+    schema: {
+      name: "list_agent_drive_documents",
+      description: "List the real, current contents of an agent's own linked Drive folder.",
+      inputSchema: {
+        type: "object",
+        properties: { agentId: { type: "string" } },
+        required: ["agentId"],
+      },
+    },
+    handler: (ctx, input) => listAgentDriveDocuments(ctx, { agentId: String(input.agentId ?? "") }),
+  },
+
+  link_source_drive_folder: {
+    schema: {
+      name: "link_source_drive_folder",
+      description: "Link one of the 3 real source folders (claude, carbonature, downloads) John's biweekly sorting round reads from. Verifies the folder id is real and reachable.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          sourceKey: { type: "string", enum: ["claude", "carbonature", "downloads"] },
+          driveFolderId: { type: "string", description: "Copy this from the folder's URL in Drive." },
+        },
+        required: ["sourceKey", "driveFolderId"],
+      },
+    },
+    handler: (ctx, input) =>
+      linkSourceDriveFolder(ctx, {
+        sourceKey: input.sourceKey as "claude" | "carbonature" | "downloads",
+        driveFolderId: String(input.driveFolderId ?? ""),
       }),
   },
 };

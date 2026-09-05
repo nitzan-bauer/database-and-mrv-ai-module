@@ -34,8 +34,8 @@ export async function resolveVvbFinding(
 
   const { query } = await import("../db");
 
-  const existing = await query<{ status: string; project_id: string; finding_type: string; issue_raised: string; stage: string }>(
-    `SELECT status::text, project_id, finding_type::text, issue_raised, stage::text FROM mrv.vvb_findings WHERE finding_id = $1`,
+  const existing = await query<{ status: string; project_id: string; finding_type: string; issue_raised: string; stage: string; raised_by: string | null }>(
+    `SELECT status::text, project_id, finding_type::text, issue_raised, stage::text, raised_by FROM mrv.vvb_findings WHERE finding_id = $1`,
     [input.findingId],
   );
   if (!existing.length) return fail("resolveVvbFinding: no such finding.");
@@ -71,6 +71,21 @@ export async function resolveVvbFinding(
       `Response: ${input.response.trim()}\n` +
       `Conclusion: ${input.conclusion.trim()}`,
   });
+
+  // Stage 8: fold this resolved finding into that VVB's own running
+  // profile — this is the concrete case the plan named directly (a VVB's
+  // known strictness pattern, built up from real CAR/CR/FAR history), not
+  // just another episodic note competing with the last ten about it.
+  if (finding.raised_by?.trim()) {
+    const { updateEntityProfile } = await import("./updateEntityProfile");
+    await updateEntityProfile(ctx, {
+      entityType: "vvb",
+      entityId: finding.raised_by.trim(),
+      newEvidence:
+        `${finding.finding_type} at the ${finding.stage} stage: "${finding.issue_raised}" — ` +
+        `resolved with: "${input.conclusion.trim()}".`,
+    });
+  }
 
   return ok({ findingId: input.findingId, status: "resolved" });
 }

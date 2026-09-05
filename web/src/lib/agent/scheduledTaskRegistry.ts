@@ -20,6 +20,20 @@ import { TASK_KEY as RON_WEEKLY_REPORT_KEY, runRonWeeklyReport } from "./schedul
 import { TASK_KEY as RON_PLOT_CYCLE_SYNC_KEY, runRonPlotCycleSync } from "./scheduledTasks/ronPlotCycleSync";
 import { TASK_KEY as RON_CROP_CYCLE_REMINDER_KEY, runRonCropCycleReminder } from "./scheduledTasks/ronCropCycleReminder";
 import { TASK_KEY as DAVE_BSL_PROTOCOL_AND_SAMPLING_PLAN_KEY, runDaveBslProtocolAndSamplingPlan } from "./scheduledTasks/daveBslProtocolAndSamplingPlan";
+import { TASK_KEY as JOHN_MEMORY_CONSOLIDATION_KEY, runJohnMemoryConsolidation } from "./scheduledTasks/johnMemoryConsolidation";
+import { TASK_KEY as JOHN_DRIVE_SORTING_ROUND_KEY, runJohnDriveSortingRound } from "./scheduledTasks/johnDriveSortingRound";
+import {
+  DAVE_TASK_KEY as DAVE_DRIVE_DIGESTION_KEY,
+  JENNIFER_TASK_KEY as JENNIFER_DRIVE_DIGESTION_KEY,
+  JOHN_TASK_KEY as JOHN_DRIVE_DIGESTION_KEY,
+  REBEKA_TASK_KEY as REBEKA_DRIVE_DIGESTION_KEY,
+  RON_TASK_KEY as RON_DRIVE_DIGESTION_KEY,
+  runDaveDriveDigestion,
+  runJenniferDriveDigestion,
+  runJohnDriveDigestion,
+  runRebekaDriveDigestion,
+  runRonDriveDigestion,
+} from "./scheduledTasks/agentDriveDigestion";
 
 export interface ScheduledTaskOutcome {
   ok: boolean;
@@ -60,4 +74,11 @@ export const SCHEDULED_TASK_REGISTRY: Record<string, ScheduledTaskHandler> = {
   [RON_PLOT_CYCLE_SYNC_KEY]: runRonPlotCycleSync,
   [RON_CROP_CYCLE_REMINDER_KEY]: runRonCropCycleReminder,
   [DAVE_BSL_PROTOCOL_AND_SAMPLING_PLAN_KEY]: runDaveBslProtocolAndSamplingPlan,
+  [JOHN_MEMORY_CONSOLIDATION_KEY]: runJohnMemoryConsolidation,
+  [JOHN_DRIVE_SORTING_ROUND_KEY]: runJohnDriveSortingRound,
+  [DAVE_DRIVE_DIGESTION_KEY]: runDaveDriveDigestion,
+  [JENNIFER_DRIVE_DIGESTION_KEY]: runJenniferDriveDigestion,
+  [JOHN_DRIVE_DIGESTION_KEY]: runJohnDriveDigestion,
+  [REBEKA_DRIVE_DIGESTION_KEY]: runRebekaDriveDigestion,
+  [RON_DRIVE_DIGESTION_KEY]: runRonDriveDigestion,
 };

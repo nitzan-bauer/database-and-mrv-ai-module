@@ -21,17 +21,31 @@ export interface RecalledMemory {
   createdBy: string | null;
   createdAt: string;
   metadata: Record<string, unknown>;
-  /** Cosine distance — 0 is identical, larger is less similar. */
+  /** Cosine distance — 0 is identical, larger is less similar. Raw, unadjusted — see adjustedDistance for what ranking actually used. */
   distance: number;
+  /** distance after the recency/severity weighting below — this is what ORDER BY actually used. */
+  adjustedDistance: number;
+  /** Set when this memory itself corrects/replaces an earlier one — a reader should treat it as updated understanding, not brand-new information layered on top of the old. */
+  supersedesMemoryId: string | null;
 }
 
 /**
  * Semantic recall over mrv.agent_memory — the query is embedded once
- * (Voyage AI, the same model recordAgentMemory writes with) and
- * compared against every stored embedding by cosine distance (pgvector's
- * `<=>` operator, matching the HNSW index migration 0006 already built
- * for it). Optional projectId/farmId/kind filters narrow the search
- * without changing the ranking itself.
+ * (Voyage AI, the same model recordAgentMemory writes with) and compared
+ * against every stored embedding by cosine distance (pgvector's `<=>`
+ * operator, matching the HNSW index migration 0006 already built for it).
+ * Optional projectId/farmId/kind filters narrow the search without
+ * changing the ranking itself.
+ *
+ * Stage 6 (learning-layer plan): ranking is no longer raw cosine distance
+ * alone — a memory's age nudges it down (a routine note from a year ago
+ * shouldn't outrank a fresh, only-slightly-less-similar one), and a
+ * high-severity finding (a VVB CAR) nudges it up. 'protocol' memories are
+ * explicitly exempt from the age penalty — Stage 5's own design intent is
+ * that a protocol is a stable reference, not a decaying episodic note.
+ * The weights below (0.15 max age penalty over a year, 0.1 severity
+ * bonus) are a first, defensible pass, not a tuned or validated model —
+ * there is no feedback loop yet confirming they actually improve recall.
  */
 export async function recallAgentMemory(
   ctx: ToolContext,
@@ -67,9 +81,19 @@ export async function recallAgentMemory(
     created_at: string;
     metadata: Record<string, unknown> | null;
     distance: string;
+    adjusted_distance: string;
+    supersedes_memory_id: string | null;
   }>(
     `SELECT memory_id, kind, content, project_id, farm_id, created_by, created_at, metadata,
-            (embedding <=> $1::vector)::text AS distance
+            supersedes_memory_id,
+            (embedding <=> $1::vector)::text AS distance,
+            (
+              (embedding <=> $1::vector)
+              + (CASE WHEN kind = 'protocol' THEN 0
+                      ELSE LEAST(EXTRACT(EPOCH FROM (now() - created_at)) / (365 * 86400.0), 1.0) * 0.15
+                 END)
+              - (CASE WHEN metadata->>'findingType' = 'CAR' THEN 0.1 ELSE 0 END)
+            )::text AS adjusted_distance
        FROM mrv.agent_memory
       WHERE embedding IS NOT NULL
         AND superseded_by IS NULL
@@ -77,7 +101,7 @@ export async function recallAgentMemory(
         AND ($3::uuid IS NULL OR farm_id = $3)
         AND ($4::text IS NULL OR kind = $4)
         AND ($6::text IS NULL OR domain = $6)
-      ORDER BY embedding <=> $1::vector ASC
+      ORDER BY adjusted_distance ASC
       LIMIT $5`,
     [vector, input.projectId ?? null, input.farmId ?? null, input.kind ?? null, limit, input.domain ?? null],
   );
@@ -100,6 +124,8 @@ export async function recallAgentMemory(
       createdAt: new Date(r.created_at).toISOString(),
       metadata: r.metadata ?? {},
       distance: Number(r.distance),
+      adjustedDistance: Number(r.adjusted_distance),
+      supersedesMemoryId: r.supersedes_memory_id,
     })),
   });
 }

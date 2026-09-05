@@ -59,6 +59,11 @@ export interface RecalledLesson {
   createdAt: string;
 }
 
+/** Stage 6: a memory that itself corrects an earlier one is marked as such, so the reader treats it as updated understanding rather than an unrelated new fact. */
+function withSupersessionNote(content: string, supersedesMemoryId: string | null): string {
+  return supersedesMemoryId ? `[This updates earlier guidance that turned out to be wrong] ${content}` : content;
+}
+
 /**
  * Past lessons for this action, semantically ranked against the
  * current situation — a thin filter over the existing recallAgentMemory
@@ -87,7 +92,7 @@ export async function recallLessons(
     if (result.ok) {
       synthesized = result.data.memories
         .filter((m) => m.metadata.actionName === input.actionName)
-        .map((m) => ({ content: m.content, createdAt: m.createdAt }));
+        .map((m) => ({ content: withSupersessionNote(m.content, m.supersedesMemoryId), createdAt: m.createdAt }));
     }
   } catch {
     // fall through — a missing synthesized lesson is not fatal
@@ -139,7 +144,7 @@ export async function recallDomainLessons(
       limit: input.limit ?? 3,
     });
     if (!result.ok) return [];
-    return result.data.memories.map((m) => ({ content: m.content, createdAt: m.createdAt }));
+    return result.data.memories.map((m) => ({ content: withSupersessionNote(m.content, m.supersedesMemoryId), createdAt: m.createdAt }));
   } catch {
     return [];
   }

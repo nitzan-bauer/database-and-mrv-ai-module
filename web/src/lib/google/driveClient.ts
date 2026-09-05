@@ -200,6 +200,21 @@ export async function downloadDriveFile(accessToken: string, fileId: string): Pr
   return Buffer.from(await res.arrayBuffer());
 }
 
+/**
+ * Export a native Google Doc as plain text — Drive's own conversion.
+ * Used for reading a Doc's real content (Stage 10's agent digestion)
+ * without a PDF-parsing dependency; a non-Google-Doc file (an uploaded
+ * PDF/docx) isn't read this way — its name/type alone still gets noted.
+ */
+export async function exportGoogleDocAsText(accessToken: string, fileId: string): Promise<string> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text/plain`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`Drive export-text error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return res.text();
+}
+
 /** Export a native Google Doc as a real PDF — Drive's own conversion, not a docx-to-PDF library. */
 export async function exportGoogleDocAsPdf(accessToken: string, fileId: string): Promise<Buffer> {
   const res = await fetch(
@@ -208,6 +223,28 @@ export async function exportGoogleDocAsPdf(accessToken: string, fileId: string):
   );
   if (!res.ok) throw new Error(`Drive export-pdf error ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return Buffer.from(await res.arrayBuffer());
+}
+
+/**
+ * A Drive shortcut — the same file appearing in another folder without
+ * duplicating it. This is what lets one document (e.g. a research brief
+ * relevant to both Rebeka and Dave) live in multiple agents' folders
+ * without multiplying storage or drifting into two separately-edited
+ * copies (Stage 10 of the agent learning-layer plan).
+ */
+export async function createDriveShortcut(accessToken: string, targetFileId: string, name: string, parentFolderId: string): Promise<DriveFile> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,modifiedTime,webViewLink&${ALL_DRIVES}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      name,
+      mimeType: "application/vnd.google-apps.shortcut",
+      parents: [parentFolderId],
+      shortcutDetails: { targetId: targetFileId },
+    }),
+  });
+  if (!res.ok) throw new Error(`Drive create-shortcut error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()) as DriveFile;
 }
 
 /** Grant "anyone with the link can comment" — what a VVB needs without a Drive account of their own. */

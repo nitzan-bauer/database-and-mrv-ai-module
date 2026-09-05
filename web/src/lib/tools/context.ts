@@ -111,7 +111,11 @@ export type ActionName =
   | "update_pdd_seed_answer"
   | "check_calendar_availability"
   | "schedule_calendar_event"
-  | "list_recent_mail";
+  | "list_recent_mail"
+  | "update_entity_profile"
+  | "link_agent_drive_folder"
+  | "list_agent_drive_documents"
+  | "link_source_drive_folder";
 
 /**
  * Check the policy for an action and record the attempt.
