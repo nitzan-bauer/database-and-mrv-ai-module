@@ -43,10 +43,16 @@ async function runProtocolResearch(ctx: ToolContext): Promise<{ protocol: string
   const { getConfiguredProvider } = await import("../provider");
   const provider = await getConfiguredProvider();
 
+  // Confirmed live 2026-09-07: browseWebsite's own crawl budget is 25s
+  // per call (CRAWL_BUDGET_MS in browseWebsite.ts) — running the two
+  // VERRA_RESEARCH_URLS sequentially could burn up to 50s on research
+  // alone before the completion call below even starts, well past this
+  // route's 45s per-handler timeout. Running them in parallel caps the
+  // research phase at ~25s regardless of how many URLs there are.
+  const results = await Promise.all(VERRA_RESEARCH_URLS.map((url) => browseWebsite(ctx, { startUrl: url, maxPages: 3 })));
   const pages: string[] = [];
   const readUrls: string[] = [];
-  for (const url of VERRA_RESEARCH_URLS) {
-    const res = await browseWebsite(ctx, { startUrl: url, maxPages: 3 });
+  for (const res of results) {
     if (res.ok) {
       readUrls.push(...res.data.pages.map((p) => p.url));
       pages.push(...res.data.pages.map((p) => `[${p.title ?? p.url}] (${p.url})\n${p.textExcerpt}`));
@@ -60,12 +66,18 @@ async function runProtocolResearch(ctx: ToolContext): Promise<{ protocol: string
     };
   }
 
+  // Confirmed live 2026-09-07: the previous 12,000-char input / 4096
+  // maxTokens combination reliably timed out at the 40s inner call
+  // limit — far more context and output budget than a 400-700 word
+  // protocol (~1000 tokens) actually needs. Trimmed to what the task
+  // genuinely requires rather than just raising the timeout further,
+  // since the whole handler is itself capped at 45s by the cron route.
   const resp = await provider.complete({
     system: PROTOCOL_SYSTEM_PROMPT,
-    userMessage: `Source material:\n\n${pages.join("\n\n").slice(0, 12000)}`,
+    userMessage: `Source material:\n\n${pages.join("\n\n").slice(0, 6000)}`,
     tools: [],
     timeoutMs: 40_000,
-    maxTokens: 4096,
+    maxTokens: 1600,
   });
   const protocol = resp.kind === "text" ? resp.text.trim() : null;
 
