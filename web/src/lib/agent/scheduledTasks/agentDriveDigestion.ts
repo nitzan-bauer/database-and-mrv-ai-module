@@ -15,6 +15,15 @@ import { TARGET_PROJECT_ID } from "./constants";
  * Google Docs are read via a real text export; a non-Doc file (an
  * uploaded PDF/docx) is noted by name/type only in this pass — reading
  * those would need a PDF-parsing dependency this stage doesn't add.
+ *
+ * Every file an agent sees here is a shortcut John's sorting round
+ * created (Stage 10.2) — its own `mimeType` is always the shortcut type,
+ * never the real target's. Confirmed live 2026-09-07: without resolving
+ * `shortcutDetails.targetMimeType`, every single digested note came back
+ * "not readable — only the name and type came through," even for real
+ * Google Docs, because the Google-Doc check was comparing against the
+ * shortcut's own mimeType. `listDriveFolderFiles` now requests
+ * `shortcutDetails`, so `targetMimeType`/`targetId` are used instead.
  */
 
 const DIGEST_SYSTEM_PROMPT =
@@ -72,10 +81,14 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
     );
     if (Number(already[0].n) > 0) continue;
 
+    const isShortcut = file.mimeType === "application/vnd.google-apps.shortcut";
+    const effectiveMimeType = isShortcut ? file.shortcutDetails?.targetMimeType : file.mimeType;
+    const readableFileId = isShortcut ? file.shortcutDetails?.targetId : file.id;
+
     let content: string | null = null;
-    if (file.mimeType === "application/vnd.google-apps.document") {
+    if (effectiveMimeType === "application/vnd.google-apps.document" && readableFileId) {
       try {
-        content = (await exportGoogleDocAsText(ctx.googleAccessToken, file.id)).slice(0, 8000);
+        content = (await exportGoogleDocAsText(ctx.googleAccessToken, readableFileId)).slice(0, 8000);
       } catch {
         content = null;
       }
@@ -85,7 +98,7 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
       system: DIGEST_SYSTEM_PROMPT.replace("{AGENT}", agentId),
       userMessage: content
         ? `Document: "${file.name}"\n\n${content}`
-        : `Document: "${file.name}" (${file.mimeType}) — content not readable in this pass, name/type only.`,
+        : `Document: "${file.name}" (${effectiveMimeType ?? file.mimeType}) — content not readable in this pass, name/type only.`,
       tools: [],
       maxTokens: 512,
     });

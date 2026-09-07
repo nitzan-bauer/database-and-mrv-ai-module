@@ -18,6 +18,12 @@ export interface DriveFile {
   mimeType: string;
   modifiedTime: string;
   webViewLink?: string;
+  // Only present when mimeType is the shortcut mimeType — a shortcut's
+  // own mimeType never reveals what it actually points at, so any code
+  // that wants to know the real file type behind a shortcut (e.g.
+  // deciding whether it's a Google Doc worth exporting as text) must
+  // read this instead of `mimeType`.
+  shortcutDetails?: { targetId: string; targetMimeType?: string };
 }
 
 async function driveFetch(accessToken: string, path: string, init?: RequestInit): Promise<Response> {
@@ -61,7 +67,7 @@ export async function listDriveFolderFiles(accessToken: string, folderId: string
   const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
   const res = await driveFetch(
     accessToken,
-    `files?q=${q}&fields=files(id,name,mimeType,modifiedTime,webViewLink)&orderBy=name&pageSize=100` +
+    `files?q=${q}&fields=files(id,name,mimeType,modifiedTime,webViewLink,shortcutDetails)&orderBy=name&pageSize=100` +
       `&${ALL_DRIVES}&includeItemsFromAllDrives=true`,
   );
   if (!res.ok) throw new Error(`Drive API error ${res.status}: ${(await res.text()).slice(0, 300)}`);
