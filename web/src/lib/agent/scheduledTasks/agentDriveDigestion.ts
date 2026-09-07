@@ -104,15 +104,23 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
     });
     const note = resp.kind === "text" ? resp.text.trim() : null;
     if (note) {
-      await recordAgentMemory(ctx, {
+      // recordAgentMemory returns a {ok, error} ToolResult rather than
+      // throwing — confirmed live 2026-09-07: an unchecked call here let
+      // a real embedding failure pass completely silently, with the file
+      // still counted as "digested" and no memory actually written.
+      const recorded = await recordAgentMemory(ctx, {
         projectId: TARGET_PROJECT_ID,
         kind: "drive_note",
         domain,
         content: `From "${file.name}": ${note}`,
         metadata: { agentId, fileId: file.id, fileName: file.name },
       });
-      digestNotes.push(`"${file.name}": ${note}`);
-      digested++;
+      if (recorded.ok) {
+        digestNotes.push(`"${file.name}": ${note}`);
+        digested++;
+      } else {
+        paragraphs.push(`Could not save the note on "${file.name}": ${recorded.error}`);
+      }
     }
 
     await query(
