@@ -7,6 +7,22 @@ export const TASK_KEY = "john_drive_sorting_round";
 
 const SOURCE_KEYS = ["claude", "carbonature", "downloads"] as const;
 const AGENT_IDS = ["dave", "jennifer", "john", "rebeka", "ron"] as const;
+const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
+
+// Confirmed live 2026-09-07: the real source folders hold 138 direct
+// children combined, and roughly half of those are subfolders (Drive's
+// files.list only returns direct children, so this never recurses into
+// them — but it was still classifying the folders themselves as if they
+// were documents). One model call per file, sequentially, over that many
+// items blew well past the cron route's 45s per-handler timeout. Two
+// fixes: skip folders entirely (this task routes documents, not
+// directories), and classify a whole batch of files in a single model
+// call instead of one round-trip per file. MAX_FILES_PER_RUN caps how
+// many NEW files get classified in one invocation — same bounded,
+// incremental-first-pass idiom as johnMemoryConsolidation.ts's
+// MAX_MERGES_PER_RUN. mrv.drive_routing_log already makes leaving the
+// rest for the next round correct: a file already logged is skipped.
+const MAX_FILES_PER_RUN = 25;
 
 const CLASSIFY_SYSTEM_PROMPT =
   "You route real documents found in CarboNature's shared folders to the right AI agents' own personal Drive " +
@@ -20,8 +36,15 @@ const CLASSIFY_SYSTEM_PROMPT =
   "dave). Exclude entirely (empty result) any internal work-plan, prompt-engineering, specification, or " +
   "meta-planning document — those are for the human team, not agent domain knowledge, even if they mention an " +
   "agent by name.\n\n" +
-  "You are given a file's name and type only, not its content. Respond with a comma-separated list of agent ids " +
-  "from {dave, jennifer, john, rebeka, ron} it belongs in, or exactly NONE if it should be excluded. Nothing else.";
+  "You are given a numbered list of files (name and type only, not content). Respond with exactly one line per " +
+  "file, in the same order, in the form `N: agent,agent` (ids from dave/jennifer/john/rebeka/ron) or `N: NONE` " +
+  "if it should be excluded. Nothing else — no headers, no commentary.";
+
+interface DriveFileLike {
+  id: string;
+  name: string;
+  mimeType: string;
+}
 
 interface ClassifiedFile {
   fileId: string;
@@ -30,18 +53,30 @@ interface ClassifiedFile {
   excluded: boolean;
 }
 
-async function classifyFile(fileName: string, mimeType: string): Promise<string[]> {
+async function classifyFilesBatch(files: DriveFileLike[]): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  if (!files.length) return result;
+
   const { getConfiguredProvider } = await import("../provider");
   const provider = await getConfiguredProvider();
+  const listing = files.map((f, i) => `${i + 1}. "${f.name}" (${f.mimeType})`).join("\n");
   const resp = await provider.complete({
     system: CLASSIFY_SYSTEM_PROMPT,
-    userMessage: `File: "${fileName}" (${mimeType})`,
+    userMessage: listing,
     tools: [],
-    maxTokens: 64,
+    maxTokens: 1024,
   });
-  const text = resp.kind === "text" ? resp.text.trim().toUpperCase() : "NONE";
-  if (text === "NONE" || !text) return [];
-  return AGENT_IDS.filter((id) => text.includes(id.toUpperCase()));
+  const text = resp.kind === "text" ? resp.text : "";
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*(\d+)\s*[:.]\s*(.+)$/);
+    if (!m) continue;
+    const idx = Number(m[1]) - 1;
+    if (idx < 0 || idx >= files.length) continue;
+    const value = m[2].trim().toUpperCase();
+    const agentIds = value === "NONE" || !value ? [] : AGENT_IDS.filter((id) => value.includes(id.toUpperCase()));
+    result.set(files[idx].id, agentIds);
+  }
+  return result;
 }
 
 export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<ScheduledTaskOutcome> {
@@ -86,6 +121,7 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
   let routed = 0;
   let excluded = 0;
   const classified: ClassifiedFile[] = [];
+  const candidateFiles: DriveFileLike[] = [];
 
   for (const source of sources) {
     let files;
@@ -97,31 +133,39 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
     }
 
     for (const file of files) {
+      if (file.mimeType === FOLDER_MIME_TYPE) continue; // route documents, not directories
       scanned++;
       const already = await query<{ n: string }>(`SELECT count(*)::text n FROM mrv.drive_routing_log WHERE file_id = $1`, [file.id]);
       if (Number(already[0].n) > 0) continue; // already classified in an earlier round
-
-      const agentIds = await classifyFile(file.name, file.mimeType);
-      classified.push({ fileId: file.id, fileName: file.name, agentIds, excluded: agentIds.length === 0 });
-
-      for (const agentId of agentIds) {
-        const folderId = folderByAgent.get(agentId);
-        if (!folderId) continue; // that agent has no linked folder yet — nothing to route into
-        try {
-          await createDriveShortcut(ctx.googleAccessToken, file.id, file.name, folderId);
-          routed++;
-        } catch (e) {
-          paragraphs.push(`Could not create a shortcut for "${file.name}" in ${agentId}'s folder: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      if (agentIds.length === 0) excluded++;
-
-      await query(
-        `INSERT INTO mrv.drive_routing_log (file_id, file_name, agent_ids, excluded) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (file_id) DO NOTHING`,
-        [file.id, file.name, agentIds, agentIds.length === 0],
-      );
+      candidateFiles.push(file);
     }
+  }
+
+  const toClassify = candidateFiles.slice(0, MAX_FILES_PER_RUN);
+  const deferredCount = candidateFiles.length - toClassify.length;
+
+  const routingMap = await classifyFilesBatch(toClassify);
+  for (const file of toClassify) {
+    const agentIds = routingMap.get(file.id) ?? [];
+    classified.push({ fileId: file.id, fileName: file.name, agentIds, excluded: agentIds.length === 0 });
+
+    for (const agentId of agentIds) {
+      const folderId = folderByAgent.get(agentId);
+      if (!folderId) continue; // that agent has no linked folder yet — nothing to route into
+      try {
+        await createDriveShortcut(ctx.googleAccessToken, file.id, file.name, folderId);
+        routed++;
+      } catch (e) {
+        paragraphs.push(`Could not create a shortcut for "${file.name}" in ${agentId}'s folder: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    if (agentIds.length === 0) excluded++;
+
+    await query(
+      `INSERT INTO mrv.drive_routing_log (file_id, file_name, agent_ids, excluded) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (file_id) DO NOTHING`,
+      [file.id, file.name, agentIds, agentIds.length === 0],
+    );
   }
 
   const newlyClassified = classified.length;
@@ -129,6 +173,11 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
     `Scanned ${scanned} file(s) across ${sources.length} source folder(s); ${newlyClassified} new since the last round ` +
       `(${routed} shortcut(s) created, ${excluded} excluded as internal planning material).`,
   );
+  if (deferredCount > 0) {
+    paragraphs.push(
+      `${deferredCount} more new file(s) queued for the next round — kept this round to ${MAX_FILES_PER_RUN} to stay inside the time budget.`,
+    );
+  }
   for (const c of classified.filter((c) => !c.excluded)) {
     paragraphs.push(`- "${c.fileName}" -> ${c.agentIds.join(", ")}`);
   }
