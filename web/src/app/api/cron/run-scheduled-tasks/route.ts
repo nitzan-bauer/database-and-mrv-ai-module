@@ -156,9 +156,18 @@ export async function GET(req: Request) {
       }
     }
 
+    // Confirmed live 2026-09-06: a genuine one-off failure (Dave's first
+    // real sampling-plan task timed out against Anthropic) used to
+    // advance next_run_at by the full frequency interval regardless —
+    // for a bimonthly task that meant no retry until two months later.
+    // On error, leave next_run_at untouched: the row is still due, so
+    // the very next cron tick (or a manual trigger) retries it, exactly
+    // like a row this invocation ran out of time budget for.
     let nextRunAt = new Date(row.next_run_at);
-    while (nextRunAt.getTime() <= Date.now()) {
-      nextRunAt = advanceNextRun(nextRunAt, row.frequency);
+    if (status !== "error") {
+      while (nextRunAt.getTime() <= Date.now()) {
+        nextRunAt = advanceNextRun(nextRunAt, row.frequency);
+      }
     }
 
     await query(

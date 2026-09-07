@@ -24,6 +24,15 @@ const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 // rest for the next round correct: a file already logged is skipped.
 const MAX_FILES_PER_RUN = 25;
 
+// Nitzan's own correction, 2026-09-07: an agent's folder should hold
+// real documents it has actually sent him by email over time (reports,
+// PDDs — anything produced because he asked for it), not only shortcuts
+// to externally-sourced files. Bounded the same way as MAX_FILES_PER_RUN
+// — a large backlog spreads across rounds rather than risking the 45s
+// per-handler timeout in one go.
+const MAX_EMAIL_DOCS_PER_RUN = 15;
+const GMAIL_SEARCH_LIMIT = 20;
+
 const CLASSIFY_SYSTEM_PROMPT =
   "You route real documents found in CarboNature's shared folders to the right AI agents' own personal Drive " +
   "folders, by responsibility. The agents and their real domains:\n" +
@@ -79,9 +88,79 @@ async function classifyFilesBatch(files: DriveFileLike[]): Promise<Map<string, s
   return result;
 }
 
+/**
+ * Real copies (not shortcuts — Nitzan's own choice) of every attachment
+ * an agent has sent from its own alias, found by searching Nitzan's
+ * mailbox for `from:<alias> has:attachment`. mrv.agent_email_document_log
+ * is keyed by (gmail_id, attachment_filename) so a re-scan of the same
+ * mailbox never re-uploads the same document twice.
+ */
+async function centralizeAgentEmailDocuments(
+  ctx: ToolContext,
+  folderByAgent: Map<string, string>,
+  paragraphs: string[],
+): Promise<number> {
+  const { query } = await import("../../db");
+  const { searchGmailMessages, listMessageAttachments, getMessageAttachmentData } = await import("../../google/gmailClient");
+  const { uploadFileToDriveFolder } = await import("../../google/driveClient");
+  const { agentSenderEmail } = await import("../agentEmailAliases");
+
+  if (!ctx.googleAccessToken) return 0;
+
+  let uploaded = 0;
+  for (const agentId of AGENT_IDS) {
+    if (uploaded >= MAX_EMAIL_DOCS_PER_RUN) break;
+    const folderId = folderByAgent.get(agentId);
+    if (!folderId) continue; // reported separately as a missing-folder note
+
+    let messages;
+    try {
+      messages = await searchGmailMessages(ctx.googleAccessToken, `from:${agentSenderEmail(agentId)} has:attachment`, GMAIL_SEARCH_LIMIT);
+    } catch (e) {
+      paragraphs.push(`Could not search ${agentId}'s sent mail: ${e instanceof Error ? e.message : String(e)}`);
+      continue;
+    }
+
+    for (const message of messages) {
+      if (uploaded >= MAX_EMAIL_DOCS_PER_RUN) break;
+      let attachments;
+      try {
+        attachments = await listMessageAttachments(ctx.googleAccessToken, message.gmailId);
+      } catch (e) {
+        paragraphs.push(`Could not read attachments on "${message.subject ?? message.gmailId}": ${e instanceof Error ? e.message : String(e)}`);
+        continue;
+      }
+
+      for (const att of attachments) {
+        if (uploaded >= MAX_EMAIL_DOCS_PER_RUN) break;
+        const already = await query<{ n: string }>(
+          `SELECT count(*)::text n FROM mrv.agent_email_document_log WHERE gmail_id = $1 AND attachment_filename = $2`,
+          [message.gmailId, att.filename],
+        );
+        if (Number(already[0].n) > 0) continue;
+
+        try {
+          const bytes = await getMessageAttachmentData(ctx.googleAccessToken, message.gmailId, att.attachmentId);
+          const uploadedFile = await uploadFileToDriveFolder(ctx.googleAccessToken, folderId, att.filename, att.mimeType, bytes);
+          await query(
+            `INSERT INTO mrv.agent_email_document_log (gmail_id, attachment_filename, agent_id, drive_file_id)
+             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+            [message.gmailId, att.filename, agentId, uploadedFile.id],
+          );
+          paragraphs.push(`- Centralized "${att.filename}" (from ${agentId}'s own sent mail, "${message.subject ?? "no subject"}") into ${agentId}'s folder.`);
+          uploaded++;
+        } catch (e) {
+          paragraphs.push(`Could not centralize "${att.filename}" for ${agentId}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+  }
+  return uploaded;
+}
+
 export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<ScheduledTaskOutcome> {
   const { query } = await import("../../db");
-  const { listDriveFolderFiles, createDriveShortcut } = await import("../../google/driveClient");
+  const { listDriveFolderFiles, copyDriveFile } = await import("../../google/driveClient");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
 
   const paragraphs: string[] = [];
@@ -153,10 +232,10 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
       const folderId = folderByAgent.get(agentId);
       if (!folderId) continue; // that agent has no linked folder yet — nothing to route into
       try {
-        await createDriveShortcut(ctx.googleAccessToken, file.id, file.name, folderId);
+        await copyDriveFile(ctx.googleAccessToken, file.id, folderId, file.name);
         routed++;
       } catch (e) {
-        paragraphs.push(`Could not create a shortcut for "${file.name}" in ${agentId}'s folder: ${e instanceof Error ? e.message : String(e)}`);
+        paragraphs.push(`Could not copy "${file.name}" into ${agentId}'s folder: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
     if (agentIds.length === 0) excluded++;
@@ -171,7 +250,7 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
   const newlyClassified = classified.length;
   paragraphs.unshift(
     `Scanned ${scanned} file(s) across ${sources.length} source folder(s); ${newlyClassified} new since the last round ` +
-      `(${routed} shortcut(s) created, ${excluded} excluded as internal planning material).`,
+      `(${routed} real cop${routed === 1 ? "y" : "ies"} made, ${excluded} excluded as internal planning material).`,
   );
   if (deferredCount > 0) {
     paragraphs.push(
@@ -186,6 +265,9 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
     paragraphs.push(`Not yet linked to a Drive folder, so nothing can be routed to them yet: ${missingFolders.join(", ")}.`);
   }
 
+  const emailDocsUploaded = await centralizeAgentEmailDocuments(ctx, folderByAgent, paragraphs);
+  paragraphs.push(`Centralized ${emailDocsUploaded} real document(s) this round from agents' own sent mail.`);
+
   const outcome = await finishScheduledTask(ctx, {
     taskKey: TASK_KEY,
     projectId: TARGET_PROJECT_ID,
@@ -194,8 +276,11 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
     subject: `Drive sorting round — ${new Date().toISOString().slice(0, 10)}`,
     bodyParagraphs: paragraphs,
     memoryKind: "drive_sorting_round",
-    sendEmail: newlyClassified > 0,
+    sendEmail: newlyClassified > 0 || emailDocsUploaded > 0,
   });
 
-  return { ok: outcome.ok, detail: `${outcome.detail} (${scanned} scanned, ${newlyClassified} new, ${routed} routed.)` };
+  return {
+    ok: outcome.ok,
+    detail: `${outcome.detail} (${scanned} scanned, ${newlyClassified} new, ${routed} routed, ${emailDocsUploaded} email doc(s) centralized.)`,
+  };
 }

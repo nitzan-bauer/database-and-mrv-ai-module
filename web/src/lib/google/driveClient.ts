@@ -238,6 +238,28 @@ export async function exportGoogleDocAsPdf(accessToken: string, fileId: string):
  * without multiplying storage or drifting into two separately-edited
  * copies (Stage 10 of the agent learning-layer plan).
  */
+/**
+ * Real Drive file.copy — a genuinely separate file in the destination
+ * folder, not a shortcut. Nitzan's own correction to the original
+ * Stage 10.2 design (which used createDriveShortcut below to avoid
+ * duplicating storage): he wants an agent's folder to hold real,
+ * directly-visible documents, accepting the storage-duplication
+ * tradeoff. Drive's copy endpoint only works on actual files, never a
+ * folder mimeType — callers must already be skipping folders.
+ */
+export async function copyDriveFile(accessToken: string, fileId: string, destFolderId: string, name?: string): Promise<DriveFile> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/copy?fields=id,name,mimeType,modifiedTime,webViewLink&${ALL_DRIVES}`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ parents: [destFolderId], ...(name ? { name } : {}) }),
+    },
+  );
+  if (!res.ok) throw new Error(`Drive copy error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()) as DriveFile;
+}
+
 export async function createDriveShortcut(accessToken: string, targetFileId: string, name: string, parentFolderId: string): Promise<DriveFile> {
   const res = await fetch(`https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,modifiedTime,webViewLink&${ALL_DRIVES}`, {
     method: "POST",

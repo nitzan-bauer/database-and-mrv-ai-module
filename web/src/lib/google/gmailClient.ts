@@ -162,6 +162,62 @@ export async function getMessagePlainTextBody(accessToken: string, gmailId: stri
   return findPlainText(data.payload) ?? "";
 }
 
+export interface GmailAttachment {
+  filename: string;
+  mimeType: string;
+  attachmentId: string;
+  size: number;
+}
+
+/**
+ * Walks a message's full payload for every part that names a real
+ * filename with an attachmentId — Gmail nests attachments inside
+ * multipart/mixed parts arbitrarily deep, so this recurses rather than
+ * assuming a fixed shape. An inline part (a signature image, say) has no
+ * `filename`, so it's naturally excluded without a separate check.
+ */
+export async function listMessageAttachments(accessToken: string, gmailId: string): Promise<GmailAttachment[]> {
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Gmail messages.get (full) returned ${res.status}`);
+  interface Part {
+    filename?: string;
+    mimeType?: string;
+    body?: { attachmentId?: string; size?: number };
+    parts?: Part[];
+  }
+  const data = (await res.json()) as { payload?: Part };
+
+  const attachments: GmailAttachment[] = [];
+  function walk(part: Part | undefined): void {
+    if (!part) return;
+    if (part.filename && part.body?.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType ?? "application/octet-stream",
+        attachmentId: part.body.attachmentId,
+        size: part.body.size ?? 0,
+      });
+    }
+    for (const sub of part.parts ?? []) walk(sub);
+  }
+  walk(data.payload);
+  return attachments;
+}
+
+/** Downloads one attachment's real bytes (messages.attachments.get returns base64url, not a redirect/stream). */
+export async function getMessageAttachmentData(accessToken: string, gmailId: string, attachmentId: string): Promise<Buffer> {
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}/attachments/${attachmentId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`Gmail attachments.get returned ${res.status}`);
+  const data = (await res.json()) as { data?: string };
+  if (!data.data) throw new Error("Gmail attachment response had no data field");
+  return Buffer.from(data.data.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+}
+
 function base64Url(input: Buffer): string {
   return input.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

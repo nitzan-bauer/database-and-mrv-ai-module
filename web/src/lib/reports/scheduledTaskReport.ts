@@ -105,6 +105,8 @@ export async function finishScheduledTask(
       },
     });
 
+    const fileName = `${input.taskKey}-${new Date().toISOString().slice(0, 10)}.pdf`;
+
     const { sendGmailMessage } = await import("../google/gmailClient");
     const { agentSenderEmail } = await import("../agent/agentEmailAliases");
     await sendGmailMessage(ctx.googleAccessToken, {
@@ -113,11 +115,32 @@ export async function finishScheduledTask(
       subject: input.subject,
       bodyText,
       attachment: {
-        fileName: `${input.taskKey}-${new Date().toISOString().slice(0, 10)}.pdf`,
+        fileName,
         mimeType: "application/pdf",
         content: pdfBuffer,
       },
     });
+
+    // Stage 10.1 of the agent learning-layer plan (originally aspirational
+    // only — the mrv.agents.drive_folder_id column comment promised this
+    // from the start, but no code ever did it until Nitzan pointed out the
+    // folders were empty of the agent's own outputs): every scheduled
+    // task's own PDF report now also lands as a real file in that agent's
+    // own Drive folder, not just as an email attachment. One change here
+    // covers all 19 scheduled tasks across all 5 agents. Best-effort — a
+    // missing folder link or a Drive hiccup never costs the email/DB
+    // record, which are the two guarantees this function has always made.
+    try {
+      const { query: q } = await import("../db");
+      const agentRows = await q<{ drive_folder_id: string | null }>(`SELECT drive_folder_id FROM mrv.agents WHERE agent_id = $1`, [agentId]);
+      const driveFolderId = agentRows[0]?.drive_folder_id;
+      if (driveFolderId) {
+        const { uploadFileToDriveFolder } = await import("../google/driveClient");
+        await uploadFileToDriveFolder(ctx.googleAccessToken, driveFolderId, fileName, "application/pdf", pdfBuffer);
+      }
+    } catch (e) {
+      console.warn(`[${input.taskKey}] could not centralize this report into ${agentId}'s Drive folder: ${e instanceof Error ? e.message : String(e)}`);
+    }
   } catch (e) {
     return { ok: false, detail: `${input.subject} — recorded, but the email failed: ${e instanceof Error ? e.message : String(e)}` };
   }
