@@ -12,19 +12,33 @@ import { TARGET_PROJECT_ID } from "./constants";
  * pipeline Stages 1-7 already built — no new memory mechanism, just a
  * real document trigger for it.
  *
- * Google Docs are read via a real text export; a non-Doc file (an
- * uploaded PDF/docx) is noted by name/type only in this pass — reading
- * those would need a PDF-parsing dependency this stage doesn't add.
+ * Google Docs are read via a real text export; real PDFs and .docx files
+ * are read via this repo's own existing extractPdfText (lib/ingest/pdf.ts)
+ * and readParagraphs (lib/ingest/docx.ts) — both already built and used
+ * elsewhere (PDD-precedent research), just never wired into this task
+ * until Nitzan flagged that every one of Dave's digested notes was
+ * coming back "not readable." No new dependency or Google scope needed:
+ * downloadDriveFile already uses the same Drive OAuth grant as every
+ * other read here. A legacy .doc (pre-2007 binary format) still isn't
+ * read — readParagraphs needs a real .docx zip — but that format never
+ * showed up in the real source folders scanned so far.
  *
- * Every file an agent sees here is a shortcut John's sorting round
- * created (Stage 10.2) — its own `mimeType` is always the shortcut type,
- * never the real target's. Confirmed live 2026-09-07: without resolving
- * `shortcutDetails.targetMimeType`, every single digested note came back
- * "not readable — only the name and type came through," even for real
- * Google Docs, because the Google-Doc check was comparing against the
- * shortcut's own mimeType. `listDriveFolderFiles` now requests
- * `shortcutDetails`, so `targetMimeType`/`targetId` are used instead.
+ * Folders (real ones, or a shortcut/copy pointing at one — leftover
+ * routing artifacts from before John's sorting round started skipping
+ * folders) are excluded outright rather than digested as if they were a
+ * document with no content.
+ *
+ * Every file an agent sees here may be a shortcut John's sorting round
+ * created — its own `mimeType` is always the shortcut type, never the
+ * real target's. `listDriveFolderFiles` requests `shortcutDetails`, so
+ * `targetMimeType`/`targetId` resolve through it before any content
+ * decision is made.
  */
+
+const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
+const GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document";
+const PDF_MIME_TYPE = "application/pdf";
+const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 const DIGEST_SYSTEM_PROMPT =
   "You are {AGENT}, a CarboNature MRV agent. You've just read a real document from your own reference folder. " +
@@ -39,7 +53,9 @@ const REVIEW_SYSTEM_PROMPT =
 
 async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey: string): Promise<ScheduledTaskOutcome> {
   const { query } = await import("../../db");
-  const { listDriveFolderFiles, exportGoogleDocAsText } = await import("../../google/driveClient");
+  const { listDriveFolderFiles, exportGoogleDocAsText, downloadDriveFile } = await import("../../google/driveClient");
+  const { extractPdfText } = await import("../../ingest/pdf");
+  const { readParagraphs } = await import("../../ingest/docx");
   const { getConfiguredProvider } = await import("../provider");
   const { recordAgentMemory } = await import("../../tools/recordAgentMemory");
   const { recordLesson } = await import("../lessonMemory");
@@ -85,10 +101,36 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
     const effectiveMimeType = isShortcut ? file.shortcutDetails?.targetMimeType : file.mimeType;
     const readableFileId = isShortcut ? file.shortcutDetails?.targetId : file.id;
 
+    if (effectiveMimeType === FOLDER_MIME_TYPE) {
+      // A folder routed here by mistake (pre-dates John's sorting round
+      // skipping folders) — nothing to digest, and not worth a "couldn't
+      // read this" note either. Still marked digested so it stops
+      // reappearing every round.
+      await query(
+        `INSERT INTO mrv.agent_drive_digested (agent_id, file_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [agentId, file.id],
+      );
+      continue;
+    }
+
     let content: string | null = null;
-    if (effectiveMimeType === "application/vnd.google-apps.document" && readableFileId) {
+    if (effectiveMimeType === GOOGLE_DOC_MIME_TYPE && readableFileId) {
       try {
         content = (await exportGoogleDocAsText(ctx.googleAccessToken, readableFileId)).slice(0, 8000);
+      } catch {
+        content = null;
+      }
+    } else if (effectiveMimeType === PDF_MIME_TYPE && readableFileId) {
+      try {
+        const bytes = await downloadDriveFile(ctx.googleAccessToken, readableFileId);
+        content = (await extractPdfText(bytes)).slice(0, 8000);
+      } catch {
+        content = null;
+      }
+    } else if (effectiveMimeType === DOCX_MIME_TYPE && readableFileId) {
+      try {
+        const bytes = await downloadDriveFile(ctx.googleAccessToken, readableFileId);
+        content = readParagraphs(bytes).map((p) => p.text).join("\n").slice(0, 8000);
       } catch {
         content = null;
       }

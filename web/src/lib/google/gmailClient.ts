@@ -173,8 +173,18 @@ export interface GmailAttachment {
  * Walks a message's full payload for every part that names a real
  * filename with an attachmentId — Gmail nests attachments inside
  * multipart/mixed parts arbitrarily deep, so this recurses rather than
- * assuming a fixed shape. An inline part (a signature image, say) has no
- * `filename`, so it's naturally excluded without a separate check.
+ * assuming a fixed shape.
+ *
+ * Confirmed live 2026-09-07: a part's own `filename` is NOT a reliable
+ * "this is a real attachment" signal on its own — an inline signature
+ * logo (e.g. named "CarboNature", no extension) carries a filename too,
+ * and got centralized into agent Drive folders as if it were a real
+ * document. The actual signal is the part's own Content-Disposition
+ * header: "attachment" for something the sender meant to share,
+ * "inline" for embedded signature/body imagery. Parts with no
+ * Content-Disposition header at all (older or unusual senders) are kept
+ * rather than silently dropped, since filename+attachmentId is still a
+ * reasonable fallback signal when the header is simply absent.
  */
 export async function listMessageAttachments(accessToken: string, gmailId: string): Promise<GmailAttachment[]> {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`, {
@@ -186,13 +196,19 @@ export async function listMessageAttachments(accessToken: string, gmailId: strin
     mimeType?: string;
     body?: { attachmentId?: string; size?: number };
     parts?: Part[];
+    headers?: { name: string; value: string }[];
   }
   const data = (await res.json()) as { payload?: Part };
+
+  function isInline(part: Part): boolean {
+    const disposition = part.headers?.find((h) => h.name.toLowerCase() === "content-disposition")?.value ?? "";
+    return disposition.toLowerCase().startsWith("inline");
+  }
 
   const attachments: GmailAttachment[] = [];
   function walk(part: Part | undefined): void {
     if (!part) return;
-    if (part.filename && part.body?.attachmentId) {
+    if (part.filename && part.body?.attachmentId && !isInline(part)) {
       attachments.push({
         filename: part.filename,
         mimeType: part.mimeType ?? "application/octet-stream",

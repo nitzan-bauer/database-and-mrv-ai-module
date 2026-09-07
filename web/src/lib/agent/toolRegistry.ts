@@ -33,6 +33,7 @@ import { updateEntityProfile } from "../tools/updateEntityProfile";
 import { linkAgentDriveFolder } from "../tools/linkAgentDriveFolder";
 import { listAgentDriveDocuments } from "../tools/listAgentDriveDocuments";
 import { linkSourceDriveFolder } from "../tools/linkSourceDriveFolder";
+import { downloadDocumentToAgentFolder } from "../tools/downloadDocumentToAgentFolder";
 import { recordPddForecast } from "../tools/recordPddForecast";
 import { getForecastVsActual } from "../tools/getForecastVsActual";
 import { submitProjectStatus } from "../tools/submitProjectStatus";
@@ -690,6 +691,32 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
       browseWebsite(ctx, {
         startUrl: String(input.startUrl ?? ""),
         maxPages: typeof input.maxPages === "number" ? input.maxPages : undefined,
+      }),
+  },
+
+  download_document_to_agent_folder: {
+    schema: {
+      name: "download_document_to_agent_folder",
+      description:
+        "Download one real document from a public https:// URL (a PDF, docx, or any file) and save it as a " +
+        "real file into a named agent's own Drive folder — not a shortcut. Use after browse_website finds a " +
+        "document worth keeping, to actually centralize it. Choose which agent's folder it belongs in based on " +
+        "whatever sorting instructions you've been given for this task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          agentId: { type: "string", description: "One of dave, jennifer, john, rebeka, ron — whose folder to save it into." },
+          fileName: { type: "string", description: "Optional — defaults to the URL's own file name." },
+        },
+        required: ["url", "agentId"],
+      },
+    },
+    handler: (ctx, input) =>
+      downloadDocumentToAgentFolder(ctx, {
+        url: String(input.url ?? ""),
+        agentId: String(input.agentId ?? ""),
+        fileName: typeof input.fileName === "string" ? input.fileName : undefined,
       }),
   },
 

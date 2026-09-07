@@ -115,7 +115,8 @@ export type ActionName =
   | "update_entity_profile"
   | "link_agent_drive_folder"
   | "list_agent_drive_documents"
-  | "link_source_drive_folder";
+  | "link_source_drive_folder"
+  | "download_document_to_agent_folder";
 
 /**
  * Check the policy for an action and record the attempt.
