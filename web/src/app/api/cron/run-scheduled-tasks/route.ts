@@ -46,6 +46,35 @@ export const maxDuration = 60;
 // runway, comfortably covering the ~45s worst case with margin for
 // per-task DB/auth overhead.
 const TIME_BUDGET_MS = 10_000;
+
+// Confirmed live 2026-09-06/07: with no per-handler backstop, one hung
+// handler (picked up in whatever order Postgres happened to return —
+// the query had no ORDER BY) ran past the 45s "worst case" this file's
+// own comment above assumed, ate the full 60s maxDuration, and Vercel
+// force-killed the whole invocation before a single row — out of 8 due
+// that run — got a chance to write back a result. Nothing was lost
+// (next_run_at is untouched until a row's own UPDATE runs), but nothing
+// progressed either, and the same due set could stall the exact same way
+// on every subsequent tick if Postgres keeps returning that row first.
+// HANDLER_TIMEOUT_MS below is the real backstop: it makes the loop move
+// on regardless, by racing the handler against a rejection. It cannot
+// actually cancel the handler's in-flight work (Node has no true
+// cancellation for an arbitrary async function) — if the real handler
+// finishes later on its own, its DB writes still land, just after this
+// invocation already recorded the row as "error: timed out" and gave it
+// a fresh next_run_at. That's a late write, not a double-run: the next
+// cron tick isn't what re-triggers it (next_run_at already moved
+// forward), so there's no risk of the same task executing twice
+// concurrently from this path.
+const HANDLER_TIMEOUT_MS = 45_000;
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
 function advanceNextRun(current: Date, frequency: string): Date {
   const next = new Date(current);
   if (frequency === "bimonthly") {
@@ -76,7 +105,11 @@ export async function GET(req: Request) {
     task_key: string;
     frequency: string;
     next_run_at: string;
-  }>(`SELECT task_id, agent_id, task_key, frequency, next_run_at FROM mrv.scheduled_tasks WHERE enabled AND next_run_at <= now()`);
+  }>(
+    `SELECT task_id, agent_id, task_key, frequency, next_run_at FROM mrv.scheduled_tasks
+      WHERE enabled AND next_run_at <= now()
+      ORDER BY next_run_at ASC`,
+  );
 
   const results: Array<{ taskKey: string; status: string; detail: string }> = [];
   const deferred: string[] = [];
@@ -108,7 +141,11 @@ export async function GET(req: Request) {
         // queries group by actor to compute a per-agent picture (0078's
         // agent-learning plan); "cron" as the actor would attribute
         // every scheduled task, for every agent, to the same identity.
-        const outcome = await handler({ actor: row.agent_id, actorKind: "agent", googleAccessToken });
+        const outcome = await withTimeout(
+          handler({ actor: row.agent_id, actorKind: "agent", googleAccessToken }),
+          HANDLER_TIMEOUT_MS,
+          row.task_key,
+        );
         console.log(`[cron] ${row.task_key}: handler finished in ${Date.now() - handlerStart}ms`);
         status = outcome.ok ? "ok" : "error";
         detail = outcome.detail;
