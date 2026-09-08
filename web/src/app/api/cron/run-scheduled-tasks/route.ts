@@ -3,12 +3,19 @@ import { SCHEDULED_TASK_REGISTRY } from "@/lib/agent/scheduledTaskRegistry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// The Vercel Hobby ceiling — without this the platform default (10s) cuts
-// a handler off mid-request. Confirmed live this session: the first real
-// run got through search_verra_registry and was killed partway through
-// the drafting pass that followed, with no error ever written back
-// because the whole function was terminated, not thrown into.
-export const maxDuration = 60;
+// Confirmed directly against Vercel's own docs (vercel.com/docs/functions/limitations,
+// checked 2026-09-08): with Fluid compute — already on by default for
+// this project, created 2026-08-20 — Hobby's real ceiling is 300s, not
+// 60s. The 60s figure earlier here was inherited from an older
+// assumption, never actually verified against the current platform
+// limit. 280 leaves a 20s margin under the true 300s hard cap. This
+// still matters: without SOME maxDuration override the platform default
+// (10s) cuts a handler off mid-request — confirmed live this session,
+// the first real run got through search_verra_registry and was killed
+// partway through the drafting pass that followed, with no error ever
+// written back because the whole function was terminated, not thrown
+// into.
+export const maxDuration = 280;
 
 /**
  * The one entry point every agent's recurring task runs through
@@ -32,20 +39,12 @@ export const maxDuration = 60;
  * recorded for the tasks after it.
  */
 // This only gates STARTING another task — it can't interrupt one already
-// running — so it has to leave enough of the 60s hard cap for the
-// single worst-case handler that starts right at the edge of the budget.
-// Measured worst case, not guessed: John's monthly market-scan handlers
-// call the model with webSearch (timeoutMs up to 30_000, anthropicProvider.ts)
-// then, via finalizeScheduledTaskRun, recordLesson's own completion call
-// (COMPLETE_TIMEOUT_MS = 15_000) — up to ~45s in model calls alone before
-// counting the Google-token fetch and DB round trips around them. 40_000
-// left only 20s of runway for that, so a task starting late in the window
-// could push the whole invocation past 60s and get killed by Vercel
-// mid-handler with nothing recorded — the exact silent-failure mode
-// maxDuration was raised to fix in the first place. 10s leaves ~50s of
-// runway, comfortably covering the ~45s worst case with margin for
-// per-task DB/auth overhead.
-const TIME_BUDGET_MS = 10_000;
+// running — so it has to leave enough of the real 300s Hobby ceiling
+// (see maxDuration above) for the single worst-case handler that starts
+// right at the edge of the budget. 30_000 leaves 250s of runway before
+// the 280s maxDuration cutoff, comfortably covering HANDLER_TIMEOUT_MS
+// below with margin for per-task DB/auth overhead.
+const TIME_BUDGET_MS = 30_000;
 
 // Confirmed live 2026-09-06/07: with no per-handler backstop, one hung
 // handler (picked up in whatever order Postgres happened to return —
@@ -66,7 +65,14 @@ const TIME_BUDGET_MS = 10_000;
 // cron tick isn't what re-triggers it (next_run_at already moved
 // forward), so there's no risk of the same task executing twice
 // concurrently from this path.
-const HANDLER_TIMEOUT_MS = 45_000;
+// Raised from 45s to 240s alongside the maxDuration correction above —
+// the real per-invocation ceiling is 300s, not 60s, so a handler doing
+// real download+parse+model work (PDF/docx digestion, multi-page
+// browsing) gets genuine room instead of being raced down artificially
+// early. Still a real backstop, not "no limit": a handler stuck for
+// longer than this (network hang, infinite loop) still can't take the
+// whole invocation down with it.
+const HANDLER_TIMEOUT_MS = 240_000;
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
