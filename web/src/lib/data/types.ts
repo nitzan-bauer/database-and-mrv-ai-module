@@ -334,3 +334,15 @@ export interface PlotDetail {
   activities: AlmActivity[];
   modelRuns: ModelRunSummary[];
 }
+
+/** mrv.pending_agent_actions (0113) — a 'confirm'-mode call an agent proposed, waiting for a real human decision. */
+export interface PendingAgentAction {
+  pendingId: string;
+  agentId: string;
+  agentDisplayName: string;
+  actionName: string;
+  input: Record<string, unknown>;
+  reason: string;
+  requestedBy: string;
+  createdAt: string;
+}

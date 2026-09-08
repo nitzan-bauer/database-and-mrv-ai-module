@@ -20,7 +20,11 @@ export const TASK_KEY = "john_memory_consolidation";
  * and simply stop showing up in default recall (recallAgentMemory filters
  * WHERE superseded_by IS NULL) — the full history stays queryable.
  */
-const MAX_MERGES_PER_RUN = 8;
+// Raised from 8 to 20 alongside the cron route's HANDLER_TIMEOUT_MS
+// going from 45s to 240s — each merge is one model call plus a couple
+// of DB writes, so the old cap was sized for a budget that no longer
+// applies.
+const MAX_MERGES_PER_RUN = 20;
 /** Cosine distance ceiling for "these are near-duplicates," not just "related." Tight on purpose — a false merge loses real distinctions; a missed one just waits for next month. */
 const DUPLICATE_DISTANCE_THRESHOLD = 0.08;
 

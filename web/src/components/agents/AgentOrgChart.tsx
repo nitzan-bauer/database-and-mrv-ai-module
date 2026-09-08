@@ -441,7 +441,11 @@ function AskAgentPanel({
           )}
           {result.outcome.kind === "needs_confirmation" && (
             <p className="mt-1 text-earth-600">
-              held for approval — {result.outcome.action}: {result.outcome.reason}
+              held for approval — {result.outcome.action}: {result.outcome.reason}. Saved to{" "}
+              <a href="/agents/approvals" className="underline">
+                Approvals
+              </a>{" "}
+              for a manager to decide.
             </p>
           )}
           {result.outcome.kind === "error" && (

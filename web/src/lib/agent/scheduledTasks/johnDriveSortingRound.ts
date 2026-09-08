@@ -14,23 +14,27 @@ const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 // files.list only returns direct children, so this never recurses into
 // them — but it was still classifying the folders themselves as if they
 // were documents). One model call per file, sequentially, over that many
-// items blew well past the cron route's 45s per-handler timeout. Two
-// fixes: skip folders entirely (this task routes documents, not
-// directories), and classify a whole batch of files in a single model
-// call instead of one round-trip per file. MAX_FILES_PER_RUN caps how
-// many NEW files get classified in one invocation — same bounded,
+// items blew well past the cron route's original 45s per-handler
+// timeout. Two fixes: skip folders entirely (this task routes documents,
+// not directories), and classify a whole batch of files in a single
+// model call instead of one round-trip per file. MAX_FILES_PER_RUN caps
+// how many NEW files get classified in one invocation — same bounded,
 // incremental-first-pass idiom as johnMemoryConsolidation.ts's
 // MAX_MERGES_PER_RUN. mrv.drive_routing_log already makes leaving the
 // rest for the next round correct: a file already logged is skipped.
-const MAX_FILES_PER_RUN = 25;
+// Raised from 25 to 60 now that the cron route gives 240s instead of
+// 45s — classification is one batched model call regardless of count,
+// so a bigger batch mostly costs prompt/response size, not more calls.
+const MAX_FILES_PER_RUN = 60;
 
 // Nitzan's own correction, 2026-09-07: an agent's folder should hold
 // real documents it has actually sent him by email over time (reports,
 // PDDs — anything produced because he asked for it), not only shortcuts
 // to externally-sourced files. Bounded the same way as MAX_FILES_PER_RUN
-// — a large backlog spreads across rounds rather than risking the 45s
-// per-handler timeout in one go.
-const MAX_EMAIL_DOCS_PER_RUN = 15;
+// — a large backlog spreads across rounds rather than risking the
+// per-handler timeout in one go. Raised from 15 to 30 alongside the 240s
+// budget increase.
+const MAX_EMAIL_DOCS_PER_RUN = 30;
 const GMAIL_SEARCH_LIMIT = 20;
 
 const CLASSIFY_SYSTEM_PROMPT =

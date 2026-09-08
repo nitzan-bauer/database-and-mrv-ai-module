@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { auth } from "@/auth";
 import {
   creditPipeline,
   listAgents,
   listAuditLog,
+  listPendingAgentActions,
   listProjects,
   listScheduledTasksForAgent,
   resolveActiveProject,
@@ -60,13 +62,14 @@ export default async function AgentsPage({
   const { project: requestedProjectId } = await searchParams;
   const allProjects = await listProjects();
   const project = resolveActiveProject(allProjects, requestedProjectId);
-  const [agents, pipeline, audit, marketProjects, marketDeals, johnScheduledTasks] = await Promise.all([
+  const [agents, pipeline, audit, marketProjects, marketDeals, johnScheduledTasks, pendingActions] = await Promise.all([
     listAgents(),
     creditPipeline(),
     listAuditLog(200),
     listMarketScanProjects(),
     listMarketScanDeals(),
     listScheduledTasksForAgent("john"),
+    listPendingAgentActions(),
   ]);
 
   const actorIds = new Set(agents.map((a) => a.actorId));
@@ -115,6 +118,18 @@ export default async function AgentsPage({
           foot="by an agent, in the audit log"
         />
       </div>
+
+      {pendingActions.length > 0 && (
+        <Link
+          href="/agents/approvals"
+          className="flex items-center justify-between gap-3 rounded-xl border border-gold-200 bg-gold-200/40 px-4 py-3 hover:bg-gold-200/60"
+        >
+          <span className="text-sm font-semibold text-earth-600">
+            {pendingActions.length} action{pendingActions.length === 1 ? "" : "s"} waiting on your approval
+          </span>
+          <span className="text-xs font-medium text-earth-600 underline">Review →</span>
+        </Link>
+      )}
 
       {johnScheduledTasks.length > 0 && (
         <section>

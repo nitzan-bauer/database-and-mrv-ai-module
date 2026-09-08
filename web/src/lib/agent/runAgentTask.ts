@@ -241,6 +241,22 @@ export async function runAgentTask(
 
   if (!result.ok) {
     if (result.needsConfirmation) {
+      // The missing half of every 'confirm'-mode action (0113): until
+      // now this branch just returned the refusal to the browser and
+      // forgot it existed the moment the modal closed. Persisting the
+      // exact agent/action/input/reason here — everything already sitting
+      // in scope — is what makes a later "Approve" in /agents/approvals
+      // able to replay this exact call instead of nothing at all.
+      try {
+        const { query } = await import("../db");
+        await query(
+          `INSERT INTO mrv.pending_agent_actions (agent_id, action_name, input, reason, requested_by)
+           VALUES ($1, $2, $3::jsonb, $4, $5)`,
+          [agentId, response.call.name, JSON.stringify(resolved.input), result.error, opts.requestedBy],
+        );
+      } catch (e) {
+        console.warn(`[runAgentTask] could not persist pending action for approval: ${e instanceof Error ? e.message : String(e)}`);
+      }
       scheduleLesson(`Wanted to call ${response.call.name} but needs human confirmation: ${result.error}`);
       return {
         agentId,

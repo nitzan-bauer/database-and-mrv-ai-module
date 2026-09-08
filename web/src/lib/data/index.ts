@@ -16,6 +16,7 @@ import type {
   SamplingPoint,
   WorkOrder,
   WorkOrderPoint,
+  PendingAgentAction,
 } from "./types";
 import type { ActivityData } from "../ghg/engine";
 import {
@@ -244,6 +245,33 @@ export async function listWorkOrders(projectId: string): Promise<WorkOrder[]> {
   const out: WorkOrder[] = [];
   for (const r of rows) out.push(await hydrateWorkOrder(r));
   return out;
+}
+
+/**
+ * 'confirm'-mode calls an agent proposed, still waiting on a real human
+ * decision (0113). No fixtures data — this is a real-only feature: a
+ * demo run never proposes anything for a person to approve.
+ */
+export async function listPendingAgentActions(): Promise<PendingAgentAction[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT p.pending_id, p.agent_id, a.display_name, p.action_name, p.input, p.reason, p.requested_by, p.created_at
+       FROM mrv.pending_agent_actions p
+       JOIN mrv.agents a ON a.agent_id = p.agent_id
+      WHERE p.status = 'pending'
+      ORDER BY p.created_at ASC`,
+  );
+  return rows.map((r) => ({
+    pendingId: String(r.pending_id),
+    agentId: String(r.agent_id),
+    agentDisplayName: String(r.display_name),
+    actionName: String(r.action_name),
+    input: r.input as Record<string, unknown>,
+    reason: String(r.reason),
+    requestedBy: String(r.requested_by),
+    createdAt: new Date(r.created_at as string).toISOString(),
+  }));
 }
 
 /** One work order with its points and token. */

@@ -50,7 +50,11 @@ const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordproces
 // model-call attempt does. The rest of a large backlog spreads across
 // this task's own biweekly rounds — mrv.agent_drive_digested already
 // makes that correct, exactly like every other capped job here.
-const MAX_DOCS_PER_RUN = 8;
+// Raised from 8 alongside the cron route's HANDLER_TIMEOUT_MS going
+// from 45s to 240s (~5x) — still a real cap, not "unlimited," but sized
+// to the actual budget now available rather than the old, much tighter
+// one this was originally tuned for.
+const MAX_DOCS_PER_RUN = 20;
 
 const DIGEST_SYSTEM_PROMPT =
   "You are {AGENT}, a CarboNature MRV agent. You've just read a real document from your own reference folder. " +
