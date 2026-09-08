@@ -40,6 +40,18 @@ const GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document";
 const PDF_MIME_TYPE = "application/pdf";
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+// Confirmed live 2026-09-07: adding real PDF/docx download+parse on top
+// of the per-file model call pushed a normal-sized backlog (Jennifer's
+// folder, that round) past the cron route's 45s per-handler timeout —
+// this loop previously had no per-run cap at all, unlike every other
+// bounded batch job in this codebase (MAX_FILES_PER_RUN,
+// MAX_EMAIL_DOCS_PER_RUN, MAX_MERGES_PER_RUN). A folder-skip is free and
+// doesn't count against this; only an actual content-resolution +
+// model-call attempt does. The rest of a large backlog spreads across
+// this task's own biweekly rounds — mrv.agent_drive_digested already
+// makes that correct, exactly like every other capped job here.
+const MAX_DOCS_PER_RUN = 8;
+
 const DIGEST_SYSTEM_PROMPT =
   "You are {AGENT}, a CarboNature MRV agent. You've just read a real document from your own reference folder. " +
   "Extract what's actually worth remembering for your own work — a specific fact, figure, methodology detail, " +
@@ -88,6 +100,8 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
   const domain = agentId === "jennifer" || agentId === "ron" ? "crm" : "mrv";
 
   let digested = 0;
+  let processed = 0;
+  let deferredCount = 0;
   const digestNotes: string[] = [];
 
   for (const file of files) {
@@ -112,6 +126,12 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
       );
       continue;
     }
+
+    if (processed >= MAX_DOCS_PER_RUN) {
+      deferredCount++;
+      continue; // not marked digested — genuinely picked up next round, not skipped forever
+    }
+    processed++;
 
     let content: string | null = null;
     if (effectiveMimeType === GOOGLE_DOC_MIME_TYPE && readableFileId) {
@@ -172,6 +192,9 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
   }
 
   paragraphs.push(`Reviewed ${digested} new document(s) in this round out of ${files.length} in the folder.`);
+  if (deferredCount > 0) {
+    paragraphs.push(`${deferredCount} more new document(s) queued for the next round — kept this round to ${MAX_DOCS_PER_RUN} to stay inside the time budget.`);
+  }
   paragraphs.push(...digestNotes);
 
   // Explicit review + lesson extraction at the end of the round — Nitzan's
