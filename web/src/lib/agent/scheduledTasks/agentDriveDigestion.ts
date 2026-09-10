@@ -33,12 +33,26 @@ import { TARGET_PROJECT_ID } from "./constants";
  * real target's. `listDriveFolderFiles` requests `shortcutDetails`, so
  * `targetMimeType`/`targetId` resolve through it before any content
  * decision is made.
+ *
+ * Nitzan's own request (2026-09-10): a document that names a real
+ * external URL to its full text — e.g. a "FULL ARTICLE: <url>" line, the
+ * exact marker John's own research-note PDFs are generated with — gets
+ * that page actually fetched (the same safety-checked fetch as
+ * browse_website/fetch_public_url) and folded into the digestion prompt,
+ * not just the local file's own text. Important honesty limit, stated
+ * directly rather than silently under-delivering: for a paywalled
+ * journal page this fetches the SAME publicly-visible abstract a person
+ * would see without logging in — there is no institutional-access
+ * credential configured for any agent, so "reads the full article" only
+ * genuinely happens for a link that's actually open access.
  */
 
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document";
 const PDF_MIME_TYPE = "application/pdf";
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const FULL_ARTICLE_LINE_RE = /FULL ARTICLE:\s*(https:\/\/\S+)/i;
+const LINKED_PAGE_MAX_CHARS = 6000;
 
 // Confirmed live 2026-09-07: adding real PDF/docx download+parse on top
 // of the per-file model call pushed a normal-sized backlog (Jennifer's
@@ -76,6 +90,7 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
   const { recordAgentMemory } = await import("../../tools/recordAgentMemory");
   const { recordLesson } = await import("../lessonMemory");
   const { finishScheduledTask } = await import("../../reports/scheduledTaskReport");
+  const { validatePublicUrl, fetchAndExtractPage } = await import("../../tools/fetchPublicUrl");
 
   const paragraphs: string[] = [];
 
@@ -160,11 +175,33 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
       }
     }
 
+    // Follow a "FULL ARTICLE: <url>" line to the real page, if the local
+    // content names one — best-effort, never blocks digestion of the
+    // local document itself if the fetch fails or the URL is unsafe.
+    let linkedPageNote: string | null = null;
+    const linkMatch = content?.match(FULL_ARTICLE_LINE_RE);
+    if (linkMatch) {
+      try {
+        const parsed = new URL(linkMatch[1]);
+        const invalid = validatePublicUrl(parsed);
+        if (!invalid) {
+          const page = await fetchAndExtractPage(parsed, LINKED_PAGE_MAX_CHARS);
+          linkedPageNote =
+            `The document above named a link to the full article. Fetched ${parsed.toString()} ` +
+            `(final URL after redirects may differ) — page title: "${page.title ?? "(untitled)"}".\n${page.textExcerpt}`;
+        }
+      } catch {
+        linkedPageNote = null;
+      }
+    }
+
     const resp = await provider.complete({
       system: DIGEST_SYSTEM_PROMPT.replace("{AGENT}", agentId),
-      userMessage: content
-        ? `Document: "${file.name}"\n\n${content}`
-        : `Document: "${file.name}" (${effectiveMimeType ?? file.mimeType}) — content not readable in this pass, name/type only.`,
+      userMessage:
+        (content
+          ? `Document: "${file.name}"\n\n${content}`
+          : `Document: "${file.name}" (${effectiveMimeType ?? file.mimeType}) — content not readable in this pass, name/type only.`) +
+        (linkedPageNote ? `\n\n---\n${linkedPageNote}` : ""),
       tools: [],
       maxTokens: 512,
     });
@@ -179,7 +216,7 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
         kind: "drive_note",
         domain,
         content: `From "${file.name}": ${note}`,
-        metadata: { agentId, fileId: file.id, fileName: file.name },
+        metadata: { agentId, fileId: file.id, fileName: file.name, followedFullArticleLink: Boolean(linkedPageNote) },
       });
       if (recorded.ok) {
         digestNotes.push(`"${file.name}": ${note}`);

@@ -5,9 +5,18 @@ import { TARGET_PROJECT_ID } from "./constants";
 
 export const TASK_KEY = "john_drive_sorting_round";
 
-const SOURCE_KEYS = ["claude", "carbonature", "downloads"] as const;
+const SOURCE_KEYS = ["claude", "carbonature", "downloads", "peer_reviews"] as const;
 const AGENT_IDS = ["dave", "jennifer", "john", "rebeka", "ron"] as const;
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
+
+// Nitzan's own request (2026-09-10): the curated "Peer reviews" folder
+// (real meta-analysis papers + John's own research-note summaries) is
+// reviewed by exactly these three agents — already fully known, not
+// something an LLM needs to classify per file the way claude/
+// carbonature/downloads are (those are general-purpose folders whose
+// content could belong to any agent).
+const PEER_REVIEW_SOURCE_KEY = "peer_reviews";
+const PEER_REVIEW_AGENT_IDS = ["dave", "rebeka", "john"] as const;
 
 // Confirmed live 2026-09-07: the real source folders hold 138 direct
 // children combined, and roughly half of those are subfolders (Drive's
@@ -205,6 +214,7 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
   let excluded = 0;
   const classified: ClassifiedFile[] = [];
   const candidateFiles: DriveFileLike[] = [];
+  const peerReviewFiles: DriveFileLike[] = [];
 
   for (const source of sources) {
     let files;
@@ -220,7 +230,11 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
       scanned++;
       const already = await query<{ n: string }>(`SELECT count(*)::text n FROM mrv.drive_routing_log WHERE file_id = $1`, [file.id]);
       if (Number(already[0].n) > 0) continue; // already classified in an earlier round
-      candidateFiles.push(file);
+      if (source.source_key === PEER_REVIEW_SOURCE_KEY) {
+        peerReviewFiles.push(file);
+      } else {
+        candidateFiles.push(file);
+      }
     }
   }
 
@@ -251,6 +265,30 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
     );
   }
 
+  // Unconditional routing for the curated Peer reviews folder — no
+  // classification call, the 3 target agents are already fully known.
+  const toRoutePeerReview = peerReviewFiles.slice(0, MAX_FILES_PER_RUN);
+  const peerReviewDeferredCount = peerReviewFiles.length - toRoutePeerReview.length;
+  for (const file of toRoutePeerReview) {
+    const agentIds: string[] = [...PEER_REVIEW_AGENT_IDS];
+    classified.push({ fileId: file.id, fileName: file.name, agentIds, excluded: false });
+    for (const agentId of agentIds) {
+      const folderId = folderByAgent.get(agentId);
+      if (!folderId) continue;
+      try {
+        await copyDriveFile(ctx.googleAccessToken, file.id, folderId, file.name);
+        routed++;
+      } catch (e) {
+        paragraphs.push(`Could not copy "${file.name}" into ${agentId}'s folder: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    await query(
+      `INSERT INTO mrv.drive_routing_log (file_id, file_name, agent_ids, excluded) VALUES ($1, $2, $3, false)
+       ON CONFLICT (file_id) DO NOTHING`,
+      [file.id, file.name, agentIds],
+    );
+  }
+
   const newlyClassified = classified.length;
   paragraphs.unshift(
     `Scanned ${scanned} file(s) across ${sources.length} source folder(s); ${newlyClassified} new since the last round ` +
@@ -260,6 +298,9 @@ export async function runJohnDriveSortingRound(ctx: ToolContext): Promise<Schedu
     paragraphs.push(
       `${deferredCount} more new file(s) queued for the next round — kept this round to ${MAX_FILES_PER_RUN} to stay inside the time budget.`,
     );
+  }
+  if (peerReviewDeferredCount > 0) {
+    paragraphs.push(`${peerReviewDeferredCount} more new file(s) in Peer reviews queued for the next round.`);
   }
   for (const c of classified.filter((c) => !c.excluded)) {
     paragraphs.push(`- "${c.fileName}" -> ${c.agentIds.join(", ")}`);
