@@ -88,27 +88,47 @@ export function MapView({
     [points],
   );
 
+  // Returns null rather than an empty LngLatBounds when the farm has no
+  // plot geometry recorded (e.g. beauty dan flower ltd / credible blooms
+  // vegetables — real farms with real areas but no mrv.plots rows yet, per
+  // the totalAreaHa/SaaS fallback added this session). Passing an
+  // uninitialized LngLatBounds straight to fitBounds crashed mapbox-gl
+  // internals with "Cannot read properties of undefined (reading 'lng')" —
+  // confirmed live 2026-09-16 by selecting "credible blooms vegetables" on
+  // this page.
   const boundsFor = useMemo(() => {
-    return (farmId: string): mapboxgl.LngLatBounds => {
+    return (farmId: string): mapboxgl.LngLatBounds | null => {
       const b = new mapboxgl.LngLatBounds();
       for (const f of farms) {
         if (farmId !== "all" && f.farmId !== farmId) continue;
-        for (const p of f.plots)
+        for (const p of f.plots) {
+          if (!p.geom) continue;
           for (const [lon, lat] of p.geom.coordinates[0]) b.extend([lon, lat]);
+        }
       }
-      return b;
+      return b.isEmpty() ? null : b;
     };
   }, [farms]);
+
+  const hasPlots = useMemo(
+    () => activeFarm === "all" || (farms.find((f) => f.farmId === activeFarm)?.plotCount ?? 0) > 0,
+    [farms, activeFarm],
+  );
 
   /* init once */
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     mapboxgl.accessToken = token;
+    // Fall back to every farm's combined extent when the initially-selected
+    // farm has no plot geometry, and to Mapbox's own default view when no
+    // farm in the project has any yet — never an empty/invalid bounds.
+    const initialBounds = boundsFor(initialFarm) ?? boundsFor("all");
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
-      bounds: boundsFor(initialFarm),
-      fitBoundsOptions: { padding: 60 },
+      ...(initialBounds
+        ? { bounds: initialBounds, fitBoundsOptions: { padding: 60 } }
+        : { center: [0, 20], zoom: 1.5 }),
       attributionControl: false,
     });
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-left");
@@ -211,7 +231,11 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    map.fitBounds(boundsFor(activeFarm), { padding: 60, duration: 1200 });
+    // A farm with no plot geometry yet (real, not an error — see boundsFor's
+    // own comment) has nothing to frame: keep the camera where it is rather
+    // than crash mapbox-gl on an empty bounds.
+    const b = boundsFor(activeFarm);
+    if (b) map.fitBounds(b, { padding: 60, duration: 1200 });
   }, [activeFarm, ready, boundsFor]);
 
   return (
@@ -235,6 +259,12 @@ export function MapView({
           </button>
         ))}
       </div>
+
+      {!hasPlots && (
+        <div className="absolute left-3 top-14 z-10 ml-10 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-medium text-earth-600 shadow">
+          No plot boundaries recorded yet for this farm — the map stays on its current view.
+        </div>
+      )}
 
       {/* layers panel + legend */}
       <div className="absolute right-3 top-3 z-10 w-56 space-y-3">

@@ -54,6 +54,16 @@ export interface ModelProvider {
     userMessage: string;
     tools: ToolSchema[];
     /**
+     * Images to read alongside userMessage — Claude's own vision, not a
+     * separate OCR step. Confirmed necessary live: a real farmer email to
+     * Dave (2026-09-12) carried its fertiliser plan as a screenshot, not
+     * text, and the extraction pipeline (extractAttachmentText.ts) only
+     * ever handled text-shaped formats (.txt/.docx/.xlsx/.pdf). Ignored by
+     * a provider that can't see (no-key stand-in included) rather than
+     * erroring — same convention as webSearch.
+     */
+    images?: Array<{ mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp"; base64: string }>;
+    /**
      * Anthropic's own hosted web-search tool (Nitzan's own instruction:
      * broad-web-search capability should be available to every agent, not
      * just the one task it was first built for) — the model decides on its

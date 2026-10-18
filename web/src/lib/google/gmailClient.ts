@@ -185,7 +185,18 @@ export interface GmailAttachment {
  * Content-Disposition header at all (older or unusual senders) are kept
  * rather than silently dropped, since filename+attachmentId is still a
  * reasonable fallback signal when the header is simply absent.
+ *
+ * Confirmed live 2026-09-12: excluding every "inline" part was too broad
+ * in the other direction — a real farmer email pasted a fertilisation-
+ * plan screenshot directly into the message body (Gmail marks a
+ * drag-and-dropped/pasted image "inline" with a Content-ID, exactly like
+ * a signature logo). A signature logo is small and repeats on every
+ * email from that sender; a pasted screenshot of real data is not. Size
+ * is the practical way to tell them apart without per-sender state: an
+ * inline image below INLINE_LOGO_MAX_BYTES is treated as decorative and
+ * still excluded, but a larger one is kept as real content.
  */
+const INLINE_LOGO_MAX_BYTES = 40_000;
 export async function listMessageAttachments(accessToken: string, gmailId: string): Promise<GmailAttachment[]> {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -208,7 +219,8 @@ export async function listMessageAttachments(accessToken: string, gmailId: strin
   const attachments: GmailAttachment[] = [];
   function walk(part: Part | undefined): void {
     if (!part) return;
-    if (part.filename && part.body?.attachmentId && !isInline(part)) {
+    const inlineButLargeEnoughToBeRealContent = isInline(part) && (part.body?.size ?? 0) > INLINE_LOGO_MAX_BYTES;
+    if (part.filename && part.body?.attachmentId && (!isInline(part) || inlineButLargeEnoughToBeRealContent)) {
       attachments.push({
         filename: part.filename,
         mimeType: part.mimeType ?? "application/octet-stream",

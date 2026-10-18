@@ -346,3 +346,15 @@ export interface PendingAgentAction {
   requestedBy: string;
   createdAt: string;
 }
+
+/** VM0042 §8.4 leakage. §8.4.1 (organic amendments) is computed live from activity data — never stored here. This is the manually-justified §8.4.2/8.4.3/8.4.4 kind. */
+export interface LeakageEntry {
+  leakageId: string;
+  farmId: string | null;
+  projectId: string | null;
+  component: "8.4.2" | "8.4.3" | "8.4.4";
+  year: number | null;
+  leakageTco2e: number;
+  justification: string | null;
+  createdAt: string;
+}

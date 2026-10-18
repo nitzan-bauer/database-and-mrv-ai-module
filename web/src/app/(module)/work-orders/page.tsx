@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listProjects, listWorkOrders } from "@/lib/data";
 import { Card } from "@/components/ui/Card";
+import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { tokenState, daysUntil } from "@/lib/mcp/token";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +14,21 @@ const STATE_STYLE: Record<string, string> = {
   closed: "bg-cream text-faint",
 };
 
-export default async function WorkOrdersPage() {
-  const [project] = await listProjects();
+export default async function WorkOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
+  const { project: projectParam } = await searchParams;
+  const projects = await listProjects();
+  // Prefer the real project over the demo one by default (matching /ghg,
+  // /plans, /map) — real farms have moved out of the demo project over
+  // time (migration 0125), so the old first-project pick silently showed
+  // the wrong project's work orders with no switcher to correct it.
+  const project =
+    projects.find((p) => p.projectId === projectParam) ??
+    projects.find((p) => !p.isDemo) ??
+    projects[0];
   const orders = await listWorkOrders(project.projectId);
 
   return (
@@ -26,6 +40,8 @@ export default async function WorkOrdersPage() {
           and a one-tap MCP activation token.
         </p>
       </div>
+
+      <ProjectSwitcher projects={projects} activeProjectId={project.projectId} basePath="/work-orders" />
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">

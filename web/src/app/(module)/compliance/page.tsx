@@ -16,6 +16,7 @@ import {
   type ComplianceScore,
 } from "@/lib/compliance/evaluate";
 import { ComplianceView } from "@/components/compliance/ComplianceView";
+import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { BaselineSiteForm } from "@/components/compliance/BaselineSiteForm";
 import { AdditionalityForm } from "@/components/compliance/AdditionalityForm";
 import { KmzDownloadButton } from "@/components/compliance/KmzDownloadButton";
@@ -93,12 +94,29 @@ const RULE_LABELS: Record<string, { label: string; ref: string }> = {
 export default async function CompliancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ farm?: string }>;
+  searchParams: Promise<{ project?: string; farm?: string }>;
 }) {
-  const { farm } = await searchParams;
-  const [project] = await listProjects();
+  const { project: projectParam, farm } = await searchParams;
+  const projects = await listProjects();
+  // Prefer the real project over the demo one by default (matching /ghg,
+  // /plans, /map, /work-orders) — real farms have moved out of the demo
+  // project over time (migration 0125), so the old first-project pick
+  // could resolve to a project with zero farms and crash below.
+  const project =
+    projects.find((p) => p.projectId === projectParam) ??
+    projects.find((p) => !p.isDemo) ??
+    projects[0];
   const farms = await listFarms(project.projectId);
   const plans = await listPlans(project.projectId);
+  if (farms.length === 0) {
+    return (
+      <div className="space-y-5">
+        <h1 className="text-2xl font-bold text-pine-700">Compliance</h1>
+        <ProjectSwitcher projects={projects} activeProjectId={project.projectId} basePath="/compliance" />
+        <p className="text-sm text-muted">{project.name} has no farms recorded yet.</p>
+      </div>
+    );
+  }
   const active = farms.find((f) => f.farmId === farm) ?? farms[0];
 
   const cycle =
@@ -194,6 +212,8 @@ export default async function CompliancePage({
           </p>
         )}
       </div>
+
+      <ProjectSwitcher projects={projects} activeProjectId={project.projectId} basePath="/compliance" />
 
       {result ? (
         <ComplianceView

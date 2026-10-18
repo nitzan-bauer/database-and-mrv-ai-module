@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { getAgent, listProjects, listScheduledTasksForAgent, resolveActiveProject } from "@/lib/data";
+import { getAgent, listFarms, listProjects, listScheduledTasksForAgent, resolveActiveProject } from "@/lib/data";
 import { DATA_MODE } from "@/lib/env";
 import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
 import type { ToolResult } from "@/lib/tools/context";
@@ -14,6 +14,7 @@ import { RonDashboard } from "@/components/agents/RonDashboard";
 import { JenniferDashboard } from "@/components/agents/JenniferDashboard";
 import { ComingSoonDashboard } from "@/components/agents/ComingSoonDashboard";
 import { ScheduledTasksPanel } from "@/components/agents/ScheduledTasksPanel";
+import { runScheduledTaskNowAction } from "@/lib/agent/runScheduledTaskNowAction";
 import { AgentFeedSection } from "@/components/agents/AgentFeedSection";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +104,23 @@ export default async function AgentDetailPage({
   const feed = await listAgentFeed(agent.agentId);
   const scheduledTasks = await listScheduledTasksForAgent(agent.agentId);
 
+  // Only fetched for a task that actually needs a farm picker (Nitzan's
+  // own request, 2026-09-12: dave_email_activity_ingestion's "Run Now"
+  // now opens a farm picker, then a sender-email box, rather than
+  // scanning the whole inbox and asking the model to guess the farm and
+  // its area from free text — the farm's real total_area_ha comes from
+  // here, not the email).
+  const farmPickerOptions =
+    DATA_MODE === "db" && scheduledTasks.some((t) => t.taskKey === "dave_email_activity_ingestion")
+      ? await Promise.all(
+          allProjects.map(async (p) => ({
+            projectId: p.projectId,
+            projectName: p.name,
+            farms: (await listFarms(p.projectId)).map((f) => ({ farmId: f.farmId, name: f.name })),
+          })),
+        )
+      : undefined;
+
   async function askAgent(id: string, task: string): Promise<AgentTaskResult> {
     "use server";
     const session = await auth().catch(() => null);
@@ -128,7 +146,13 @@ export default async function AgentDetailPage({
 
       <SingleAgentHeader agent={agent} connections={connections} askAgent={askAgent} />
 
-      {scheduledTasks.length > 0 && <ScheduledTasksPanel tasks={scheduledTasks} />}
+      {scheduledTasks.length > 0 && (
+        <ScheduledTasksPanel
+          tasks={scheduledTasks}
+          onRunNow={DATA_MODE === "db" ? runScheduledTaskNowAction : undefined}
+          farmPickerOptions={farmPickerOptions}
+        />
+      )}
 
       {agent.agentId === "rebeka" ? (
         <RebekaDashboard

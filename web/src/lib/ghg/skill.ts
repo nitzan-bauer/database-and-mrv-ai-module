@@ -1,4 +1,5 @@
 import {
+  averageBaselineRows,
   computeEmissions,
   efNDirect,
   emissionReduction,
@@ -95,7 +96,7 @@ export function computeReduction(
   method: IrrigationMethod | null | undefined,
   farmId: string,
 ) {
-  const bsl = activity.find((a) => a.farmId === farmId && a.scenario === "BSL");
+  const bsl = averageBaselineRows(activity.filter((a) => a.farmId === farmId && a.scenario === "BSL"));
   const pr = activity.find((a) => a.farmId === farmId && a.scenario === "PR");
   if (!bsl || !pr) return null;
   const b = computeEmissions(bsl, p, method);

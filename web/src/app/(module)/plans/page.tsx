@@ -1,5 +1,6 @@
 import { getFarmsWithPlots, listPlans, listProjects } from "@/lib/data";
 import { PlansView } from "@/components/plans/PlansView";
+import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { generatePlan, recommendation } from "@/lib/planner/generate";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +14,20 @@ export const dynamic = "force-dynamic";
 export default async function PlansPage({
   searchParams,
 }: {
-  searchParams: Promise<{ farm?: string; plan?: string }>;
+  searchParams: Promise<{ project?: string; farm?: string; plan?: string }>;
 }) {
-  const { farm, plan: planParam } = await searchParams;
-  const [project] = await listProjects();
+  const { project: projectParam, farm, plan: planParam } = await searchParams;
+  const projects = await listProjects();
+  // Real farms have moved out of the demo project over time (e.g. Elad Farm
+  // and Nitzan-Veg-Tech Farm, migration 0125) — defaulting to
+  // resolveActiveProject's demo-first pick silently hid their sampling
+  // plans on this page, with no switcher to notice or correct it. Prefer
+  // the real project, same as /ghg already does, unless a project is
+  // explicitly requested.
+  const project =
+    projects.find((p) => p.projectId === projectParam) ??
+    projects.find((p) => !p.isDemo) ??
+    projects[0];
   const [plans, farms] = await Promise.all([
     listPlans(project.projectId),
     getFarmsWithPlots(project.projectId),
@@ -58,6 +69,7 @@ export default async function PlansPage({
           its full parameters, the generator&apos;s hard checks, and Dave&apos;s recommendation.
         </p>
       </div>
+      <ProjectSwitcher projects={projects} activeProjectId={project.projectId} basePath="/plans" />
       <PlansView
         plans={plans}
         farms={farms.map((f) => ({ farmId: f.farmId, name: f.name }))}

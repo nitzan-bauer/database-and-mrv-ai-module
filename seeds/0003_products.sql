@@ -7,10 +7,12 @@
 -- Idempotent.
 -- =====================================================================
 
--- CoteN and Multicote Products (both 'crf') were permanently removed from
--- the platform (Nitzan's own request, migrations/0096) — dropped from this
--- seed too so a fresh environment never re-introduces them.
+-- Multicote Products ('crf') was permanently removed from the platform
+-- (Nitzan's own request, migrations/0096) — dropped from this seed so a
+-- fresh environment never re-introduces it. CoteN was removed with it and
+-- restored on 2026-10-18 (migrations/0126), so it is seeded again.
 INSERT INTO mrv.products (name, activity_type, activity_label, cost_per_ha_usd, credit_per_ha) VALUES
+  ('CoteN',             'crf',           'Improve fertilizer management', 13968.00,  400.0000),
   ('DYNOMYCO Spark WP', 'biofertilizer', 'Apply DYNOMYCO Spark WP',        863.45,    25.0000),
   ('Rootella-F',        'biofertilizer', 'Apply Rootella-F',              1298.52,    38.0000),
   ('Rootella-G',        'biofertilizer', 'Apply Rootella-G',              1262.45,    37.0000),

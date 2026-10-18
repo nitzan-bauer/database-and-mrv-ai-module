@@ -11,6 +11,7 @@ import {
 import type { ClimateZone, IrrigationMethod } from "@/lib/data/types";
 import { DATA_MODE } from "@/lib/env";
 import { AdminView } from "@/components/admin/AdminView";
+import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { FarmContextForm } from "@/components/admin/FarmContextForm";
 import { DocumentsPanel } from "@/components/admin/DocumentsPanel";
 import { AgentLearningPanel } from "@/components/admin/AgentLearningPanel";
@@ -74,8 +75,21 @@ const METHODS = ["flood", "furrow", "sprinkler", "drip", "rainfed"] as const;
  * and the in-house CRM when it arrives. A user, role or permission is defined
  * once and applies everywhere, which is the whole point of unifying it.
  */
-export default async function AdminPage() {
-  const [project] = await listProjects();
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
+  const { project: projectParam } = await searchParams;
+  const projects = await listProjects();
+  // Prefer the real project over the demo one by default (matching /ghg,
+  // /plans, /map, /work-orders, /compliance) — real farms have moved out
+  // of the demo project over time (migration 0125), so the old
+  // first-project pick silently left the Farm Context panel empty here.
+  const project =
+    projects.find((p) => p.projectId === projectParam) ??
+    projects.find((p) => !p.isDemo) ??
+    projects[0];
   // In db mode these are the real rows — the same users the sign-in upserts,
   // the same policies checkPolicy() enforces, the same audit trail the tools
   // write. In fixtures mode the reads fall back to the demo set themselves.
@@ -318,6 +332,8 @@ export default async function AdminPage() {
           the append-only audit log.
         </p>
       </div>
+
+      <ProjectSwitcher projects={projects} activeProjectId={project.projectId} basePath="/admin" />
 
       <section id="farm-context" className="scroll-mt-6">
         <h2 className="text-base font-bold text-pine-700">Farm quantification context</h2>

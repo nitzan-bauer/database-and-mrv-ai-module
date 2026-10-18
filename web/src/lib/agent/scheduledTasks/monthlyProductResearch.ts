@@ -15,15 +15,16 @@ function isSameSite(hostname: string, root: string): boolean {
 }
 
 /**
- * Multicote Agri Junior and CoteN were permanently removed from the
- * platform (Nitzan's own request, migrations/0096) — but this task's own
- * discovery phase runs a genuine, fresh web search every month, which
- * could re-surface Haifa's own product pages for either on its own,
- * independent of what the live carbonature.io page or the DB still say.
- * Filtered by hostname/URL rather than by title text, since a page has to
- * be excluded before it's ever fetched.
+ * Multicote Agri Junior was permanently removed from the platform
+ * (Nitzan's own request, migrations/0096) — but this task's own discovery
+ * phase runs a genuine, fresh web search every month, which could
+ * re-surface Haifa's own product page for it on its own, independent of
+ * what the live carbonature.io page or the DB still say. Filtered by
+ * hostname/URL rather than by title text, since a page has to be excluded
+ * before it's ever fetched. (CoteN was removed alongside it and restored on
+ * 2026-10-18, migrations/0126 — it is a normal product again.)
  */
-const EXCLUDED_DISCOVERY_HOSTS_PATTERNS: RegExp[] = [/multicote/i, /coten/i];
+const EXCLUDED_DISCOVERY_HOSTS_PATTERNS: RegExp[] = [/multicote/i];
 function isExcludedDiscovery(url: string): boolean {
   return EXCLUDED_DISCOVERY_HOSTS_PATTERNS.some((re) => re.test(url));
 }
@@ -34,8 +35,8 @@ const DISCOVERY_SYSTEM_PROMPT =
   "fertilizers, mycorrhizal inoculants, and similar soil-health inputs for regenerative smallholder farming). " +
   "You are given a list of manufacturer products already covered this month. Use your real web-search tool to " +
   "find OTHER real manufacturer product pages, in the same or an adjacent category, that are NOT already " +
-  "covered. Never suggest Haifa Group's Multicote (Agri Junior) or CoteN — both were permanently removed from " +
-  "this platform and must not be researched or reported on again, regardless of how relevant they might seem. " +
+  "covered. Never suggest Haifa Group's Multicote (Agri Junior) — it was permanently removed from " +
+  "this platform and must not be researched or reported on again, regardless of how relevant it might seem. " +
   "Respond with ONLY the URLs you found from real search results, one per line, nothing else — no prose, no " +
   "numbering, no explanation. If you find nothing new, respond with exactly: NONE.";
 

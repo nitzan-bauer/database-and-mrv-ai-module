@@ -95,8 +95,10 @@ export function AdminView({
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u.email} className="border-t border-line">
+              {/* One row per (person, app they've signed into), so the same email
+                  legitimately repeats — the key has to include the system. */}
+              {users.map((u, i) => (
+                <tr key={`${u.email}|${u.system}|${u.scope}|${i}`} className="border-t border-line">
                   <td className="px-4 py-2.5">
                     <div className="font-medium text-ink">{u.name}</div>
                     <div className="font-mono text-[10.5px] text-faint">{u.email}</div>

@@ -22,6 +22,7 @@ import { TASK_KEY as RON_CROP_CYCLE_REMINDER_KEY, runRonCropCycleReminder } from
 import { TASK_KEY as DAVE_BSL_PROTOCOL_AND_SAMPLING_PLAN_KEY, runDaveBslProtocolAndSamplingPlan } from "./scheduledTasks/daveBslProtocolAndSamplingPlan";
 import { TASK_KEY as JOHN_MEMORY_CONSOLIDATION_KEY, runJohnMemoryConsolidation } from "./scheduledTasks/johnMemoryConsolidation";
 import { TASK_KEY as JOHN_DRIVE_SORTING_ROUND_KEY, runJohnDriveSortingRound } from "./scheduledTasks/johnDriveSortingRound";
+import { TASK_KEY as DAVE_EMAIL_ACTIVITY_INGESTION_KEY, runDaveEmailActivityIngestion } from "./scheduledTasks/daveEmailActivityIngestion";
 import {
   DAVE_TASK_KEY as DAVE_DRIVE_DIGESTION_KEY,
   JENNIFER_TASK_KEY as JENNIFER_DRIVE_DIGESTION_KEY,
@@ -76,6 +77,7 @@ export const SCHEDULED_TASK_REGISTRY: Record<string, ScheduledTaskHandler> = {
   [DAVE_BSL_PROTOCOL_AND_SAMPLING_PLAN_KEY]: runDaveBslProtocolAndSamplingPlan,
   [JOHN_MEMORY_CONSOLIDATION_KEY]: runJohnMemoryConsolidation,
   [JOHN_DRIVE_SORTING_ROUND_KEY]: runJohnDriveSortingRound,
+  [DAVE_EMAIL_ACTIVITY_INGESTION_KEY]: runDaveEmailActivityIngestion,
   [DAVE_DRIVE_DIGESTION_KEY]: runDaveDriveDigestion,
   [JENNIFER_DRIVE_DIGESTION_KEY]: runJenniferDriveDigestion,
   [JOHN_DRIVE_DIGESTION_KEY]: runJohnDriveDigestion,

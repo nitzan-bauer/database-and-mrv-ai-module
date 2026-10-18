@@ -8,6 +8,8 @@ import { runPlotQaQc } from "../tools/runPlotQaQc";
 import { exportPlotsKml } from "../tools/exportPlotsKml";
 import { recordBaselineSite } from "../tools/recordBaselineSite";
 import { recordActivityData } from "../tools/recordActivityData";
+import { recordLeakage } from "../tools/recordLeakage";
+import { computeFarmYearTool, computeReductionTool, explainFarmYearTool, explainParametersTool } from "../tools/ghgSkillTools";
 import { recordAdditionalityAssessment } from "../tools/recordAdditionalityAssessment";
 import { exportPlotsKmz } from "../tools/exportPlotsKmz";
 import { generatePddDraft } from "../tools/generatePddDraft";
@@ -406,6 +408,7 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
                 fertilizerName: { type: "string", description: "Must match the mrv.fertilizers catalog exactly." },
                 massT: { type: "number" },
                 intervalYears: { type: "integer", description: "Default 1." },
+                carbonContent: { type: "number", description: "t C / t product, fraction 0-1. Organic amendments only, needed for §8.4.1 leakage — omit rather than guess." },
               },
               required: ["fertilizerName", "massT"],
             },
@@ -427,6 +430,115 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         nfixNContent: input.nfixNContent as number | undefined,
         fertilizers: (input.fertilizers ?? []) as never,
       }),
+  },
+
+  record_leakage: {
+    schema: {
+      name: "record_leakage",
+      description:
+        "Record a manually-justified VM0042 §8.4 leakage line — §8.4.2, §8.4.3 or §8.4.4 only. " +
+        "§8.4.1 (new/additional organic amendments) is computed automatically from activity data and " +
+        "has no manual-entry path; do not call this for it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          projectId: { type: "string" },
+          component: { type: "string", enum: ["8.4.2", "8.4.3", "8.4.4"] },
+          year: { type: "integer" },
+          leakageTco2e: { type: "number" },
+          justification: { type: "string", description: "Required — an unjustified figure is exactly what a VVB flags." },
+        },
+        required: ["component", "leakageTco2e", "justification"],
+      },
+    },
+    handler: (ctx, input) =>
+      recordLeakage(ctx, {
+        farmId: input.farmId as string | undefined,
+        projectId: input.projectId as string | undefined,
+        component: input.component as "8.4.2" | "8.4.3" | "8.4.4",
+        year: input.year as number | undefined,
+        leakageTco2e: Number(input.leakageTco2e),
+        justification: String(input.justification ?? ""),
+      }),
+  },
+
+  compute_farm_year: {
+    schema: {
+      name: "compute_farm_year",
+      description:
+        "Compute VM0042 emissions for one farm-year against its resolved parameter set. Returns each component " +
+        "(fuel CO2, direct/indirect N2O, N-fixing residue, residue burning) and the total, in tCO2e/ha and tCO2e.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          scenario: { type: "string", enum: ["BSL", "PR"] },
+          year: { type: "integer", description: "Omit to take the farm's only row for that scenario." },
+        },
+        required: ["farmId", "scenario"],
+      },
+    },
+    handler: (ctx, input) =>
+      computeFarmYearTool(ctx, {
+        farmId: String(input.farmId ?? ""),
+        scenario: input.scenario as "BSL" | "PR",
+        year: input.year as number | undefined,
+      }),
+  },
+
+  explain_farm_year: {
+    schema: {
+      name: "explain_farm_year",
+      description:
+        "Return the full working for a farm-year: every VM0042 equation with its number, the expression as " +
+        "evaluated, and the result. Use this to defend a figure to a VVB.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          farmId: { type: "string" },
+          scenario: { type: "string", enum: ["BSL", "PR"] },
+          year: { type: "integer", description: "Omit to take the farm's only row for that scenario." },
+        },
+        required: ["farmId", "scenario"],
+      },
+    },
+    handler: (ctx, input) =>
+      explainFarmYearTool(ctx, {
+        farmId: String(input.farmId ?? ""),
+        scenario: input.scenario as "BSL" | "PR",
+        year: input.year as number | undefined,
+      }),
+  },
+
+  compute_reduction: {
+    schema: {
+      name: "compute_reduction",
+      description:
+        "Emission reduction for one farm: its baseline row minus its project-year row, per hectare and in total.",
+      inputSchema: {
+        type: "object",
+        properties: { farmId: { type: "string" } },
+        required: ["farmId"],
+      },
+    },
+    handler: (ctx, input) => computeReductionTool(ctx, { farmId: String(input.farmId ?? "") }),
+  },
+
+  explain_parameters: {
+    schema: {
+      name: "explain_parameters",
+      description:
+        "Explain which emission factors a farm's resolved parameter set uses and why — the climate/N-trend switch " +
+        "on EF_N_direct, the climate/irrigation switch on Frac_LEACH, and whether soil N2O is counted here or taken " +
+        "from the model.",
+      inputSchema: {
+        type: "object",
+        properties: { farmId: { type: "string", description: "Whose climate zone and irrigation method resolve the parameter set." } },
+        required: ["farmId"],
+      },
+    },
+    handler: (ctx, input) => explainParametersTool(ctx, { farmId: String(input.farmId ?? "") }),
   },
 
   record_additionality_assessment: {

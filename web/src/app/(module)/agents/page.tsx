@@ -15,6 +15,7 @@ import type { AgentTaskResult } from "@/lib/agent/runAgentTask";
 import { AgentOrgChart } from "@/components/agents/AgentOrgChart";
 import { MarketScanSection } from "@/components/agents/MarketScanSection";
 import { ScheduledTasksPanel } from "@/components/agents/ScheduledTasksPanel";
+import { runScheduledTaskNowAction } from "@/lib/agent/runScheduledTaskNowAction";
 import { listMarketScanDeals, listMarketScanProjects } from "@/lib/agent/marketScan";
 
 export const dynamic = "force-dynamic";
@@ -134,7 +135,7 @@ export default async function AgentsPage({
       {johnScheduledTasks.length > 0 && (
         <section>
           <h2 className="mb-1 text-base font-bold text-pine-700">John&apos;s dashboard</h2>
-          <ScheduledTasksPanel tasks={johnScheduledTasks} />
+          <ScheduledTasksPanel tasks={johnScheduledTasks} onRunNow={DATA_MODE === "db" ? runScheduledTaskNowAction : undefined} />
         </section>
       )}
 

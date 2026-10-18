@@ -17,6 +17,7 @@ import type {
   WorkOrder,
   WorkOrderPoint,
   PendingAgentAction,
+  LeakageEntry,
 } from "./types";
 import type { ActivityData } from "../ghg/engine";
 import {
@@ -85,6 +86,12 @@ export function resolveActiveProject(projects: Project[], requestedId?: string):
   return projects.find((p) => p.isDemo) ?? projects[0];
 }
 
+/**
+ * A farm whose real plots only exist in the SaaS (mrv.plots — the GHG
+ * calculator's own quantification-unit model, per migration 0093's design —
+ * was never populated for it) falls back to the SaaS's own real area
+ * (public.plots, joined via saas_farm_id) rather than showing 0 ha.
+ */
 export async function listFarms(projectId: string): Promise<Farm[]> {
   if (DATA_MODE === "fixtures") {
     const { farms, plots } = fx();
@@ -98,7 +105,11 @@ export async function listFarms(projectId: string): Promise<Farm[]> {
             f.country, f.region, f.climate_zone, f.irrigation_method, f.status, f.is_demo,
             f.drive_folder_id,
             count(p.plot_id)::int          AS plot_count,
-            coalesce(sum(p.area_ha), 0)::float AS total_area_ha
+            coalesce(
+              nullif(sum(p.area_ha), 0),
+              (SELECT sum(sp.area_ha) FROM public.plots sp WHERE sp.farm_id = f.saas_farm_id),
+              0
+            )::float AS total_area_ha
        FROM mrv.farms f
        LEFT JOIN mrv.plots p ON p.farm_id = f.farm_id
       WHERE f.project_id = $1
@@ -107,6 +118,40 @@ export async function listFarms(projectId: string): Promise<Farm[]> {
     [projectId],
   );
   return rows.map(rowToFarm);
+}
+
+/**
+ * One farm by id, regardless of which project it belongs to. Every other
+ * farm read in this module is scoped to one project_id — the GHG skill
+ * tools (ghgSkillTools.ts) are the first real case of a caller holding
+ * only a farmId, from a human's own picker (ScheduledTasksPanel's farm
+ * step, or a future agent tool call), with no reason to already know or
+ * re-derive its project.
+ */
+export async function getFarmById(farmId: string): Promise<Farm | null> {
+  if (DATA_MODE === "fixtures") {
+    const { farms, plots } = fx();
+    const found = farms.find((f) => f.farmId === farmId);
+    return found ? withTotals(found, plots) : null;
+  }
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT f.farm_id, f.project_id, f.name, f.installation_code, f.operator,
+            f.country, f.region, f.climate_zone, f.irrigation_method, f.status, f.is_demo,
+            f.drive_folder_id,
+            count(p.plot_id)::int          AS plot_count,
+            coalesce(
+              nullif(sum(p.area_ha), 0),
+              (SELECT sum(sp.area_ha) FROM public.plots sp WHERE sp.farm_id = f.saas_farm_id),
+              0
+            )::float AS total_area_ha
+       FROM mrv.farms f
+       LEFT JOIN mrv.plots p ON p.farm_id = f.farm_id
+      WHERE f.farm_id = $1
+      GROUP BY f.farm_id`,
+    [farmId],
+  );
+  return rows.length ? rowToFarm(rows[0]) : null;
 }
 
 export async function getFarmsWithPlots(projectId: string): Promise<FarmWithPlots[]> {
@@ -922,6 +967,33 @@ export async function listFertilizers(): Promise<
   return rows.map((r) => ({ name: r.name, nContent: Number(r.n_content), class: r.class }));
 }
 
+/**
+ * Manually-justified leakage — VM0042 §8.4.2/8.4.3/8.4.4. §8.4.1 (organic
+ * amendments) is deliberately not here: it is computed live from activity
+ * data (engine.ts's computeLeakage841), never entered by hand, so there is
+ * nothing to fall out of sync with a recomputed emissions figure.
+ */
+export async function listLeakage(projectId: string): Promise<LeakageEntry[]> {
+  if (DATA_MODE === "fixtures") return [];
+  const { query } = await import("../db");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT leakage_id, farm_id, project_id, component, year, leakage_tco2e, justification, created_at
+       FROM mrv.leakage WHERE project_id = $1 OR farm_id IN (SELECT farm_id FROM mrv.farms WHERE project_id = $1)
+      ORDER BY component, year`,
+    [projectId],
+  );
+  return rows.map((r) => ({
+    leakageId: String(r.leakage_id),
+    farmId: (r.farm_id as string | null) ?? null,
+    projectId: (r.project_id as string | null) ?? null,
+    component: r.component as LeakageEntry["component"],
+    year: r.year != null ? Number(r.year) : null,
+    leakageTco2e: Number(r.leakage_tco2e),
+    justification: (r.justification as string | null) ?? null,
+    createdAt: new Date(r.created_at as string | Date).toISOString(),
+  }));
+}
+
 /** A project's recorded VM0042 §7 additionality assessments, newest first. */
 export async function listAdditionalityAssessments(projectId: string): Promise<AdditionalityAssessment[]> {
   if (DATA_MODE === "fixtures") return [];
@@ -1035,8 +1107,9 @@ export async function listActivityData(farmId: string): Promise<ActivityData[]> 
       n_content: string;
       class: string;
       interval_years: number;
+      carbon_content: string | null;
     }>(
-      `SELECT fertilizer_name, mass_t, n_content, class::text, interval_years
+      `SELECT fertilizer_name, mass_t, n_content, class::text, interval_years, carbon_content
          FROM mrv.fertilizer_applications WHERE activity_data_id = $1 ORDER BY application_id`,
       [r.activity_data_id],
     );
@@ -1056,6 +1129,7 @@ export async function listActivityData(farmId: string): Promise<ActivityData[]> 
         nContent: Number(f.n_content),
         class: f.class === "organic" ? "organic" : "synthetic",
         intervalYears: Number(f.interval_years),
+        carbonContent: f.carbon_content != null ? Number(f.carbon_content) : null,
       })),
     });
   }
@@ -1151,6 +1225,8 @@ export interface ScheduledTaskCard {
   lastRunAt: string | null;
   nextRunAt: string;
   lastRunDetail: string | null;
+  /** 'manual' (0122) never gets picked up by the cron route — nextRunAt is cosmetic; only a "Run Now" click runs it. */
+  frequency: string;
 }
 
 const SCHEDULED_TASK_ACRONYMS = new Set(["kyc", "pdd", "crm", "vm0042", "saas"]);
@@ -1176,7 +1252,7 @@ export async function listScheduledTasksForAgent(agentId: string): Promise<Sched
   if (DATA_MODE === "fixtures") return [];
   const { query } = await import("../db");
   const rows = await query<Record<string, unknown>>(
-    `SELECT task_key, title, last_run_status, last_run_at, next_run_at, last_run_detail
+    `SELECT task_key, title, last_run_status, last_run_at, next_run_at, last_run_detail, frequency
        FROM mrv.scheduled_tasks
       WHERE agent_id = $1 AND enabled
       ORDER BY task_key`,
@@ -1190,6 +1266,7 @@ export async function listScheduledTasksForAgent(agentId: string): Promise<Sched
     lastRunAt: r.last_run_at ? new Date(String(r.last_run_at)).toISOString() : null,
     nextRunAt: new Date(String(r.next_run_at)).toISOString(),
     lastRunDetail: (r.last_run_detail as string | null) ?? null,
+    frequency: String(r.frequency),
   }));
 }
 

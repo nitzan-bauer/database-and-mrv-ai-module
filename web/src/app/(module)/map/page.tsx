@@ -1,6 +1,7 @@
 import { getFarmsWithPlots, listProjects, listSamplingPoints } from "@/lib/data";
 import { MAPBOX_TOKEN } from "@/lib/env";
 import { MapView } from "@/components/map/MapView";
+import { ProjectSwitcher } from "@/components/agents/ProjectSwitcher";
 import { Card } from "@/components/ui/Card";
 
 export const dynamic = "force-dynamic";
@@ -13,13 +14,20 @@ export const dynamic = "force-dynamic";
 export default async function MapPage({
   searchParams,
 }: {
-  searchParams: Promise<{ farm?: string }>;
+  searchParams: Promise<{ project?: string; farm?: string }>;
 }) {
-  const { farm } = await searchParams;
-  const [project] = await listProjects();
-  // Demo farms (mrv.farms.is_demo, e.g. Elad Farm / Nitzan-Veg-Tech Farm)
-  // are test fixtures, not real prospects — keep them off the map real
-  // staff and prospects look at.
+  const { project: projectParam, farm } = await searchParams;
+  const projects = await listProjects();
+  // Prefer the real project over the demo one by default (matching /ghg
+  // and /plans) — real farms have moved out of the demo project over time
+  // (migration 0125), so defaulting to whichever project sorts/lists first
+  // silently showed an empty or stale map with no switcher to correct it.
+  const project =
+    projects.find((p) => p.projectId === projectParam) ??
+    projects.find((p) => !p.isDemo) ??
+    projects[0];
+  // Demo farms (mrv.farms.is_demo) are test fixtures, not real prospects —
+  // keep them off the map real staff and prospects look at.
   const farms = (await getFarmsWithPlots(project.projectId)).filter((f) => !f.isDemo);
   // Sampling points are fetched independently of the farm list above, so
   // without this a demo farm's points would still float on the map with no
@@ -56,6 +64,7 @@ export default async function MapPage({
           </p>
         </div>
       </div>
+      <ProjectSwitcher projects={projects} activeProjectId={project.projectId} basePath="/map" />
       <MapView
         token={MAPBOX_TOKEN}
         farms={farms}

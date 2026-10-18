@@ -47,6 +47,16 @@ export interface ToolContext {
    * fail cleanly rather than acting under someone else's identity.
    */
   googleAccessToken?: string;
+  /**
+   * Extra context a human supplied when manually triggering a scheduled
+   * task from its "Run Now" control (runScheduledTaskNowAction.ts) —
+   * e.g. dave_email_activity_ingestion's farmId + senderEmail, chosen by
+   * Nitzan in a 2-step picker rather than left for the model to guess
+   * from free text. Ignored by every handler that doesn't declare its
+   * own keys for it; not a general-purpose parameter bag for tool calls
+   * (those already have their own typed `input`).
+   */
+  taskParams?: Record<string, string>;
 }
 
 export type ToolResult<T> =
@@ -72,6 +82,11 @@ export type ActionName =
   | "export_plots_kml"
   | "record_baseline_site"
   | "record_activity_data"
+  | "record_leakage"
+  | "compute_farm_year"
+  | "explain_farm_year"
+  | "compute_reduction"
+  | "explain_parameters"
   | "record_additionality_assessment"
   | "export_plots_kmz"
   | "generate_pdd_draft"

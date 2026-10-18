@@ -117,6 +117,8 @@ export interface FertilizerApplication {
   class: FertilizerClass;
   /** Organic mass is spread over its application interval (eq 20). */
   intervalYears: number;
+  /** t C / t product — organic amendments only. Needed for §8.4.1 leakage (eq 33); null when not lab-confirmed. */
+  carbonContent?: number | null;
 }
 
 export interface ActivityData {
@@ -133,10 +135,79 @@ export interface ActivityData {
   fertilizers: FertilizerApplication[];
 }
 
+/**
+ * A farm's real baseline — the average of every BSL row recorded for it,
+ * not just whichever one happens to be found first.
+ *
+ * Confirmed live 2026-09-12: dave_email_activity_ingestion can (and, in
+ * its first real submission, did) record 3 separate BSL rows for one
+ * farm — one per pre-project year, exactly how a farmer actually reports
+ * it. Every caller that means "the baseline" (computeReduction,
+ * aggregateProjectReduction, computeLeakage841) used to take a single
+ * row via .find(), which — given listActivityData's own `ORDER BY
+ * year` — silently used only the earliest year and ignored the other
+ * two, despite the type's own doc comment already calling BSL "the
+ * three-year pre-project average". A single BSL row (the common case
+ * today) is returned unchanged; multiple are genuinely averaged,
+ * including fertiliser mass per name (summed across all years, divided
+ * by the number of years — a year a fertiliser wasn't applied still
+ * counts as a real zero for that year, not an absence from the average).
+ */
+export function averageBaselineRows(rows: ActivityData[]): ActivityData | undefined {
+  if (rows.length === 0) return undefined;
+  if (rows.length === 1) return rows[0];
+
+  const n = rows.length;
+  const avg = (key: "areaHa" | "dieselL" | "gasolineL" | "residueBurntKg" | "nfixDryMatterT" | "nfixNContent") =>
+    round4(rows.reduce((s, r) => s + r[key], 0) / n);
+
+  const byName = new Map<
+    string,
+    { nContent: number; class: FertilizerClass; intervalYears: number; carbonContent?: number | null; totalMassT: number }
+  >();
+  for (const r of rows) {
+    for (const f of r.fertilizers) {
+      const cur = byName.get(f.fertilizerName) ?? {
+        nContent: f.nContent,
+        class: f.class,
+        intervalYears: f.intervalYears,
+        carbonContent: f.carbonContent,
+        totalMassT: 0,
+      };
+      cur.totalMassT += f.massT;
+      byName.set(f.fertilizerName, cur);
+    }
+  }
+
+  return {
+    farmId: rows[0].farmId,
+    scenario: "BSL",
+    year: Math.max(...rows.map((r) => r.year)), // label only — this row represents rows.length years, not one
+    areaHa: avg("areaHa"),
+    dieselL: avg("dieselL"),
+    gasolineL: avg("gasolineL"),
+    residueBurntKg: avg("residueBurntKg"),
+    nfixDryMatterT: avg("nfixDryMatterT"),
+    nfixNContent: avg("nfixNContent"),
+    fertilizers: [...byName.entries()].map(([fertilizerName, v]) => ({
+      fertilizerName,
+      massT: round4(v.totalMassT / n),
+      nContent: v.nContent,
+      class: v.class,
+      intervalYears: v.intervalYears,
+      carbonContent: v.carbonContent,
+    })),
+  };
+}
+
 export interface EmissionResult {
   fsnTN: number;
   fonTN: number;
   n2oDirect: number;
+  /** tCO2e, absolute (not per ha) — the source workbook's own "N2O volat (tCO2e)" column; the two sum into n2oIndirect ÷ area (eq 21). */
+  n2oVolatTco2e: number;
+  /** tCO2e, absolute (not per ha) — the source workbook's own "N2O leach (tCO2e)" column. */
+  n2oLeachTco2e: number;
   n2oIndirect: number;
   n2oNfix: number;
   co2Fuel: number;
@@ -228,12 +299,12 @@ export function computeEmissions(
   // eq 18 — direct N2O, per ha
   const n2oDirect = round4(((fsn + fon) * efNDirect(p) * conv) / ad.areaHa);
 
-  // eq 21 = eq 22 volatilisation + eq 23 leaching, per ha.
-  // Both terms are absolute tonnes and divided by area only once, here.
-  const n2oIndirect = round4(
-    ((gasf + gasm) * p.efNVolat * conv + (fsn + fon) * fracLeach(p, method) * p.efNLeach * conv) /
-      ad.areaHa,
-  );
+  // eq 22 volatilisation and eq 23 leaching — absolute tCO2e, kept separate
+  // (matching the source workbook's own two columns) before eq 21 sums and
+  // divides them by area once.
+  const n2oVolatTco2e = round4((gasf + gasm) * p.efNVolat * conv);
+  const n2oLeachTco2e = round4((fsn + fon) * fracLeach(p, method) * p.efNLeach * conv);
+  const n2oIndirect = round4((n2oVolatTco2e + n2oLeachTco2e) / ad.areaHa);
 
   // eq 24/25 — N2O from N-fixing crop residue, per ha
   const n2oNfix = round4(
@@ -261,6 +332,8 @@ export function computeEmissions(
     fsnTN: round4(fsn),
     fonTN: round4(fon),
     n2oDirect,
+    n2oVolatTco2e,
+    n2oLeachTco2e,
     n2oIndirect,
     n2oNfix,
     co2Fuel,
@@ -285,6 +358,78 @@ export function emissionReduction(
   return { perHa, total: round4(perHa * areaHa) };
 }
 
+export interface FarmReductionSummary {
+  farmId: string;
+  farmName: string;
+  areaHa: number;
+  baselineTco2e: number;
+  projectTco2e: number;
+  reductionTco2e: number;
+  skippedReason?: string;
+}
+
+export interface ProjectReductionSummary {
+  farms: FarmReductionSummary[];
+  totalAreaHa: number;
+  totalBaselineTco2e: number;
+  totalProjectTco2e: number;
+  totalReductionTco2e: number;
+}
+
+/**
+ * The project-wide rollup a VVB actually looks at: every farm's emission
+ * reduction, summed. A farm missing a climate zone, an irrigation method
+ * (in a dry zone) or activity data is skipped with a stated reason rather
+ * than silently dropped from the total or estimated — an unexplained gap
+ * in a VVB-facing total is exactly the kind of thing that gets a project
+ * sent back.
+ */
+export function aggregateProjectReduction(
+  farms: Array<{
+    farmId: string;
+    name: string;
+    climateZone: ClimateZone | null;
+    irrigationMethod: IrrigationMethod | null;
+    activity: ActivityData[];
+  }>,
+): ProjectReductionSummary {
+  const results: FarmReductionSummary[] = farms.map((f) => {
+    const base = { farmId: f.farmId, farmName: f.name, areaHa: 0, baselineTco2e: 0, projectTco2e: 0, reductionTco2e: 0 };
+    if (!f.climateZone) {
+      return { ...base, skippedReason: "no climate zone recorded" };
+    }
+    if (f.climateZone === "dry" && !f.irrigationMethod) {
+      return { ...base, skippedReason: "dry zone with no irrigation method recorded" };
+    }
+    const p = resolveParameters(f.climateZone);
+    const bsl = averageBaselineRows(f.activity.filter((a) => a.scenario === "BSL"));
+    const pr = f.activity.find((a) => a.scenario === "PR");
+    if (!bsl || !pr) {
+      return { ...base, skippedReason: "missing baseline or project-year activity data" };
+    }
+    const b = computeEmissions(bsl, p, f.irrigationMethod);
+    const j = computeEmissions(pr, p, f.irrigationMethod);
+    const reduction = emissionReduction(b, j, pr.areaHa);
+    return {
+      farmId: f.farmId,
+      farmName: f.name,
+      areaHa: pr.areaHa,
+      baselineTco2e: round4(b.totalPerHa * pr.areaHa),
+      projectTco2e: round4(j.totalPerHa * pr.areaHa),
+      reductionTco2e: reduction.total,
+    };
+  });
+
+  const counted = results.filter((r) => !r.skippedReason);
+  return {
+    farms: results,
+    totalAreaHa: round4(counted.reduce((s, r) => s + r.areaHa, 0)),
+    totalBaselineTco2e: round4(counted.reduce((s, r) => s + r.baselineTco2e, 0)),
+    totalProjectTco2e: round4(counted.reduce((s, r) => s + r.projectTco2e, 0)),
+    totalReductionTco2e: round4(counted.reduce((s, r) => s + r.reductionTco2e, 0)),
+  };
+}
+
 /** Every line of the calculation, for the working shown on screen. */
 export interface WorkingLine {
   eq: string;
@@ -292,6 +437,72 @@ export interface WorkingLine {
   expression: string;
   value: number;
   unit: string;
+}
+
+export interface Leakage841Result {
+  farmId: string;
+  baselineOrganicMassT: number;
+  projectOrganicMassT: number;
+  additionalMassT: number;
+  /** Mass-weighted average across the project year's organic applications. Null when none carry a carbon_content. */
+  carbonContent: number | null;
+  leakageTco2e: number;
+  /** true when there IS additional organic mass but no carbon_content to cost it — leakageTco2e is not a real zero, it is unknown. */
+  carbonContentMissing: boolean;
+}
+
+/**
+ * VM0042 §8.4.1 — leakage from new/additional organic soil amendments
+ * (eq 33), mirroring the source workbook's Leakage-sheet formula exactly:
+ *   LE = MAX(0, project organic mass − baseline organic mass) × C-content × 0.12 × 44/12
+ *
+ * Requires carbon_content on the project year's organic fertilizer rows —
+ * a farm using only synthetic fertilizer, or an organic one whose carbon
+ * content was never lab-confirmed, returns null rather than assuming a
+ * generic compost/manure figure that could misstate real leakage.
+ */
+export function computeLeakage841(
+  activity: ActivityData[],
+  farmId: string,
+): Leakage841Result | null {
+  const bsl = averageBaselineRows(activity.filter((a) => a.farmId === farmId && a.scenario === "BSL"));
+  const pr = activity.find((a) => a.farmId === farmId && a.scenario === "PR");
+  if (!bsl || !pr) return null;
+
+  const organicMass = (ad: ActivityData) =>
+    ad.fertilizers.filter((f) => f.class === "organic").reduce((s, f) => s + f.massT, 0);
+
+  const baselineOrganicMassT = round4(organicMass(bsl));
+  const projectOrganicMassT = round4(organicMass(pr));
+  const additionalMassT = round4(Math.max(0, projectOrganicMassT - baselineOrganicMassT));
+
+  if (additionalMassT === 0) {
+    return {
+      farmId, baselineOrganicMassT, projectOrganicMassT, additionalMassT,
+      carbonContent: null, leakageTco2e: 0, carbonContentMissing: false,
+    };
+  }
+
+  const organicWithCarbon = pr.fertilizers.filter(
+    (f) => f.class === "organic" && f.carbonContent != null,
+  );
+  if (organicWithCarbon.length === 0) {
+    return {
+      farmId, baselineOrganicMassT, projectOrganicMassT, additionalMassT,
+      carbonContent: null, leakageTco2e: 0, carbonContentMissing: true,
+    };
+  }
+
+  const totalMass = organicWithCarbon.reduce((s, f) => s + f.massT, 0);
+  const carbonContent = round4(
+    organicWithCarbon.reduce((s, f) => s + f.massT * (f.carbonContent ?? 0), 0) / totalMass,
+  );
+  const leakageTco2e = round4(additionalMassT * carbonContent * 0.12 * (44 / 12));
+
+  return {
+    farmId, baselineOrganicMassT, projectOrganicMassT, additionalMassT,
+    carbonContent, leakageTco2e, carbonContentMissing: false,
+  };
 }
 
 export function showWorking(
@@ -336,14 +547,14 @@ export function showWorking(
       eq: "22",
       label: "N₂O volatilisation",
       expression: `(${round4(gasf)} + ${round4(gasm)}) × ${p.efNVolat} × ${round4(conv)}`,
-      value: round4((gasf + gasm) * p.efNVolat * conv),
+      value: r.n2oVolatTco2e,
       unit: "tCO₂e",
     },
     {
       eq: "23",
       label: "N₂O leaching",
       expression: `(${r.fsnTN} + ${r.fonTN}) × ${fl} × ${p.efNLeach} × ${round4(conv)}`,
-      value: round4((r.fsnTN + r.fonTN) * fl * p.efNLeach * conv),
+      value: r.n2oLeachTco2e,
       unit: "tCO₂e",
     },
     {
@@ -376,12 +587,29 @@ export function showWorking(
     },
     {
       eq: "17",
-      label: r.soilN2OExcluded
-        ? "Total (soil N₂O from the model, not counted here)"
-        : "Total",
+      label: "N₂O_fert (direct + indirect)",
+      expression: `${r.n2oDirect} + ${r.n2oIndirect}`,
+      value: round4(r.n2oDirect + r.n2oIndirect),
+      unit: "tCO₂e/ha",
+    },
+    {
+      eq: "16",
+      label: r.soilN2OExcluded ? "N₂O_soil (excluded — QA1 takes it from the model)" : "N₂O_soil",
+      expression: `${round4(r.n2oDirect + r.n2oIndirect)} + ${r.n2oNfix}`,
+      value: r.soilN2OExcluded ? 0 : round4(r.n2oDirect + r.n2oIndirect + r.n2oNfix),
+      unit: "tCO₂e/ha",
+    },
+    {
+      // No single VM0042 equation number covers this exact sum in the
+      // corpus read for this build (6/7, 16, 32 combine at the PE/BE
+      // level, not through one numbered equation) — labelled "—" rather
+      // than guessing a number, after "17" was found mislabelling this
+      // same total line before this fix.
+      eq: "—",
+      label: r.soilN2OExcluded ? "Total (soil N₂O from the model, not counted here)" : "Total",
       expression: r.soilN2OExcluded
-        ? "fuel + burning — QA1 takes soil N₂O from the model"
-        : "fuel + burning + direct + indirect + N-fixing",
+        ? `${r.co2Fuel} + ${r.n2oBurn}`
+        : `${r.co2Fuel} + ${r.n2oBurn} + ${round4(r.n2oDirect + r.n2oIndirect + r.n2oNfix)}`,
       value: r.totalPerHa,
       unit: "tCO₂e/ha",
     },

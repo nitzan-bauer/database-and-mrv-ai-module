@@ -6,6 +6,8 @@ export interface FertilizerApplicationInput {
   fertilizerName: string;
   massT: number;
   intervalYears?: number;
+  /** t C / t product. Organic amendments only — needed for §8.4.1 leakage; omit rather than guess when not lab-confirmed. */
+  carbonContent?: number;
 }
 
 export interface RecordedActivityData {
@@ -84,6 +86,9 @@ export async function recordActivityData(
     if (f.intervalYears != null && (!Number.isInteger(f.intervalYears) || f.intervalYears < 1)) {
       return fail(`recordActivityData: fertilizer "${f.fertilizerName}" intervalYears must be a positive integer.`);
     }
+    if (f.carbonContent != null && (f.carbonContent < 0 || f.carbonContent > 1)) {
+      return fail(`recordActivityData: fertilizer "${f.fertilizerName}" carbonContent must be a fraction between 0 and 1.`);
+    }
   }
 
   const { query, withTransaction } = await import("../db");
@@ -103,6 +108,7 @@ export async function recordActivityData(
     fertilizerClass: string;
     massT: number;
     intervalYears: number;
+    carbonContent: number | null;
   }> = [];
   for (const f of input.fertilizers ?? []) {
     const rows = await query<{ fertilizer_id: string; name: string; n_content: string; class: string }>(
@@ -122,6 +128,7 @@ export async function recordActivityData(
       fertilizerClass: rows[0].class,
       massT: f.massT,
       intervalYears: f.intervalYears ?? 1,
+      carbonContent: f.carbonContent ?? null,
     });
   }
 
@@ -159,9 +166,9 @@ export async function recordActivityData(
     for (const f of resolvedFertilizers) {
       await tx.query(
         `INSERT INTO mrv.fertilizer_applications
-           (activity_data_id, fertilizer_id, fertilizer_name, mass_t, n_content, class, interval_years)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, f.fertilizerId, f.name, f.massT, f.nContent, f.fertilizerClass, f.intervalYears],
+           (activity_data_id, fertilizer_id, fertilizer_name, mass_t, n_content, class, interval_years, carbon_content)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, f.fertilizerId, f.name, f.massT, f.nContent, f.fertilizerClass, f.intervalYears, f.carbonContent],
       );
     }
     return id;
