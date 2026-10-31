@@ -28,7 +28,7 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
   return {
     id: `anthropic:${model}`,
 
-    async complete({ system, userMessage, tools, webSearch, images, timeoutMs: explicitTimeoutMs, maxTokens: explicitMaxTokens }) {
+    async complete({ system, userMessage, tools, webSearch, images, noThinking, timeoutMs: explicitTimeoutMs, maxTokens: explicitMaxTokens }) {
       const controller = new AbortController();
       // A web-search turn needs the server time to actually run the
       // search(es) before it can answer — the flat 15s budget everything
@@ -54,6 +54,7 @@ export function createAnthropicProvider(apiKey: string, model: string): ModelPro
           body: JSON.stringify({
             model,
             max_tokens: explicitMaxTokens ?? (webSearch ? 3072 : 1536),
+            ...(noThinking ? { thinking: { type: "disabled" } } : {}),
             system,
             messages: [
               {

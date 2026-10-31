@@ -81,6 +81,13 @@ export interface ModelProvider {
      */
     timeoutMs?: number;
     /**
+     * Turns the model's own "thinking" off for this call. Thinking tokens count against max_tokens, so a long
+     * written answer over a large prompt can spend its whole budget thinking and return empty text — measured on
+     * the one-off task's final answer (3,676 of 4,500 tokens went to thinking; with it off the answer completed
+     * in 41 s). Use for calls whose job is to WRITE, not to decide.
+     */
+    noThinking?: boolean;
+    /**
      * Overrides the call's own max_tokens. Confirmed live this session: a
      * large attached document pushed claude-sonnet-5 to spend nearly all of
      * the default 1536-token budget on its own internal "thinking" content

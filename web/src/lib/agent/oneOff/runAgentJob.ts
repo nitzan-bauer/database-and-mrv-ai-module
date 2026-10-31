@@ -180,8 +180,9 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
         tools: [],
         timeoutMs: SYNTHESIS_TIMEOUT_MS,
         maxTokens: 4500,
+        noThinking: true,
       });
-      if (resp.kind === "text") {
+      if (resp.kind === "text" && resp.text.trim()) {
         finalText = resp.text.trim();
         await appendProgress(jobId, { at: new Date().toISOString(), step: toolsUsed.length + 1, tool: null, summary: "Wrote the final answer." });
       }
