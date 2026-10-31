@@ -34,6 +34,13 @@ export async function finishScheduledTask(
     driveSubfolders?: string[];
     /** What goes on the letterhead PDF when it must differ from the email/memory text (Hebrew cannot be printed yet). Omit to use bodyParagraphs. */
     pdfBodyParagraphs?: string[];
+    /**
+     * "docx" sends and files an editable Word document on the same letterhead instead of the PDF — used when the
+     * answer may be Hebrew, which the PDF cannot print. The body is bodyParagraphs as written (Markdown-ish).
+     */
+    reportFormat?: "pdf" | "docx";
+    /** Title printed on the DOCX (the email subject stays Latin-only). Defaults to subject. */
+    reportTitle?: string;
   },
 ): Promise<ScheduledTaskOutcome> {
   const sendEmail = input.sendEmail ?? true;
@@ -94,22 +101,30 @@ export async function finishScheduledTask(
   const org = orgProfiles[0];
 
   try {
-    const { buildLetterheadPdf } = await import("./letterheadPdf");
-    const pdfBuffer = await buildLetterheadPdf({
-      title: input.subject,
-      subtitle: "CarboNature MRV — Automated Report",
-      leadCaption: input.leadCaption,
-      bodyParagraphs: input.pdfBodyParagraphs ?? input.bodyParagraphs,
-      tables: input.tables,
-      generatedAt: new Date(),
-      org: {
-        legalName: org.legal_name,
-        address: org.address,
-        taxId: org.tax_id ?? "",
-      },
-    });
+    const orgBlock = { legalName: org.legal_name, address: org.address, taxId: org.tax_id ?? "" };
+    const asDocx = input.reportFormat === "docx";
+    const fileBuffer = asDocx
+      ? await (await import("./letterheadDocx")).buildLetterheadDocx({
+          title: input.reportTitle ?? input.subject,
+          subtitle: "CarboNature MRV — Agent Report",
+          body: input.bodyParagraphs.join("\n\n"),
+          generatedAt: new Date(),
+          org: orgBlock,
+        })
+      : await (await import("./letterheadPdf")).buildLetterheadPdf({
+          title: input.subject,
+          subtitle: "CarboNature MRV — Automated Report",
+          leadCaption: input.leadCaption,
+          bodyParagraphs: input.pdfBodyParagraphs ?? input.bodyParagraphs,
+          tables: input.tables,
+          generatedAt: new Date(),
+          org: orgBlock,
+        });
+    const mimeType = asDocx
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : "application/pdf";
 
-    const fileName = `${input.taskKey}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    const fileName = `${input.taskKey}-${new Date().toISOString().slice(0, 10)}.${asDocx ? "docx" : "pdf"}`;
 
     const { sendGmailMessage } = await import("../google/gmailClient");
     const { agentSenderEmail } = await import("../agent/agentEmailAliases");
@@ -120,8 +135,8 @@ export async function finishScheduledTask(
       bodyText,
       attachment: {
         fileName,
-        mimeType: "application/pdf",
-        content: pdfBuffer,
+        mimeType,
+        content: fileBuffer,
       },
     });
 
@@ -144,7 +159,7 @@ export async function finishScheduledTask(
         for (const name of input.driveSubfolders ?? []) {
           targetFolderId = await ensureSubfolder(ctx.googleAccessToken, targetFolderId, name);
         }
-        await uploadFileToDriveFolder(ctx.googleAccessToken, targetFolderId, fileName, "application/pdf", pdfBuffer);
+        await uploadFileToDriveFolder(ctx.googleAccessToken, targetFolderId, fileName, mimeType, fileBuffer);
       }
     } catch (e) {
       console.warn(`[${input.taskKey}] could not centralize this report into ${agentId}'s Drive folder: ${e instanceof Error ? e.message : String(e)}`);

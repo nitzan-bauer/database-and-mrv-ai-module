@@ -7,17 +7,19 @@ import {
   domainForAgent,
   oneOffTaskKey,
   parseRoutingBlock,
-  pdfParagraphsFor,
   subjectFor,
   topicFolderPath,
 } from "./jobInput";
 import { appendProgress, finishJob, getJob, markRunning } from "./jobStore";
 
-// Research stops at 140 s so the wrap-up (letterhead report ≈ 25 s, then memory + Drive filing in parallel ≈ 60 s)
-// still fits inside runScheduledTaskNow's 240 s handler cap.
+// Tool steps (research) stop at 100 s. The final answer then gets its OWN tool-free call with a guaranteed 70 s —
+// with attached files the answer alone can take 40 s+, and it used to be starved by whatever research had left
+// over. The wrap-up (letterhead report ≈ 25 s, then memory + Drive filing in parallel ≈ 60 s) follows, all inside
+// runScheduledTaskNow's handler cap.
 const MAX_STEPS = 8;
-const TOTAL_BUDGET_MS = 140_000;
+const TOOL_PHASE_MS = 100_000;
 const STEP_TIMEOUT_MS = 55_000;
+const SYNTHESIS_TIMEOUT_MS = 70_000;
 const WORK_LOG_CHAR_LIMIT = 12_000;
 
 function clip(s: string, n: number): string {
@@ -77,21 +79,31 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
 
   try {
     for (let step = 1; step <= MAX_STEPS; step++) {
-      const left = TOTAL_BUDGET_MS - (Date.now() - started);
+      const left = TOOL_PHASE_MS - (Date.now() - started);
       if (left < 10_000) break;
 
       const userMessage = workLog
         ? `${basePrompt}\n\n--- WORK SO FAR (your own earlier steps this run) ---\n${workLog}\n\nContinue. Call one tool if you still need to, otherwise reply with the final answer for Nitzan.`
         : basePrompt;
 
-      const resp = await provider.complete({
-        system: agent.rolePrompt + recalled.block,
-        userMessage,
-        tools: schemas,
-        webSearch: { maxUses: 3, timeoutMs: Math.min(STEP_TIMEOUT_MS, left) },
-        timeoutMs: Math.min(STEP_TIMEOUT_MS, left),
-        maxTokens: 8192,
-      });
+      let resp: Awaited<ReturnType<typeof provider.complete>>;
+      try {
+        resp = await provider.complete({
+          system: agent.rolePrompt + recalled.block,
+          userMessage,
+          tools: schemas,
+          webSearch: { maxUses: 3, timeoutMs: Math.min(STEP_TIMEOUT_MS, left) },
+          timeoutMs: Math.min(STEP_TIMEOUT_MS, left),
+          maxTokens: 8192,
+        });
+      } catch (e) {
+        // A slow research step is not a failed task: keep what was gathered and go straight to the final answer.
+        if (workLog && e instanceof Error && /timed out/i.test(e.message)) {
+          workLog += `\nStep ${step}: the model call ran out of time; no further research this run.\n`;
+          break;
+        }
+        throw e;
+      }
 
       if (resp.kind === "text") {
         finalText = resp.text.trim();
@@ -137,7 +149,32 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
   }
 
   if (!finalText) {
-    const partial = `The task did not reach a final answer within ${MAX_STEPS} steps / ${Math.round(TOTAL_BUDGET_MS / 1000)} s. Work so far:\n${clip(workLog, 4000)}`;
+    // Research is over (time or steps): write the answer from what was gathered, with no tools so it cannot start
+    // another round, and with the full attachments still in view.
+    try {
+      const resp = await provider.complete({
+        system: agent.rolePrompt + recalled.block,
+        userMessage:
+          `${basePrompt}\n\n--- WORK SO FAR (your own earlier steps this run) ---\n${workLog || "(none)"}\n\n` +
+          `Research time is up. Write the complete final answer for Nitzan NOW from the above — no tool calls. ` +
+          `Say plainly what you could not verify or read.`,
+        tools: [],
+        timeoutMs: SYNTHESIS_TIMEOUT_MS,
+        maxTokens: 6000,
+      });
+      if (resp.kind === "text") {
+        finalText = resp.text.trim();
+        await appendProgress(jobId, { at: new Date().toISOString(), step: toolsUsed.length + 1, tool: null, summary: "Wrote the final answer." });
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await finishJob(jobId, { status: "error", error: `${message}\n\nWork so far:\n${clip(workLog, 4000)}` });
+      return { ok: false, detail: `One-off task failed: ${message}` };
+    }
+  }
+
+  if (!finalText) {
+    const partial = `The task did not reach a final answer within ${MAX_STEPS} steps / ${Math.round(TOOL_PHASE_MS / 1000)} s of research. Work so far:\n${clip(workLog, 4000)}`;
     await finishJob(jobId, { status: "error", error: partial });
     return { ok: false, detail: partial };
   }
@@ -155,7 +192,8 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
     projectId: TARGET_PROJECT_ID,
     subject: subjectFor(job.prompt, job.createdAt, job.jobId),
     bodyParagraphs: paragraphs,
-    pdfBodyParagraphs: pdfParagraphsFor(paragraphs),
+    reportFormat: "docx",
+    reportTitle: job.prompt.split("\n").find((l) => l.trim())?.trim().slice(0, 100),
     memoryKind: "one_off_task",
     agentId: job.agentId,
     domain,

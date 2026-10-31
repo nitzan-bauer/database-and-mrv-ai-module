@@ -23,6 +23,8 @@ import { SCHEDULED_TASK_REGISTRY } from "./scheduledTaskRegistry";
 // "error: timed out" and (for a non-manual row) gave it a fresh
 // next_run_at. That's a late write, not a double-run.
 const HANDLER_TIMEOUT_MS = 240_000;
+// One-off tasks run alone in their own route (maxDuration 280, never from the cron loop), so they can use more of it.
+const ONE_OFF_HANDLER_TIMEOUT_MS = 270_000;
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -77,7 +79,7 @@ export async function runScheduledTaskNow(
       const googleAccessToken = (await getServiceGoogleAccessToken(query, serviceEmail)) ?? undefined;
       const outcome = await withTimeout(
         handler({ actor: row.agentId, actorKind: "agent", googleAccessToken, taskParams }),
-        HANDLER_TIMEOUT_MS,
+        row.taskKey.endsWith("_one_off_task") ? ONE_OFF_HANDLER_TIMEOUT_MS : HANDLER_TIMEOUT_MS,
         row.taskKey,
       );
       status = outcome.ok ? "ok" : "error";

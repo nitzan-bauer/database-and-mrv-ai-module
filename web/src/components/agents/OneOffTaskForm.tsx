@@ -371,6 +371,20 @@ export function OneOffTaskForm({
             </div>
           )}
           {finished && job.status === "done" && <FeedbackBox jobId={job.jobId} agentName={agentName} />}
+          {finished && job.status === "error" && (
+            // The request (prompt, files, links, sites) is still in this form's state — nothing to retype.
+            <button
+              type="button"
+              onClick={() => {
+                setJobId(null);
+                setJob(null);
+                setNotes([]);
+              }}
+              className="mt-3 w-full rounded-lg border border-pine-600 bg-white px-3 py-2 text-[12.5px] font-semibold text-pine-700 hover:bg-pine-50"
+            >
+              Back to my request — run it again
+            </button>
+          )}
           {finished && (
             <button
               type="button"
