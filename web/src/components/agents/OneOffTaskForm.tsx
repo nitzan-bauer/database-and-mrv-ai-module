@@ -12,6 +12,8 @@ interface Attached {
   truncated: boolean;
 }
 
+const MAX_FILE_BYTES = 3 * 1024 * 1024;
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -148,10 +150,17 @@ export function OneOffTaskForm({
     setReading(true);
     try {
       for (const f of picked) {
+        // A server action body is capped (next.config.ts, and 4.5 MB on Vercel); base64 adds a third on top.
+        if (f.size > MAX_FILE_BYTES) {
+          setFileError(`"${f.name}" is ${(f.size / 1024 / 1024).toFixed(1)} MB — the limit is 3 MB per file. Split it or paste the relevant part into the prompt.`);
+          continue;
+        }
         const res = await extractAttachmentText({ name: f.name, base64: await fileToBase64(f) });
         if (res.ok) setFiles((cur) => [...cur, { name: f.name, text: res.data.text, truncated: res.data.truncated }]);
         else setFileError(res.error);
       }
+    } catch (err) {
+      setFileError(`Could not read the file: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setReading(false);
     }
