@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { ScheduledTaskCard } from "@/lib/data";
 import type { RunScheduledTaskNowResult } from "@/lib/agent/runScheduledTaskNowAction";
+import { agentIdFromOneOffKey } from "@/lib/agent/oneOff/jobInput";
+import { OneOffTaskForm } from "./OneOffTaskForm";
 
 export interface FarmPickerProject {
   projectId: string;
@@ -116,6 +118,8 @@ function TaskPopup({
   onRunNow?: (taskKey: string, taskParams?: Record<string, string>) => Promise<RunScheduledTaskNowResult>;
   farmPickerOptions?: FarmPickerProject[];
 }) {
+  // The "One Off Task" row every agent has (0128) opens its own form instead of the plain Run-Now body.
+  const oneOffAgentId = agentIdFromOneOffKey(task.taskKey);
   const isBug = task.status === "error" || task.status === "no_handler";
   const isPending = task.status === "pending";
   const isManual = task.frequency === "manual";
@@ -173,7 +177,13 @@ function TaskPopup({
           </button>
         </div>
 
-        {wizardStep === "pickFarm" && farmPickerOptions ? (
+        {oneOffAgentId ? (
+          <OneOffTaskForm
+            agentId={oneOffAgentId}
+            agentName={oneOffAgentId.charAt(0).toUpperCase() + oneOffAgentId.slice(1)}
+            onClose={onClose}
+          />
+        ) : wizardStep === "pickFarm" && farmPickerOptions ? (
           <FarmPickerStep
             options={farmPickerOptions}
             onCancel={() => setWizardStep("closed")}

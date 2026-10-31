@@ -19,7 +19,8 @@
     "auth:google": "node scripts/set-oauth-secret.mjs",
     "agent:key": "node scripts/set-anthropic-key.mjs",
     "webinar:scan": "node scripts/webinar-recording-scan.mjs",
-    "agent:key:voyage": "node scripts/set-voyage-key.mjs"
+    "agent:key:voyage": "node scripts/set-voyage-key.mjs",
+    "test:unit": "node --test \"tests/*.test.mts\""
   },
   "dependencies": {
     "@pdf-lib/standard-fonts": "^1.0.0",
@@ -33,6 +34,7 @@
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
     "pg": "^8.13.1",
+    "playwright-core": "^1.64.1",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"

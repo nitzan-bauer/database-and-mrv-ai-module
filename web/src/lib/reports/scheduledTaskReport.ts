@@ -30,6 +30,10 @@ export async function finishScheduledTask(
     agentId?: string;
     /** Coarse professional-domain tag ('mrv' | 'crm' | ...) — see recallDomainLessons in lessonMemory.ts. Omit to leave untagged, as every task did before Stage 3 of the learning-layer plan. */
     domain?: string | null;
+    /** Folder path under the agent's own Drive folder for the PDF (created if missing). Omit to keep the old behaviour: the folder root. */
+    driveSubfolders?: string[];
+    /** What goes on the letterhead PDF when it must differ from the email/memory text (Hebrew cannot be printed yet). Omit to use bodyParagraphs. */
+    pdfBodyParagraphs?: string[];
   },
 ): Promise<ScheduledTaskOutcome> {
   const sendEmail = input.sendEmail ?? true;
@@ -95,7 +99,7 @@ export async function finishScheduledTask(
       title: input.subject,
       subtitle: "CarboNature MRV — Automated Report",
       leadCaption: input.leadCaption,
-      bodyParagraphs: input.bodyParagraphs,
+      bodyParagraphs: input.pdfBodyParagraphs ?? input.bodyParagraphs,
       tables: input.tables,
       generatedAt: new Date(),
       org: {
@@ -135,8 +139,12 @@ export async function finishScheduledTask(
       const agentRows = await q<{ drive_folder_id: string | null }>(`SELECT drive_folder_id FROM mrv.agents WHERE agent_id = $1`, [agentId]);
       const driveFolderId = agentRows[0]?.drive_folder_id;
       if (driveFolderId) {
-        const { uploadFileToDriveFolder } = await import("../google/driveClient");
-        await uploadFileToDriveFolder(ctx.googleAccessToken, driveFolderId, fileName, "application/pdf", pdfBuffer);
+        const { ensureSubfolder, uploadFileToDriveFolder } = await import("../google/driveClient");
+        let targetFolderId = driveFolderId;
+        for (const name of input.driveSubfolders ?? []) {
+          targetFolderId = await ensureSubfolder(ctx.googleAccessToken, targetFolderId, name);
+        }
+        await uploadFileToDriveFolder(ctx.googleAccessToken, targetFolderId, fileName, "application/pdf", pdfBuffer);
       }
     } catch (e) {
       console.warn(`[${input.taskKey}] could not centralize this report into ${agentId}'s Drive folder: ${e instanceof Error ? e.message : String(e)}`);

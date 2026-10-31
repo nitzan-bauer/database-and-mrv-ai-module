@@ -1255,7 +1255,7 @@ export async function listScheduledTasksForAgent(agentId: string): Promise<Sched
     `SELECT task_key, title, last_run_status, last_run_at, next_run_at, last_run_detail, frequency
        FROM mrv.scheduled_tasks
       WHERE agent_id = $1 AND enabled
-      ORDER BY task_key`,
+      ORDER BY (right(task_key, 13) = '_one_off_task'), task_key`,
     [agentId],
   );
   return rows.map((r) => ({

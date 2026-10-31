@@ -27,6 +27,7 @@ import { checkCreditAllocation } from "../tools/checkCreditAllocation";
 import { recordAgentMemory } from "../tools/recordAgentMemory";
 import { recallAgentMemory } from "../tools/recallAgentMemory";
 import { fetchPublicUrl } from "../tools/fetchPublicUrl";
+import { browseChromeSession } from "../tools/browseChromeSession";
 import { browseWebsite } from "../tools/browseWebsite";
 import { sendEmail } from "../tools/sendEmail";
 import { recordVvbFinding } from "../tools/recordVvbFinding";
@@ -804,6 +805,18 @@ export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
         startUrl: String(input.startUrl ?? ""),
         maxPages: typeof input.maxPages === "number" ? input.maxPages : undefined,
       }),
+  },
+
+  browse_chrome_session: {
+    schema: {
+      name: "browse_chrome_session",
+      description:
+        "Read one page through your own dedicated Chrome profile, signed in with Nitzan's accounts — for sites that " +
+        "need a login. Read-only, and only the sites he allowed for this task; fails fast if none were allowed or " +
+        "his PC is offline. Prefer fetch_public_url for public pages.",
+      inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+    },
+    handler: (ctx, input) => browseChromeSession(ctx, { url: String(input.url ?? "") }),
   },
 
   download_document_to_agent_folder: {

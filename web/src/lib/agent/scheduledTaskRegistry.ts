@@ -36,6 +36,9 @@ import {
   runRonDriveDigestion,
 } from "./scheduledTasks/agentDriveDigestion";
 
+import { runAgentJob } from "./oneOff/runAgentJob";
+import { ONE_OFF_AGENT_IDS, oneOffTaskKey } from "./oneOff/jobInput";
+
 export interface ScheduledTaskOutcome {
   ok: boolean;
   detail: string;
@@ -84,3 +87,16 @@ export const SCHEDULED_TASK_REGISTRY: Record<string, ScheduledTaskHandler> = {
   [REBEKA_DRIVE_DIGESTION_KEY]: runRebekaDriveDigestion,
   [RON_DRIVE_DIGESTION_KEY]: runRonDriveDigestion,
 };
+
+/**
+ * The one-off task every agent has (0128): the popup saves a job row and kicks /api/agents/one-off/run, which
+ * runs this with taskParams.jobId. Clicking the generic "Run Now" without a request has nothing to run.
+ */
+const oneOffHandler: ScheduledTaskHandler = (ctx) =>
+  ctx.taskParams?.jobId
+    ? runAgentJob(ctx, ctx.taskParams.jobId)
+    : Promise.resolve({ ok: false, detail: "Open the task and submit a request — there is nothing to run without one." });
+
+for (const agentId of ONE_OFF_AGENT_IDS) {
+  SCHEDULED_TASK_REGISTRY[oneOffTaskKey(agentId)] = oneOffHandler;
+}

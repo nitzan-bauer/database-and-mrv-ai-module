@@ -106,6 +106,7 @@ export type ActionName =
   | "recall_agent_memory"
   | "fetch_public_url"
   | "browse_website"
+  | "browse_chrome_session"
   | "send_email"
   | "record_vvb_finding"
   | "resolve_vvb_finding"
