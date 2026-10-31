@@ -12,14 +12,15 @@ import {
 } from "./jobInput";
 import { appendProgress, finishJob, getJob, markRunning } from "./jobStore";
 
-// Tool steps (research) stop at 100 s. The final answer then gets its OWN tool-free call with a guaranteed 70 s —
+// Tool steps (research) stop at 100 s. The final answer then gets its OWN tool-free call with a guaranteed 75 s —
 // with attached files the answer alone can take 40 s+, and it used to be starved by whatever research had left
 // over. The wrap-up (letterhead report ≈ 25 s, then memory + Drive filing in parallel ≈ 60 s) follows, all inside
 // runScheduledTaskNow's handler cap.
 const MAX_STEPS = 8;
 const TOOL_PHASE_MS = 100_000;
 const STEP_TIMEOUT_MS = 55_000;
-const SYNTHESIS_TIMEOUT_MS = 70_000;
+const SYNTHESIS_TIMEOUT_MS = 75_000;
+const RESEARCH_ATTACHMENT_CHARS = 8_000;
 const WORK_LOG_CHAR_LIMIT = 12_000;
 
 function clip(s: string, n: number): string {
@@ -62,6 +63,19 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
     chromeDomains: job.chromeDomains,
   });
 
+  // The prompt is re-sent on every research step, so attached files are clipped there (the model only needs the
+  // gist to decide what to look up); the final-answer call gets them in full.
+  const researchPrompt = buildTaskPrompt({
+    prompt: job.prompt,
+    links: job.links,
+    attachments: job.attachments.map((a) =>
+      a.text.length > RESEARCH_ATTACHMENT_CHARS
+        ? { name: a.name, text: a.text.slice(0, RESEARCH_ATTACHMENT_CHARS), truncated: true }
+        : a,
+    ),
+    chromeDomains: job.chromeDomains,
+  });
+
   const { recallForJob } = await import("./recall");
   const recalled = await recallForJob(ctx, job.agentId, job.prompt);
   await appendProgress(jobId, {
@@ -82,9 +96,12 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
       const left = TOOL_PHASE_MS - (Date.now() - started);
       if (left < 10_000) break;
 
-      const userMessage = workLog
-        ? `${basePrompt}\n\n--- WORK SO FAR (your own earlier steps this run) ---\n${workLog}\n\nContinue. Call one tool if you still need to, otherwise reply with the final answer for Nitzan.`
-        : basePrompt;
+      const userMessage =
+        (workLog
+          ? `${researchPrompt}\n\n--- WORK SO FAR (your own earlier steps this run) ---\n${workLog}\n\n`
+          : `${researchPrompt}\n\n`) +
+        `RESEARCH STEP: call ONE tool if you still need information. If you already have enough, reply with the single word READY — ` +
+        `the full answer is written in a separate final step, so do not write it here.`;
 
       let resp: Awaited<ReturnType<typeof provider.complete>>;
       try {
@@ -98,7 +115,7 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
         });
       } catch (e) {
         // A slow research step is not a failed task: keep what was gathered and go straight to the final answer.
-        if (workLog && e instanceof Error && /timed out/i.test(e.message)) {
+        if (e instanceof Error && /timed out/i.test(e.message)) {
           workLog += `\nStep ${step}: the model call ran out of time; no further research this run.\n`;
           break;
         }
@@ -106,7 +123,9 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
       }
 
       if (resp.kind === "text") {
-        finalText = resp.text.trim();
+        const t = resp.text.trim();
+        if (t.length < 40 && /^READY\b/i.test(t)) break; // research done — the final answer comes from its own call
+        finalText = t;
         await appendProgress(jobId, { at: new Date().toISOString(), step, tool: null, summary: "Wrote the final answer." });
         break;
       }
@@ -156,11 +175,11 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
         system: agent.rolePrompt + recalled.block,
         userMessage:
           `${basePrompt}\n\n--- WORK SO FAR (your own earlier steps this run) ---\n${workLog || "(none)"}\n\n` +
-          `Research time is up. Write the complete final answer for Nitzan NOW from the above — no tool calls. ` +
-          `Say plainly what you could not verify or read.`,
+          `Research is done. Write the complete final answer for Nitzan NOW from the above — no tool calls. ` +
+          `Be complete but tight (about 1,500 words at most). Say plainly what you could not verify or read.`,
         tools: [],
         timeoutMs: SYNTHESIS_TIMEOUT_MS,
-        maxTokens: 6000,
+        maxTokens: 4500,
       });
       if (resp.kind === "text") {
         finalText = resp.text.trim();
