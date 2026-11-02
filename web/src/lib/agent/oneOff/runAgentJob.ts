@@ -7,9 +7,12 @@ import {
   domainForAgent,
   oneOffTaskKey,
   parseRoutingBlock,
+  fitWorkLog,
   reportTitleFor,
   requestNeedsLookup,
   subjectFor,
+  unopenedLinks,
+  urlsInToolInput,
   topicFolderPath,
 } from "./jobInput";
 import { appendProgress, finishJob, getJob, markRunning } from "./jobStore";
@@ -24,6 +27,7 @@ const STEP_TIMEOUT_MS = 55_000;
 const SYNTHESIS_TIMEOUT_MS = 75_000;
 const RESEARCH_ATTACHMENT_CHARS = 8_000;
 const WORK_LOG_CHAR_LIMIT = 12_000;
+const MAX_RECALL_CALLS = 2;
 
 function clip(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}… [clipped]` : s;
@@ -105,6 +109,14 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
 
   const started = Date.now();
   let workLog = "";
+  const logEntries: string[] = [];
+  const addLog = (text: string) => {
+    logEntries.push(text);
+    workLog = fitWorkLog(logEntries, WORK_LOG_CHAR_LIMIT);
+  };
+  const opened = new Set<string>();
+  let recallCalls = 0;
+  let linksPushedBack = false;
   let finalText: string | null = null;
   const toolsUsed: string[] = [];
   const failures: string[] = [];
@@ -135,7 +147,7 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
       } catch (e) {
         // A slow research step is not a failed task: keep what was gathered and go straight to the final answer.
         if (e instanceof Error && /timed out/i.test(e.message)) {
-          workLog += `\nStep ${step}: the model call ran out of time; no further research this run.\n`;
+          addLog(`\nStep ${step}: the model call ran out of time; no further research this run.\n`);
           break;
         }
         throw e;
@@ -147,14 +159,32 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
         // back once (a reply like "I could not access Verra" without a single call was seen live, 2026-11-02).
         if (!toolsUsed.length && !pushedBack && requestNeedsLookup(job.prompt, job.links.length > 0)) {
           pushedBack = true;
-          workLog +=
+          addLog(
             `\nStep ${step}: you replied without opening any site or link named in the request. Open it now with ` +
-            `fetch_public_url, browse_website or search_verra_registry. Do not claim you could not access a source you did not try.\n`;
+              `fetch_public_url, browse_website or search_verra_registry. Do not claim you could not access a source you did not try.\n`,
+          );
           await appendProgress(jobId, {
             at: new Date().toISOString(),
             step,
             tool: null,
             summary: "Sent back to open the sites named in the request before answering.",
+          });
+          continue;
+        }
+        // Links listed in the request that nothing has been pointed at yet: send her back once to open them
+        // (seen live: the revision page and the FAQ were listed, and never opened).
+        const missing = unopenedLinks(job.links, opened);
+        if (missing.length && !linksPushedBack && left > 25_000) {
+          linksPushedBack = true;
+          addLog(
+            `\nStep ${step}: these links from the request have NOT been opened yet: ${missing.join(", ")}. Open each of them now ` +
+              `(browse_chrome_session if its site is allowed, otherwise fetch_public_url) before you finish.\n`,
+          );
+          await appendProgress(jobId, {
+            at: new Date().toISOString(),
+            step,
+            tool: null,
+            summary: `Sent back to open ${missing.length} link(s) from the request that were not opened yet.`,
           });
           continue;
         }
@@ -167,9 +197,19 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
       const name = resp.call.name;
       const entry = TOOL_REGISTRY[name];
       if (!entry || !agent.tools.includes(name)) {
-        workLog += `\nStep ${step}: you tried "${name}", which you do not hold. Use only your own tools.\n`;
+        addLog(`\nStep ${step}: you tried "${name}", which you do not hold. Use only your own tools.\n`);
         continue;
       }
+
+      // Memory was already recalled before the run began; repeated recall calls burned five of eight steps live.
+      if (name === "recall_agent_memory" && ++recallCalls > MAX_RECALL_CALLS) {
+        addLog(
+          `\nStep ${step}: no more memory recalls this run (your memory was loaded at the start and ${MAX_RECALL_CALLS} recalls ` +
+            `were used). Use browse_chrome_session / fetch_public_url on the links in the request instead.\n`,
+        );
+        continue;
+      }
+      for (const u of urlsInToolInput(resp.call.input)) opened.add(u);
 
       const result = await entry.handler(ctx, resp.call.input);
       if (!result.ok && result.needsConfirmation) {
@@ -192,7 +232,7 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
       const summary = result.ok
         ? `${name} succeeded: ${clip(JSON.stringify(result.data), 1500)}`
         : `${name} failed: ${result.error}`;
-      workLog = clip(`${workLog}\nStep ${step}: ${summary}\n`, WORK_LOG_CHAR_LIMIT);
+      addLog(`\nStep ${step}: ${summary}\n`);
       await appendProgress(jobId, { at: new Date().toISOString(), step, tool: name, summary: clip(summary, 300) });
     }
   } catch (e) {

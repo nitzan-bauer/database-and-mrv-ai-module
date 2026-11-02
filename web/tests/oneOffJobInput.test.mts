@@ -175,3 +175,27 @@ test("allocateBudget: short files in full, the unused share goes to the long one
   assert.deepEqual(allocateBudget([5, 6], 100), [5, 6]);
   assert.deepEqual(allocateBudget([], 100), []);
 });
+
+test("fitWorkLog keeps the newest steps and shortens the oldest first", async () => {
+  const { fitWorkLog } = await import("../src/lib/agent/oneOff/jobInput.ts");
+  const entries = Array.from({ length: 10 }, (_, i) => `Step ${i + 1}: ${"x".repeat(1500)}\n`);
+  const out = fitWorkLog(entries, 6000);
+  assert.ok(out.length <= 6000);
+  assert.ok(out.includes("Step 10:"), "the latest step must survive");
+  assert.ok(fitWorkLog(["short\n"], 6000) === "short\n");
+});
+
+test("unopenedLinks / urlsInToolInput: matching ignores www, trailing slash, query and case", async () => {
+  const { unopenedLinks, urlsInToolInput } = await import("../src/lib/agent/oneOff/jobInput.ts");
+  const opened = new Set<string>([
+    ...urlsInToolInput({ url: "https://www.verra.org/program-notice/x/?utm=1" }),
+    ...urlsInToolInput({ startUrl: "https://verra.org/methodologies/vm0042/" }),
+  ]);
+  const links = [
+    "https://verra.org/program-notice/x",
+    "https://verra.org/methodologies/vm0042",
+    "https://verra.org/methodologies-main/faq/",
+  ];
+  assert.deepEqual(unopenedLinks(links, opened), ["https://verra.org/methodologies-main/faq/"]);
+  assert.deepEqual(urlsInToolInput(null), []);
+});

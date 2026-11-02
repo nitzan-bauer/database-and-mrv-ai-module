@@ -112,6 +112,46 @@ export function allocateBudget(lengths: number[], total: number): number[] {
   return alloc;
 }
 
+/**
+ * The agent's "work so far" log, kept inside a size limit WITHOUT losing the newest steps: when it is too long,
+ * the oldest entries are shortened first. (The previous version cut off the end, so after a few steps the model no
+ * longer saw its latest results and repeated the same call — seen live: five recall_agent_memory calls in a row.)
+ */
+export function fitWorkLog(entries: string[], limit: number, shrinkTo = 400): string {
+  const e = [...entries];
+  const total = () => e.reduce((n, s) => n + s.length, 0);
+  for (let i = 0; i < e.length && total() > limit; i++) {
+    if (e[i].length > shrinkTo) e[i] = `${e[i].slice(0, shrinkTo)}… [shortened]\n`;
+  }
+  // Still too long (very many steps): drop the oldest entirely, keep the newest.
+  while (total() > limit && e.length > 1) e.shift();
+  return e.join("");
+}
+
+function normalizeUrlForMatch(u: string): string {
+  try {
+    const p = new URL(u.trim());
+    return `${p.hostname.replace(/^www\./, "")}${p.pathname.replace(/\/+$/, "")}`.toLowerCase();
+  } catch {
+    return u.trim().toLowerCase();
+  }
+}
+
+/** URLs a tool call was pointed at (url / startUrl / urls fields), normalised for comparison. */
+export function urlsInToolInput(input: unknown): string[] {
+  if (!input || typeof input !== "object") return [];
+  const o = input as Record<string, unknown>;
+  const out: string[] = [];
+  for (const k of ["url", "startUrl"]) if (typeof o[k] === "string") out.push(normalizeUrlForMatch(o[k] as string));
+  if (Array.isArray(o.urls)) for (const u of o.urls) if (typeof u === "string") out.push(normalizeUrlForMatch(u));
+  return out;
+}
+
+/** Links from the request that no tool call has been pointed at yet. */
+export function unopenedLinks(links: string[], opened: Set<string>): string[] {
+  return links.filter((l) => !opened.has(normalizeUrlForMatch(l)));
+}
+
 export const MAX_DRIVE_FOLDERS = 3;
 
 /**
