@@ -122,7 +122,7 @@ export async function computeAutoFilledFacts(query: Query, projectId: string): P
   }
 
   const farms = await query<{ name: string; operator: string | null; country: string | null; region: string | null }>(
-    `SELECT name, operator, country, region FROM mrv.farms WHERE project_id = $1 AND NOT is_demo ORDER BY name`,
+    `SELECT name, operator, country, region FROM mrv.farms WHERE project_id = $1 AND NOT is_demo AND NOT exclude_from_pdd ORDER BY name`,
     [projectId],
   );
   if (farms.length) {

@@ -14,6 +14,7 @@ import type { LeakageEntry, Project, ClimateZone } from "@/lib/data/types";
 import type { RecordedActivityData } from "@/lib/tools/recordActivityData";
 import type { ToolResult } from "@/lib/tools/context";
 import { ActivityDataForm } from "./ActivityDataForm";
+import { allocateLeakage } from "@/lib/ghg/leakageAllocation";
 
 const DASH = "—";
 
@@ -904,9 +905,9 @@ function SocRemovalsTab({ sheets }: { sheets: FarmSheet[] }) {
 /* ───────────────────────── Leakage ───────────────────────── */
 
 const LEAKAGE_COMPONENTS: Array<{ code: LeakageEntry["component"]; label: string; justification: string }> = [
-  { code: "8.4.2", label: "8.4.2 · Livestock displacement (VMD0054, eq 36)", justification: "Reductions. 0 if no livestock displaced (document)." },
-  { code: "8.4.3", label: "8.4.3 · Production declines (foregone production)", justification: "Reductions. Assess if yield drops vs baseline; net land conversion only." },
-  { code: "8.4.4", label: "8.4.4 · Diversion of biomass residues from energy (CDM TOOL16)", justification: "Reductions. 0 unless residues had a baseline energy use." },
+  { code: "8.4.2", label: "8.4.2 · Livestock displacement → LK_disp,t (VMD0054, eq 36)", justification: "0 if no livestock displaced (document). When displaced, quantified through eq 36." },
+  { code: "8.4.3", label: "8.4.3 · Production declines → LK_disp,t, leakage from displaced production (VMD0054, eq 36)", justification: "LK_disp,t = MAX(0, LK_t − LK_prior) / years, from the cumulative VMD0054 result. Assess if yield drops vs baseline; net land conversion only." },
+  { code: "8.4.4", label: "8.4.4 · Diversion of biomass residues from energy (CDM TOOL16)", justification: "0 unless residues had a baseline energy use." },
 ];
 
 function LeakageTab({ sheets, manualLeakage }: { sheets: FarmSheet[]; manualLeakage: LeakageEntry[] }) {
@@ -985,7 +986,9 @@ function LeakageTab({ sheets, manualLeakage }: { sheets: FarmSheet[]; manualLeak
       <Card className="overflow-hidden p-0">
         <div className="border-b border-line px-4 py-2.5">
           <h3 className="text-[13.5px] font-bold text-pine-700">Other leakage components</h3>
-          <p className="mt-0.5 text-[12px] text-muted">Entered with justification (default 0).</p>
+          <p className="mt-0.5 text-[12px] text-muted">
+            Entered with justification (default 0). Together with §8.4.1 they form the leakage pool of eq 39 / eq 42 (v2.2, Correction 3).
+          </p>
         </div>
         <table className="w-full text-[12.5px]">
           <thead>
@@ -1021,19 +1024,21 @@ function LeakageTab({ sheets, manualLeakage }: { sheets: FarmSheet[]; manualLeak
         </div>
         <dl className="divide-y divide-line">
           <div className="flex justify-between px-4 py-2.5 text-[13px]">
-            <dt className="text-muted">Leakage allocated to REDUCTIONS</dt>
+            <dt className="text-muted">Leakage allocated to REDUCTIONS (LK_ER)</dt>
             <dd className="text-right">
-              <span className="font-mono font-bold text-ink">{manualTotal.toFixed(4)} tCO₂e</span>
-              <span className="ml-2 text-[11px] text-faint">Livestock + production declines + biomass diversion.</span>
+              <span className="font-mono font-bold text-ink">
+                {(autoTotal + manualTotal).toFixed(4)} tCO₂e{anyUnknown && " + unknown"}
+              </span>
+              <span className="ml-2 text-[11px] text-faint">
+                LE_OA (eq 33) + LK_disp,t (eq 36) + LE_BR × ER/(ER+CR) — this calculator has no removals, so the ratio is 1.
+              </span>
             </dd>
           </div>
           <div className="flex justify-between px-4 py-2.5 text-[13px]">
-            <dt className="text-muted">Leakage allocated to REMOVALS</dt>
+            <dt className="text-muted">Leakage allocated to REMOVALS (LK_CR)</dt>
             <dd className="text-right">
-              <span className="font-mono font-bold text-ink">
-                {autoTotal.toFixed(4)} tCO₂e{anyUnknown && " + unknown"}
-              </span>
-              <span className="ml-2 text-[11px] text-faint">Organic-amendment leakage (eq 33) — offsets SOC removals.</span>
+              <span className="font-mono font-bold text-ink">0.0000 tCO₂e</span>
+              <span className="ml-2 text-[11px] text-faint">Same pool × CR/(ER+CR) — zero until a SOC/QA1 removals pathway exists.</span>
             </dd>
           </div>
         </dl>
@@ -1061,16 +1066,25 @@ function SummaryTab({
   const totalReduction = round2(counted.reduce((sum, s) => sum + s.reduction!.total, 0));
   const totalAreaHa = round2(counted.reduce((sum, s) => sum + s.pr!.activity.areaHa, 0));
 
-  // eq 38: Net = (ER − LK_ER) + (Removals − LK_removals). Per the source
-  // workbook's own Leakage sheet: §8.4.1 (organic-amendment leakage, eq 33)
-  // is allocated to REMOVALS, not reductions; only §8.4.2-8.4.4 (manually
-  // justified) are allocated to reductions. This calculator has no
-  // SOC/QA1 removals pathway (see the SOC Removals tab), so Removals = 0
-  // and LK_removals has nothing to net against yet — it is shown, not
-  // subtracted, until that pathway exists.
+  // eq 38: Net = (ER − LK_ER) + (Removals − LK_CR). Leakage is allocated per
+  // eq 39 / eq 42 as amended by the v2.2 Corrections and Clarifications
+  // (Correction 3): LE_OA (§8.4.1, eq 33) + LK_disp,t (§8.4.2/8.4.3, eq 36)
+  // + LE_BR (§8.4.4) form one pool, split by ER/(ER+CR) and CR/(ER+CR). This
+  // calculator has no SOC/QA1 removals pathway (see the SOC Removals tab), so
+  // CR = 0 and the whole pool is allocated to reductions.
   const knownAutoLeakage = sheets.filter((s) => s.leakage841 && !s.leakage841.carbonContentMissing);
-  const lkRemovals = round2(knownAutoLeakage.reduce((sum, s) => sum + s.leakage841!.leakageTco2e, 0));
-  const lkReductions = round2(manualLeakage.reduce((sum, l) => sum + l.leakageTco2e, 0));
+  const unknownAutoLeakage = sheets.some((s) => s.leakage841?.carbonContentMissing);
+  const leOa = knownAutoLeakage.reduce((sum, s) => sum + s.leakage841!.leakageTco2e, 0);
+  const manualOf = (...codes: LeakageEntry["component"][]) =>
+    manualLeakage.filter((l) => codes.includes(l.component)).reduce((sum, l) => sum + l.leakageTco2e, 0);
+  const alloc = allocateLeakage({
+    er: totalReduction,
+    cr: 0,
+    leOa,
+    lkDisp: manualOf("8.4.2", "8.4.3"),
+    leBr: manualOf("8.4.4"),
+  });
+  const lkReductions = round2(alloc.lkEr);
   const netReduction = round2(totalReduction - lkReductions);
 
   return (
@@ -1087,7 +1101,7 @@ function SummaryTab({
         <BigStat label="Baseline (ER_bsl)" value={totalBaseline} unit="tCO₂e" />
         <BigStat label="Project (ER_wp)" value={totalProject} unit="tCO₂e" />
         <BigStat label="Reduction (ER)" value={totalReduction} unit="tCO₂e" tone="sage" />
-        <BigStat label="Leakage (LK_ER)" value={lkReductions} unit="tCO₂e · §8.4.2-4" tone="earth" />
+        <BigStat label="Leakage (LK_ER)" value={lkReductions} unit="tCO₂e · §8.4.1-4" tone="earth" />
         <BigStat label="Net (VCU est.)" value={netReduction} unit="tCO₂e · pre-verification" tone="gold" hero />
       </div>
 
@@ -1098,7 +1112,7 @@ function SummaryTab({
               <th className="py-1 font-semibold">Farm</th>
               <th className="py-1 text-right font-semibold">Area (ha)</th>
               <th className="py-1 text-right font-semibold">Reduction (tCO₂e)</th>
-              <th className="py-1 text-right font-semibold">§8.4.1 leakage (→ removals)</th>
+              <th className="py-1 text-right font-semibold">§8.4.1 leakage (LE_OA)</th>
             </tr>
           </thead>
           <tbody>
@@ -1126,9 +1140,9 @@ function SummaryTab({
         )}
 
         <p className="mt-2 font-mono text-[10.5px] text-faint">
-          Net removals — not shown: this calculator has no SOC/QA1 removals pathway (see SOC Removals tab), so
-          leakage allocated to removals ({lkRemovals.toFixed(4)}{knownAutoLeakage.length < sheets.filter((s) => s.leakage841).length ? " + unknown" : ""}{" "}
-          tCO₂e) has nothing to net against yet.
+          Leakage per eq 39: (LE_OA + LK_disp,t + LE_BR) × ER/(ER+CR). Net removals — not shown: this calculator has no
+          SOC/QA1 removals pathway (see SOC Removals tab), so CR = 0 and all leakage is allocated to reductions
+          {unknownAutoLeakage ? " — §8.4.1 for farms without a lab-confirmed carbon content is unknown, not zero, and is not included." : "."}
         </p>
       </div>
     </Card>

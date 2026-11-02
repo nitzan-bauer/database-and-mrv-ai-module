@@ -86,7 +86,7 @@ export async function generatePddDraft(
             count(p.plot_id) FILTER (WHERE ST_IsValid(p.geom))::text valid_plot_count,
             sum(p.area_ha)::text total_area_ha
        FROM mrv.farms f LEFT JOIN mrv.plots p ON p.farm_id = f.farm_id
-      WHERE f.project_id = $1
+      WHERE f.project_id = $1 AND NOT f.exclude_from_pdd
       GROUP BY f.farm_id, f.name, f.climate_zone, f.irrigation_method
       ORDER BY f.name`,
     [input.projectId],

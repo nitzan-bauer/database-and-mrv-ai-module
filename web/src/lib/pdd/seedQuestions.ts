@@ -9,7 +9,10 @@
  * file is the source of truth here.
  *
  * 8 base questions + 3 questions Rebeka proposed the day before + 5
- * questions added 2026-08-19 = 16, matching Nitzan's own count. The "3
+ * questions added 2026-08-19 = 16, matching Nitzan's own count; 2 more added
+ * 2026-11-02 (eligibility_areas, quantification_units) after VM0042 v2.2
+ * Clarifications 3 and 6 (11 Jun 2026) — a grouped project must describe its
+ * baseline per eligibility area and define its quantification units. The "3
  * from yesterday" were recovered from his own screenshots of that
  * round ("3 השאלות שרבקה הציעה" — short, technical, no expertise
  * required): Project Details, Project Start Date and Initial Crediting
@@ -58,7 +61,21 @@ export const SEED_QUESTIONS: SeedQuestionDef[] = [
     defaultValue: "20 years, renewable for further 20-year terms, within a 100-year program period.",
   },
   { key: "project_activities", label: "Project activities" },
-  { key: "baseline_scenario", label: "Baseline scenario" },
+  {
+    key: "baseline_scenario",
+    label: "Baseline scenario",
+    hint: "What the farmers did on the land BEFORE the project, in plain words: crops, fertilizer (manure / compost / synthetic), tillage, residues, irrigation, grazing. If farms differ, say how. Rebeka lays it out per eligibility area.",
+  },
+  {
+    key: "eligibility_areas",
+    label: "Eligibility areas",
+    hint: "A grouped project is split into eligibility areas — one for each country / region, and cropland and grassland are always separate areas. List each area and which farms or instances are in it (e.g. \"Tanzania, cropland: 1 instance; Kenya, cropland: 1 farm\").",
+  },
+  {
+    key: "quantification_units",
+    label: "Quantification units",
+    hint: "How is the project area divided for the GHG calculation — per field, per farm, or the whole area as one unit? Each unit should be more uniform (soil, climate, management) than the project as a whole.",
+  },
   {
     key: "ghg_estimates",
     label: "Estimated GHG Emission Reductions and Carbon Dioxide Removals",

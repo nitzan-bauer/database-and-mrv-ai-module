@@ -242,8 +242,14 @@ const EQUATIONS: Array<{ eq: string; formula: string; what: string; where: strin
   {
     eq: "36",
     formula: "LK_disp,t = MAX(0, LK_t − LK_prior) / years",
-    what: "§8.4.3 leakage from production declines (VMD0054) — corrected 11-Jun-2026, not populated with live data.",
-    where: "not implemented",
+    what: "LK_disp,t = leakage emissions from displaced production in year t (§8.4.2/§8.4.3, VMD0054). LK_t / LK_prior are cumulative VMD0054 results. v2.2 Correction 2 (11-Jun-2026): the parameter was wrongly described as 'livestock displacement'. Entered manually with justification — VMD0054 itself is not computed here.",
+    where: "GhgWorkbook.tsx · LeakageTab (manual entry)",
+  },
+  {
+    eq: "39/42",
+    formula: "LK_ER,t = (LE_OA,t + LK_disp,t + LE_BR,t) × ER_t/(ER_t + CR_t)   ·   LK_CR,t = same sum × CR_t/(ER_t + CR_t)",
+    what: "Leakage allocated to reductions / removals. v2.2 Correction 3 (11-Jun-2026): LK_disp,t was missing from both sums. CR = 0 here, so everything goes to reductions.",
+    where: "leakageAllocation.ts · allocateLeakage",
   },
   {
     eq: "4/5",

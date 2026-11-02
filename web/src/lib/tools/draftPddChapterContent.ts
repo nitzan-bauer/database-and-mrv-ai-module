@@ -79,7 +79,7 @@ const FOLLOWUP_SYSTEM_PROMPT =
  */
 export async function draftPddChapterContent(
   ctx: ToolContext,
-  input: { projectId: string; chapterTitles: string[]; maxSections?: number },
+  input: { projectId: string; chapterTitles: string[]; maxSections?: number; onlySectionIndices?: number[] },
 ): Promise<ToolResult<DraftPddChapterContentResult>> {
   const guard = requireDbMode("draftPddChapterContent");
   if (guard) return guard;
@@ -102,9 +102,18 @@ export async function draftPddChapterContent(
   const project = projects[0];
 
   const farms = await query<{ name: string; operator: string | null; country: string | null; region: string | null }>(
-    `SELECT name, operator, country, region FROM mrv.farms WHERE project_id = $1 AND NOT is_demo ORDER BY name`,
+    `SELECT name, operator, country, region FROM mrv.farms WHERE project_id = $1 AND NOT is_demo AND NOT exclude_from_pdd ORDER BY name`,
     [input.projectId],
   );
+  // Farms kept out of this project's PDD (a demo farm, say). The previous draft is fed back in as direction, so a farm
+  // already named in it would otherwise survive every redraft — name the exclusion explicitly.
+  const excludedFarms = await query<{ name: string }>(
+    `SELECT name FROM mrv.farms WHERE project_id = $1 AND (is_demo OR exclude_from_pdd) ORDER BY name`,
+    [input.projectId],
+  );
+  const excludedFarmsNote = excludedFarms.length
+    ? `\n\nNOT part of this project — never mention these farms, even if the direction or the previous draft below names them (leave them out; do not replace them with another farm): ${excludedFarms.map((f) => f.name).join("; ")}.`
+    : "";
   const farmFacts = farms.length
     ? farms.map((f) => `- ${f.name} (${[f.region, f.country].filter(Boolean).join(", ")}), farmer: ${f.operator ?? "unknown"}`).join("\n")
     : "No farms recorded yet.";
@@ -172,28 +181,29 @@ export async function draftPddChapterContent(
 
   // Reference library (referenceIngest.ts): the exact wording of the methodology's Corrections & Clarifications and
   // similar documents the agent has studied. Recalled once per call, best-effort — drafting never depends on it.
-  let referenceBlock = "";
-  try {
-    const { recallAgentMemory } = await import("./recallAgentMemory");
-    const ref = await recallAgentMemory(ctx, {
-      query: `${project.methodology ?? "VM0042"} corrections and clarifications requirements for: ${input.chapterTitles.join(", ")}`,
-      projectId: input.projectId,
-      kind: "protocol",
-      limit: 5,
-    });
-    if (ref.ok && ref.data.memories.length) {
-      referenceBlock =
+  const recallReference = async (queryText: string, limit: number): Promise<string> => {
+    try {
+      const { recallAgentMemory } = await import("./recallAgentMemory");
+      const ref = await recallAgentMemory(ctx, { query: queryText, projectId: input.projectId, kind: "protocol", limit });
+      if (!ref.ok || !ref.data.memories.length) return "";
+      return (
         "\n\nReference material you have studied (the methodology's own Corrections & Clarifications and related rules — " +
         "apply it where it bears on this section, and cite the item, e.g. \"Clarification 6\"; ignore what does not apply):\n" +
-        ref.data.memories.map((m) => `- ${m.content.slice(0, 1200)}`).join("\n");
+        ref.data.memories.map((m) => `- ${m.content.slice(0, 1200)}`).join("\n")
+      );
+    } catch {
+      return "";
     }
-  } catch {
-    referenceBlock = "";
-  }
+  };
+  const referenceBlock = await recallReference(
+    `${project.methodology ?? "VM0042"} corrections and clarifications requirements for: ${input.chapterTitles.join(", ")}`,
+    5,
+  );
 
   const projectFacts =
     `Project: ${project.name} · ${project.methodology} · ${project.country}\n` +
     `Participating farms:\n${farmFacts}` +
+    excludedFarmsNote +
     orgProfileFacts;
 
   // [startIndex, endIndex) per requested chapter — computed once, reused
@@ -235,6 +245,7 @@ export async function draftPddChapterContent(
 
     for (const row of chapterRows) {
       if (row.sectionLevel === 1) continue; // the chapter header itself carries no content requirement
+      if (input.onlySectionIndices && !input.onlySectionIndices.includes(row.sectionIndex)) continue; // targeted redraft
 
       // 0082 — a section's structured (table-cell/checkbox) fields are
       // independent of its prose status: propose whatever Rebeka can
@@ -310,6 +321,10 @@ export async function draftPddChapterContent(
       const reviewBlock = row.reviewComment?.trim()
         ? `\n\nThe founder reviewed the previous draft and left this note — address it specifically, don't just reword:\n${row.reviewComment.trim()}`
         : "";
+      // Section-specific recall: the chapter-wide block above is the fallback; what bears on THIS section is what matters.
+      const sectionReference =
+        (await recallReference(`${project.methodology ?? "VM0042"} rules, corrections and clarifications for the PDD section "${row.sectionTitle}"`, 4)) ||
+        referenceBlock;
       const userMessage =
         `Section: "${row.sectionTitle}"\n` +
         `Verra's own guidance for this section:\n${guidance}\n\n` +
@@ -318,7 +333,7 @@ export async function draftPddChapterContent(
         reviewBlock +
         excerptBlock +
         lessonsBlock +
-        referenceBlock;
+        sectionReference;
 
       try {
         const resp = await provider.complete({ system: DRAFTING_SYSTEM_PROMPT, userMessage, tools: [] });
