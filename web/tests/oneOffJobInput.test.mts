@@ -152,3 +152,26 @@ test("requestNeedsLookup: sites, Verra and Drive trigger it; plain analysis does
   assert.equal(requestNeedsLookup("summarise", true), true);
   assert.equal(requestNeedsLookup("scan the documents in my drive folder"), false);
 });
+
+test("reportTitleFor: skips the greeting and a leading label, clips at a word", async () => {
+  const { reportTitleFor } = await import("../src/lib/agent/oneOff/jobInput.ts");
+  assert.equal(
+    reportTitleFor("היי רבקה.\nהמטרה: לקבוע מה צריך לשנות ברמת ה-PDD לפי VCS Version 5\nעוד שורה"),
+    "לקבוע מה צריך לשנות ברמת ה-PDD לפי VCS Version 5",
+  );
+  assert.equal(reportTitleFor("Hi Rebeka\nReview the VCS v5 templates"), "Review the VCS v5 templates");
+  assert.equal(reportTitleFor("x").length > 0, true);
+  const long = reportTitleFor("a".repeat(30) + " " + "b".repeat(100));
+  assert.equal(long.endsWith("…"), true);
+  assert.equal(long.length <= 91, true);
+});
+
+test("allocateBudget: short files in full, the unused share goes to the long ones", async () => {
+  const { allocateBudget } = await import("../src/lib/agent/oneOff/jobInput.ts");
+  const a = allocateBudget([1_400, 3_400, 30_600, 88_000, 360_000, 346_000, 374_000], 160_000);
+  assert.deepEqual(a.slice(0, 3), [1_400, 3_400, 30_600]);
+  assert.ok(a[3] > 30_000 && a[4] > 30_000);
+  assert.ok(a.reduce((x, y) => x + y, 0) <= 160_000);
+  assert.deepEqual(allocateBudget([5, 6], 100), [5, 6]);
+  assert.deepEqual(allocateBudget([], 100), []);
+});

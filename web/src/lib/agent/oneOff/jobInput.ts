@@ -79,6 +79,39 @@ export function normalizeLinks(raw: string[]): { links: string[]; rejected: stri
   return { links, rejected };
 }
 
+/**
+ * The title printed on the DOCX report: the first line of the request that says something — not a greeting
+ * ("היי רבקה.") and without a leading label ("המטרה:"). Clipped at a word boundary.
+ */
+export function reportTitleFor(prompt: string): string {
+  const lines = prompt.split("\n").map((l) => l.trim()).filter(Boolean);
+  const greeting = /^(היי|הי|שלום|בוקר טוב|ערב טוב|hi|hello|hey|dear)\b[^\n]{0,30}$/i;
+  const chosen = lines.find((l) => !greeting.test(l) && l.length >= 12) ?? lines[0] ?? "One-off task";
+  const text = chosen.replace(/^(המטרה|מטרה|משימה|goal|task|objective)\s*[:：-]\s*/i, "").trim();
+  if (text.length <= 90) return text;
+  const cut = text.slice(0, 90);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 40))}…`;
+}
+
+/**
+ * Splits a character budget across documents of different lengths: a short file is given in full, and what it
+ * does not use is shared by the longer ones (water-filling). A flat per-file cap would cut a 31k-character
+ * Corrections & Clarifications document to the same stub as a 360k-character methodology.
+ */
+export function allocateBudget(lengths: number[], total: number): number[] {
+  const alloc = lengths.map(() => 0);
+  const order = lengths.map((len, i) => ({ len, i })).sort((a, b) => a.len - b.len);
+  let remaining = total;
+  let left = order.length;
+  for (const { len, i } of order) {
+    const share = Math.floor(remaining / left);
+    alloc[i] = Math.min(len, share);
+    remaining -= alloc[i];
+    left--;
+  }
+  return alloc;
+}
+
 export const MAX_DRIVE_FOLDERS = 3;
 
 /**

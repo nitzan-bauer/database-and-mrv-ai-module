@@ -170,6 +170,27 @@ export async function draftPddChapterContent(
       allLessons.map((l) => `- ${l.content}`).join("\n")
     : "";
 
+  // Reference library (referenceIngest.ts): the exact wording of the methodology's Corrections & Clarifications and
+  // similar documents the agent has studied. Recalled once per call, best-effort — drafting never depends on it.
+  let referenceBlock = "";
+  try {
+    const { recallAgentMemory } = await import("./recallAgentMemory");
+    const ref = await recallAgentMemory(ctx, {
+      query: `${project.methodology ?? "VM0042"} corrections and clarifications requirements for: ${input.chapterTitles.join(", ")}`,
+      projectId: input.projectId,
+      kind: "protocol",
+      limit: 5,
+    });
+    if (ref.ok && ref.data.memories.length) {
+      referenceBlock =
+        "\n\nReference material you have studied (the methodology's own Corrections & Clarifications and related rules — " +
+        "apply it where it bears on this section, and cite the item, e.g. \"Clarification 6\"; ignore what does not apply):\n" +
+        ref.data.memories.map((m) => `- ${m.content.slice(0, 1200)}`).join("\n");
+    }
+  } catch {
+    referenceBlock = "";
+  }
+
   const projectFacts =
     `Project: ${project.name} · ${project.methodology} · ${project.country}\n` +
     `Participating farms:\n${farmFacts}` +
@@ -296,7 +317,8 @@ export async function draftPddChapterContent(
         (direction ? `\n\nDirection from the founder (raw, not final wording — write proper prose from this):\n${direction}` : "") +
         reviewBlock +
         excerptBlock +
-        lessonsBlock;
+        lessonsBlock +
+        referenceBlock;
 
       try {
         const resp = await provider.complete({ system: DRAFTING_SYSTEM_PROMPT, userMessage, tools: [] });

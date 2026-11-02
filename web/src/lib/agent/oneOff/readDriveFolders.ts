@@ -6,9 +6,7 @@ import "server-only";
 // agent must repeat — never silently dropped.
 
 const MAX_FILES = 25;
-const TOTAL_CHARS = 120_000;
-const MIN_EXCERPT = 2_500;
-const MAX_EXCERPT = 12_000;
+const TOTAL_CHARS = 160_000;
 const CONCURRENCY = 5;
 const READABLE_EXT = new Set(["txt", "md", "csv", "tsv", "json", "log", "yaml", "yml", "docx", "xlsx", "pdf"]);
 const FOLDER = "application/vnd.google-apps.folder";
@@ -40,6 +38,7 @@ export async function readDriveFolders(accessToken: string | undefined, folderId
 
   const { verifyDriveFolder, listDriveFolderFiles, downloadDriveFile, exportGoogleDocAsText } = await import("../../google/driveClient");
   const { extractAttachmentText } = await import("../extractAttachmentText");
+  const { allocateBudget } = await import("./jobInput");
 
   type Candidate = { id: string; name: string; mimeType: string };
   const candidates: Candidate[] = [];
@@ -84,7 +83,6 @@ export async function readDriveFolders(accessToken: string | undefined, folderId
     notes.push(`Not readable as text (skipped): ${skipped.slice(0, 15).join(", ")}${skipped.length > 15 ? ", …" : ""}.`);
   }
 
-  const perFile = Math.min(MAX_EXCERPT, Math.max(MIN_EXCERPT, Math.floor(TOTAL_CHARS / Math.max(chosen.length, 1))));
   const docs: DriveDoc[] = [];
   const failed: string[] = [];
 
@@ -111,7 +109,7 @@ export async function readDriveFolders(accessToken: string | undefined, folderId
           failed.push(`${c.name} (no readable text)`);
           continue;
         }
-        docs.push({ name: c.name, text: text.slice(0, perFile), fullChars: text.length });
+        docs.push({ name: c.name, text, fullChars: text.length });
       } catch (e) {
         failed.push(`${c.name} (${e instanceof Error ? e.message.slice(0, 120) : String(e)})`);
       }
@@ -120,10 +118,17 @@ export async function readDriveFolders(accessToken: string | undefined, folderId
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chosen.length) }, worker));
 
   docs.sort((a, b) => a.name.localeCompare(b.name));
+  // Short files in full; what they leave unused goes to the long ones (see allocateBudget).
+  const budget = allocateBudget(docs.map((d) => d.fullChars), TOTAL_CHARS);
+  docs.forEach((d, i) => {
+    d.text = d.text.slice(0, budget[i]);
+  });
   if (docs.length) {
+    const fmt = (n: number) => n.toLocaleString("en-US");
     notes.push(
-      `Read ${docs.length} file(s); each is shown as its first ${perFile.toLocaleString("en-US")} characters at most` +
-        ` (full lengths: ${docs.map((d) => `${d.name} ${d.fullChars.toLocaleString("en-US")}`).join("; ")}).`,
+      `Read ${docs.length} file(s). Shown in the prompt (characters shown of total): ` +
+        docs.map((d, i) => `${d.name} ${fmt(budget[i])}/${fmt(d.fullChars)}`).join("; ") +
+        ". A file shown partially is cut off at that point — say so if the missing part matters.",
     );
   }
   if (failed.length) notes.push(`Could not read: ${failed.join("; ")}.`);

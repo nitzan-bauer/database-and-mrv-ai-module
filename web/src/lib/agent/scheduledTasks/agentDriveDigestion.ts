@@ -81,7 +81,18 @@ const REVIEW_SYSTEM_PROMPT =
   "one durable lesson from this round's material — a specific, concrete thing you should apply going forward. " +
   "If there is genuinely nothing worth remembering, respond with exactly: NOTHING.";
 
-async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey: string): Promise<ScheduledTaskOutcome> {
+// Reference ingestion (referenceIngest.ts) is for the agent whose work depends on exact methodology wording.
+const INGEST_BUDGET_MS = 110_000;
+const MAX_INGEST_CHARS = 120_000;
+
+async function digestAgentDriveFolder(
+  ctx: ToolContext,
+  agentId: string,
+  taskKey: string,
+  opts: { deepIngest?: boolean } = {},
+): Promise<ScheduledTaskOutcome> {
+  const deepIngest = Boolean(opts.deepIngest);
+  const ingestStarted = Date.now();
   const { query } = await import("../../db");
   const { listDriveFolderFiles, exportGoogleDocAsText, downloadDriveFile } = await import("../../google/driveClient");
   const { extractPdfText } = await import("../../ingest/pdf");
@@ -152,26 +163,56 @@ async function digestAgentDriveFolder(ctx: ToolContext, agentId: string, taskKey
     }
     processed++;
 
-    let content: string | null = null;
+    // The whole text is read once; the short note below still sees only the first 8,000 characters, exactly as
+    // before. A reference document (deepIngest) is also stored in full, piece by piece — see referenceIngest.ts.
+    let fullText: string | null = null;
     if (effectiveMimeType === GOOGLE_DOC_MIME_TYPE && readableFileId) {
       try {
-        content = (await exportGoogleDocAsText(ctx.googleAccessToken, readableFileId)).slice(0, 8000);
+        fullText = await exportGoogleDocAsText(ctx.googleAccessToken, readableFileId);
       } catch {
-        content = null;
+        fullText = null;
       }
     } else if (effectiveMimeType === PDF_MIME_TYPE && readableFileId) {
       try {
         const bytes = await downloadDriveFile(ctx.googleAccessToken, readableFileId);
-        content = (await extractPdfText(bytes)).slice(0, 8000);
+        fullText = await extractPdfText(bytes);
       } catch {
-        content = null;
+        fullText = null;
       }
     } else if (effectiveMimeType === DOCX_MIME_TYPE && readableFileId) {
       try {
         const bytes = await downloadDriveFile(ctx.googleAccessToken, readableFileId);
-        content = readParagraphs(bytes).map((p) => p.text).join("\n").slice(0, 8000);
+        fullText = readParagraphs(bytes).map((p) => p.text).join("\n");
       } catch {
-        content = null;
+        fullText = null;
+      }
+    } else if ((effectiveMimeType === "text/markdown" || effectiveMimeType === "text/plain") && readableFileId) {
+      try {
+        fullText = (await downloadDriveFile(ctx.googleAccessToken, readableFileId)).toString("utf8");
+      } catch {
+        fullText = null;
+      }
+    }
+    fullText = fullText?.trim() ? fullText : null;
+    const content: string | null = fullText ? fullText.slice(0, 8000) : null;
+
+    if (deepIngest && fullText && readableFileId) {
+      const left = INGEST_BUDGET_MS - (Date.now() - ingestStarted);
+      if (left > 5_000) {
+        try {
+          const { ingestReferenceDocument } = await import("../referenceIngest");
+          const r = await ingestReferenceDocument(ctx, {
+            projectId: TARGET_PROJECT_ID,
+            domain,
+            fileId: file.id,
+            fileName: file.name,
+            text: fullText.slice(0, MAX_INGEST_CHARS),
+            deadlineMs: left,
+          });
+          if (!r.skipped) paragraphs.push(r.note);
+        } catch (e) {
+          paragraphs.push(`Could not store "${file.name}" as long-term reference: ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     }
 
@@ -284,5 +325,6 @@ export const RON_TASK_KEY = "ron_drive_digestion";
 export const runDaveDriveDigestion = (ctx: ToolContext) => digestAgentDriveFolder(ctx, "dave", DAVE_TASK_KEY);
 export const runJenniferDriveDigestion = (ctx: ToolContext) => digestAgentDriveFolder(ctx, "jennifer", JENNIFER_TASK_KEY);
 export const runJohnDriveDigestion = (ctx: ToolContext) => digestAgentDriveFolder(ctx, "john", JOHN_TASK_KEY);
-export const runRebekaDriveDigestion = (ctx: ToolContext) => digestAgentDriveFolder(ctx, "rebeka", REBEKA_TASK_KEY);
+export const runRebekaDriveDigestion = (ctx: ToolContext) =>
+  digestAgentDriveFolder(ctx, "rebeka", REBEKA_TASK_KEY, { deepIngest: true });
 export const runRonDriveDigestion = (ctx: ToolContext) => digestAgentDriveFolder(ctx, "ron", RON_TASK_KEY);
