@@ -18,6 +18,8 @@ export interface OneOffJob {
   links: string[];
   attachments: JobAttachment[];
   chromeDomains: string[];
+  /** Drive folder ids the request asked the agent to read. */
+  driveFolders: string[];
   status: JobStatus;
   progress: ProgressEntry[];
   resultText: string | null;
@@ -35,6 +37,7 @@ function rowToJob(r: Record<string, unknown>): OneOffJob {
     links: (r.links as string[]) ?? [],
     attachments: (r.attachments as JobAttachment[]) ?? [],
     chromeDomains: (r.chrome_domains as string[]) ?? [],
+    driveFolders: (r.drive_folders as string[]) ?? [],
     status: r.status as JobStatus,
     progress: (r.progress as ProgressEntry[]) ?? [],
     resultText: (r.result_text as string | null) ?? null,
@@ -51,12 +54,21 @@ export async function createJob(input: {
   links: string[];
   attachments: JobAttachment[];
   chromeDomains: string[];
+  driveFolders: string[];
 }): Promise<string> {
   const { query } = await import("../../db");
   const rows = await query<{ job_id: string }>(
-    `INSERT INTO mrv.adhoc_agent_jobs (agent_id, requested_by, prompt, links, attachments, chrome_domains)
-     VALUES ($1, $2, $3, $4::text[], $5::jsonb, $6::text[]) RETURNING job_id`,
-    [input.agentId, input.requestedBy, input.prompt, input.links, JSON.stringify(input.attachments), input.chromeDomains],
+    `INSERT INTO mrv.adhoc_agent_jobs (agent_id, requested_by, prompt, links, attachments, chrome_domains, drive_folders)
+     VALUES ($1, $2, $3, $4::text[], $5::jsonb, $6::text[], $7::text[]) RETURNING job_id`,
+    [
+      input.agentId,
+      input.requestedBy,
+      input.prompt,
+      input.links,
+      JSON.stringify(input.attachments),
+      input.chromeDomains,
+      input.driveFolders,
+    ],
   );
   return rows[0].job_id;
 }

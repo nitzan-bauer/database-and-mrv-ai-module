@@ -130,3 +130,25 @@ test("subjectFor is ASCII-safe and falls back to the job id for a Hebrew-only pr
     "One-off task — 2026-10-31 — VM0042 additionality",
   );
 });
+
+test("parseDriveFolderId: folder links, bare ids, and rejected PC paths", async () => {
+  const { parseDriveFolderId } = await import("../src/lib/agent/oneOff/jobInput.ts");
+  const id = "1eS9HtyjG3B7ubuWW-QUnzZ5k0VJkF8pX";
+  assert.deepEqual(parseDriveFolderId(`https://drive.google.com/drive/folders/${id}?usp=sharing`), { ok: true, id });
+  assert.deepEqual(parseDriveFolderId(`https://drive.google.com/drive/u/0/folders/${id}`), { ok: true, id });
+  assert.deepEqual(parseDriveFolderId(`https://drive.google.com/open?id=${id}`), { ok: true, id });
+  assert.deepEqual(parseDriveFolderId(id), { ok: true, id });
+  const pc = parseDriveFolderId(String.raw`H:\My Drive\carbonature\AI-Agent library`);
+  assert.equal(pc.ok, false);
+  assert.match(pc.ok ? "" : pc.error, /path on your computer/);
+  assert.equal(parseDriveFolderId("hello").ok, false);
+});
+
+test("requestNeedsLookup: sites, Verra and Drive trigger it; plain analysis does not", async () => {
+  const { requestNeedsLookup } = await import("../src/lib/agent/oneOff/jobInput.ts");
+  assert.equal(requestNeedsLookup("תבצעי סקירה באתר של ורה"), true);
+  assert.equal(requestNeedsLookup("check https://verra.org/x"), true);
+  assert.equal(requestNeedsLookup("summarise the attached file"), false);
+  assert.equal(requestNeedsLookup("summarise", true), true);
+  assert.equal(requestNeedsLookup("scan the documents in my drive folder"), false);
+});

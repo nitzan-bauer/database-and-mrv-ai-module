@@ -7,8 +7,10 @@ import { normalizeDomains } from "./chromeAllow";
 import {
   capAttachments,
   domainForAgent,
+  MAX_DRIVE_FOLDERS,
   normalizeLinks,
   oneOffTaskKey,
+  parseDriveFolderId,
   ONE_OFF_AGENT_IDS,
   type JobAttachment,
 } from "./jobInput";
@@ -25,6 +27,8 @@ export async function startOneOffJobAction(input: {
   links: string[];
   attachments: JobAttachment[];
   chromeDomains: string[];
+  /** Pasted Drive folder links (or ids). */
+  driveFolders: string[];
 }): Promise<StartOneOffResult> {
   if (DATA_MODE !== "db") return { ok: false, error: "One-off tasks need the database." };
   const session = await auth().catch(() => null);
@@ -41,6 +45,15 @@ export async function startOneOffJobAction(input: {
   const { links, rejected } = normalizeLinks(input.links);
   const { attachments, droppedNames } = capAttachments(input.attachments);
   const chromeDomains = normalizeDomains(input.chromeDomains);
+  const driveFolders: string[] = [];
+  for (const raw of input.driveFolders) {
+    const parsed = parseDriveFolderId(raw);
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+    if (!driveFolders.includes(parsed.id)) driveFolders.push(parsed.id);
+  }
+  if (driveFolders.length > MAX_DRIVE_FOLDERS) {
+    return { ok: false, error: `At most ${MAX_DRIVE_FOLDERS} Drive folders per task.` };
+  }
   const notes = [
     ...(rejected.length ? [`Ignored ${rejected.length} link(s) that are not valid http(s) URLs or exceed the limit.`] : []),
     ...(droppedNames.length ? [`Skipped ${droppedNames.join(", ")} — over the total attachment size limit.`] : []),
@@ -50,7 +63,15 @@ export async function startOneOffJobAction(input: {
   if (!secret) return { ok: false, error: "EXTERNAL_AGENT_SECRET is not configured — cannot start the run." };
 
   const { createJob, finishJob } = await import("./jobStore");
-  const jobId = await createJob({ agentId: input.agentId, requestedBy: email, prompt, links, attachments, chromeDomains });
+  const jobId = await createJob({
+    agentId: input.agentId,
+    requestedBy: email,
+    prompt,
+    links,
+    attachments,
+    chromeDomains,
+    driveFolders,
+  });
 
   // Call the long-running route on the same host the person is using (works on localhost:3007 and in production).
   const h = await headers();

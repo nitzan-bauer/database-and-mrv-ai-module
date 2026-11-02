@@ -79,6 +79,41 @@ export function normalizeLinks(raw: string[]): { links: string[]; rejected: stri
   return { links, rejected };
 }
 
+export const MAX_DRIVE_FOLDERS = 3;
+
+/**
+ * A Drive folder from whatever was pasted: a folder URL (any /u/N/ or ?usp= decoration) or a bare id.
+ * A Windows path such as `H:\My Drive\...` is rejected — the agents run in the cloud and cannot see this PC's
+ * drive letters; the same folder's Drive link is what they can read.
+ */
+export function parseDriveFolderId(raw: string): { ok: true; id: string } | { ok: false; error: string } {
+  const s = raw.trim();
+  if (!s) return { ok: false, error: "Empty Drive folder." };
+  if (/^[A-Za-z]:[\\/]/.test(s) || s.startsWith("\\\\")) {
+    return {
+      ok: false,
+      error: `"${s}" is a path on your computer, which the agent cannot open. In Drive, right-click the folder → Share → Copy link, and paste that link instead.`,
+    };
+  }
+  const fromUrl = s.match(/drive\.google\.com\/.*?\/folders\/([A-Za-z0-9_-]{10,})/);
+  if (fromUrl) return { ok: true, id: fromUrl[1] };
+  const fromQuery = s.match(/drive\.google\.com\/.*?[?&]id=([A-Za-z0-9_-]{10,})/);
+  if (fromQuery) return { ok: true, id: fromQuery[1] };
+  if (/^[A-Za-z0-9_-]{20,}$/.test(s)) return { ok: true, id: s };
+  return { ok: false, error: `"${s}" is not a Google Drive folder link.` };
+}
+
+/**
+ * True when the request names something on the web the agent has to go and look at — a link, a site, Verra's
+ * website. A reply that makes no tool call at all to such a request is not an answer: it skipped the work and,
+ * worse, can claim the source "could not be accessed" without ever having tried (seen live 2026-11-02).
+ * (Drive folders are not counted: the system reads those itself before the run.)
+ */
+export function requestNeedsLookup(prompt: string, hasLinks = false): boolean {
+  if (hasLinks) return true;
+  return /https?:\/\/|www\.|\b[a-z0-9-]+\.(org|com|io|net|gov|int)\b|verra|ורה|אתר/i.test(prompt);
+}
+
 export function capAttachments(input: JobAttachment[]): { attachments: JobAttachment[]; droppedNames: string[] } {
   const attachments: JobAttachment[] = [];
   const droppedNames: string[] = [];
@@ -104,11 +139,17 @@ export function buildTaskPrompt(input: {
   links: string[];
   attachments: JobAttachment[];
   chromeDomains?: string[];
+  /** Files read from the Drive folders named in the request: full excerpts, or — for research steps — just an index. */
+  driveDocs?: { name: string; text: string }[];
+  /** What happened with the Drive folders (unreadable folder, skipped files) — the agent must report it, not guess. */
+  driveNotes?: string[];
 }): string {
   const parts: string[] = [
     "ONE-OFF TASK from Nitzan (CEO). Do exactly what is asked; do not start unrelated work.",
     "Reply, and write any report, in the same language as the request (Hebrew or English).",
     "Use only what the sources actually say; if something cannot be verified, say so plainly.",
+    "If the request names a website, a link or a Drive folder, you MUST open it with your tools before answering. " +
+      "Never say you could not access a source you did not actually try; if a tool call fails, quote the error.",
     "Finish your final answer with exactly one last line: " +
       `ROUTING: {"topic": "${TOPICS.join(" | ")}", "farm": "<exact farm name, or null>"} — choose the one topic the work belongs to.`,
     "",
@@ -129,6 +170,13 @@ export function buildTaskPrompt(input: {
   }
   for (const a of input.attachments) {
     parts.push("", `ATTACHED FILE: ${a.name}${a.truncated ? " (truncated)" : ""}`, a.text);
+  }
+  if (input.driveNotes?.length) {
+    parts.push("", "GOOGLE DRIVE FOLDER(S) NAMED IN THE REQUEST — read by the system before you started:");
+    for (const n of input.driveNotes) parts.push(`- ${n}`);
+  }
+  for (const d of input.driveDocs ?? []) {
+    parts.push("", `DRIVE FILE: ${d.name}`, d.text);
   }
   return parts.join("\n");
 }

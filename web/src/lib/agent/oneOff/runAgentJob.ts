@@ -7,6 +7,7 @@ import {
   domainForAgent,
   oneOffTaskKey,
   parseRoutingBlock,
+  requestNeedsLookup,
   subjectFor,
   topicFolderPath,
 } from "./jobInput";
@@ -56,11 +57,16 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
   const schemas = agent.tools
     .map((name) => TOOL_REGISTRY[name]?.schema)
     .filter((s): s is NonNullable<typeof s> => Boolean(s));
+  // Drive folders named in the request are read by the system, up front (see readDriveFolders.ts).
+  const { readDriveFolders } = await import("./readDriveFolders");
+  const drive = await readDriveFolders(ctx.googleAccessToken, job.driveFolders);
   const basePrompt = buildTaskPrompt({
     prompt: job.prompt,
     links: job.links,
     attachments: job.attachments,
     chromeDomains: job.chromeDomains,
+    driveDocs: drive.docs,
+    driveNotes: drive.notes,
   });
 
   // The prompt is re-sent on every research step, so attached files are clipped there (the model only needs the
@@ -74,6 +80,9 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
         : a,
     ),
     chromeDomains: job.chromeDomains,
+    // Research steps get an index of the Drive files; the final answer gets the excerpts.
+    driveDocs: drive.docs.map((d) => ({ name: d.name, text: `${d.text.slice(0, 300)}…` })),
+    driveNotes: drive.notes,
   });
 
   const { recallForJob } = await import("./recall");
@@ -84,12 +93,21 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
     tool: "recall",
     summary: `Recalled ${recalled.lessons} lesson(s) and ${recalled.memories} stored note(s) before starting.`,
   });
+  if (job.driveFolders.length) {
+    await appendProgress(jobId, {
+      at: new Date().toISOString(),
+      step: 0,
+      tool: "drive_folders",
+      summary: clip(drive.notes.join(" "), 280),
+    });
+  }
 
   const started = Date.now();
   let workLog = "";
   let finalText: string | null = null;
   const toolsUsed: string[] = [];
   const failures: string[] = [];
+  let pushedBack = false;
 
   try {
     for (let step = 1; step <= MAX_STEPS; step++) {
@@ -124,6 +142,21 @@ export async function runAgentJob(ctx: ToolContext, jobId: string): Promise<Sche
 
       if (resp.kind === "text") {
         const t = resp.text.trim();
+        // The request names a site/link and no tool has been used: that is not research, it is skipping it. Send her
+        // back once (a reply like "I could not access Verra" without a single call was seen live, 2026-11-02).
+        if (!toolsUsed.length && !pushedBack && requestNeedsLookup(job.prompt, job.links.length > 0)) {
+          pushedBack = true;
+          workLog +=
+            `\nStep ${step}: you replied without opening any site or link named in the request. Open it now with ` +
+            `fetch_public_url, browse_website or search_verra_registry. Do not claim you could not access a source you did not try.\n`;
+          await appendProgress(jobId, {
+            at: new Date().toISOString(),
+            step,
+            tool: null,
+            summary: "Sent back to open the sites named in the request before answering.",
+          });
+          continue;
+        }
         if (t.length < 40 && /^READY\b/i.test(t)) break; // research done — the final answer comes from its own call
         finalText = t;
         await appendProgress(jobId, { at: new Date().toISOString(), step, tool: null, summary: "Wrote the final answer." });

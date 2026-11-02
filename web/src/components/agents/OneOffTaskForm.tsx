@@ -5,6 +5,7 @@ import { extractAttachmentText } from "@/lib/agent/extractAttachmentText";
 import { getOneOffJobAction, rateOneOffJobAction, startOneOffJobAction } from "@/lib/agent/oneOff/oneOffActions";
 import type { OneOffJob } from "@/lib/agent/oneOff/jobStore";
 import { normalizeDomains } from "@/lib/agent/oneOff/chromeAllow";
+import { parseDriveFolderId } from "@/lib/agent/oneOff/jobInput";
 
 interface Attached {
   name: string;
@@ -113,6 +114,9 @@ export function OneOffTaskForm({
   const [prompt, setPrompt] = useState("");
   const [linkInput, setLinkInput] = useState("");
   const [links, setLinks] = useState<string[]>([]);
+  const [driveInput, setDriveInput] = useState("");
+  const [driveFolders, setDriveFolders] = useState<string[]>([]);
+  const [driveError, setDriveError] = useState<string | null>(null);
   const [siteInput, setSiteInput] = useState("");
   const [sites, setSites] = useState<string[]>([]);
   const [files, setFiles] = useState<Attached[]>([]);
@@ -173,6 +177,19 @@ export function OneOffTaskForm({
     setLinkInput("");
   }
 
+  function addDriveFolder() {
+    const v = driveInput.trim();
+    if (!v) return;
+    const parsed = parseDriveFolderId(v);
+    if (!parsed.ok) {
+      setDriveError(parsed.error);
+      return;
+    }
+    setDriveError(null);
+    setDriveFolders((cur) => (cur.includes(parsed.id) ? cur : [...cur, parsed.id]));
+    setDriveInput("");
+  }
+
   function addSite() {
     const [d] = normalizeDomains([siteInput]);
     if (!d) return;
@@ -184,7 +201,30 @@ export function OneOffTaskForm({
     setStarting(true);
     setStartError(null);
     try {
-      const res = await startOneOffJobAction({ agentId, prompt, links, attachments: files, chromeDomains: sites });
+      // Text typed into a field but not yet added with Add/Enter still counts — a signed-in site left sitting in the
+      // box used to be dropped silently, and the agent then had no Chrome access at all.
+      const pendingSite = normalizeDomains([siteInput])[0];
+      const sitesFinal = pendingSite && !sites.includes(pendingSite) ? [...sites, pendingSite] : sites;
+      const pendingLink = linkInput.trim();
+      const linksFinal = pendingLink && !links.includes(pendingLink) ? [...links, pendingLink] : links;
+      let drivesFinal = driveFolders;
+      if (driveInput.trim()) {
+        const parsed = parseDriveFolderId(driveInput);
+        if (!parsed.ok) {
+          setDriveError(parsed.error);
+          setStartError("Fix the Drive folder link above (or clear it) and run again.");
+          return;
+        }
+        if (!drivesFinal.includes(parsed.id)) drivesFinal = [...drivesFinal, parsed.id];
+      }
+      const res = await startOneOffJobAction({
+        agentId,
+        prompt,
+        links: linksFinal,
+        attachments: files,
+        chromeDomains: sitesFinal,
+        driveFolders: drivesFinal,
+      });
       if (res.ok) {
         setNotes(res.notes);
         setJobId(res.jobId);
@@ -277,11 +317,52 @@ export function OneOffTaskForm({
             </p>
           ))}
 
+          <div className="mt-3">
+            <p className="text-[11.5px] font-semibold text-pine-700">Google Drive folders {agentName} should read</p>
+            <p className="mt-0.5 text-[11px] text-faint">
+              Paste the folder&apos;s Drive link (right-click the folder → Share → Copy link). A path like H:\… on your
+              computer cannot be opened by {agentName}. Up to 25 files are read, including sub-folders.
+            </p>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                type="text"
+                dir="ltr"
+                value={driveInput}
+                onChange={(e) => setDriveInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addDriveFolder();
+                  }
+                }}
+                placeholder="https://drive.google.com/drive/folders/…"
+                className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 text-[12.5px] outline-none focus:border-pine-400"
+              />
+              <button
+                type="button"
+                onClick={addDriveFolder}
+                className="rounded-lg border border-line bg-white px-3 text-[12.5px] font-semibold text-muted hover:bg-cream"
+              >
+                Add
+              </button>
+            </div>
+            {driveError && <p className="mt-1 text-[11px] text-danger">{driveError}</p>}
+            {driveFolders.map((id) => (
+              <p key={id} dir="ltr" className="mt-1 flex items-center justify-between gap-2 rounded bg-cream px-2 py-1 font-mono text-[11px] text-ink">
+                <span className="truncate">Drive folder {id}</span>
+                <button type="button" aria-label={`Remove folder ${id}`} onClick={() => setDriveFolders((c) => c.filter((x) => x !== id))}>
+                  ×
+                </button>
+              </p>
+            ))}
+          </div>
+
           <div className="mt-4 rounded-lg border border-line bg-[#fafcfb] p-2.5">
             <p className="text-[11.5px] font-semibold text-pine-700">Signed-in sites {agentName} may read in its own Chrome</p>
             <p className="mt-0.5 text-[11px] text-faint">
-              Read-only — only the sites listed here, for this task. Works while your PC and {agentName}&apos;s Chrome are
-              running; otherwise {agentName} uses public pages and says what it could not read.
+              Read-only — only the sites listed here, for this task. Type the domain (e.g. verra.org) and press Add or
+              Enter. Works while your PC and {agentName}&apos;s Chrome are running; otherwise {agentName} uses public
+              pages and says what it could not read.
             </p>
             <div className="mt-2 flex gap-2">
               <input
